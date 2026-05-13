@@ -55,7 +55,7 @@ jobs:
 
       - name: Comment URL on PR
         if: github.event_name == 'pull_request'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         env:
           ARTIFACT_URL: ${{ steps.link.outputs.presigned-url }}
         with:
