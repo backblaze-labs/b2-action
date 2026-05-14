@@ -27,7 +27,7 @@
   },
   "dependencies": {
     "@actions/core": "^1.11.1",
-    "@actions/glob": "^0.5.0",
+    "@actions/glob": "^0.7.0",
     "@backblaze/b2-sdk": "link:../b2-typescript-sdk"
   },
   "devDependencies": {
