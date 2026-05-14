@@ -20,7 +20,7 @@ jobs:
     env:
       KEY: examples/verify/${{ github.run_id }}/asset.bin
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Create asset
         run: dd if=/dev/urandom of=asset.bin bs=1024 count=32

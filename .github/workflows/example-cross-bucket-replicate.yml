@@ -20,7 +20,7 @@ jobs:
     env:
       KEY: examples/cross-bucket/${{ github.run_id }}/artifact.tar.gz
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Build a synthetic artifact
         run: |

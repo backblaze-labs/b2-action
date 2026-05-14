@@ -23,7 +23,7 @@ jobs:
     env:
       CACHE_KEY: cache/Linux/example-${{ github.run_id }}.tar.gz
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Build a synthetic cache payload
         run: |

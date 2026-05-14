@@ -22,7 +22,7 @@ jobs:
       KEY_B2: examples/sse/${{ github.run_id }}/sse-b2.txt
       KEY_C: examples/sse/${{ github.run_id }}/sse-c.txt
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Create payloads
         run: |

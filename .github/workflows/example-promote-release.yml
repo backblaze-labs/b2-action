@@ -21,7 +21,7 @@ jobs:
       STAGING_KEY: examples/promote/${{ github.run_id }}/staging/app.tar.gz
       RELEASE_KEY: examples/promote/${{ github.run_id }}/releases/latest/app.tar.gz
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Build synthetic artifact
         run: |

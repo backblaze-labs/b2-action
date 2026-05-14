@@ -19,7 +19,7 @@ jobs:
     env:
       DEPLOY_PREFIX: examples/deploy-site/${{ github.run_id }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Build the synthetic site
         run: |

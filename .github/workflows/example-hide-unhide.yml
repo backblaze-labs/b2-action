@@ -20,7 +20,7 @@ jobs:
     env:
       KEY: examples/hide/${{ github.run_id }}/masked.txt
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Create payload
         run: echo "this is the visible content" > masked.txt

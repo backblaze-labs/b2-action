@@ -26,7 +26,7 @@ jobs:
       PAYLOAD_KEY_OURS: bench/${{ github.run_id }}/ours.bin
       PAYLOAD_KEY_DOCKER: bench/${{ github.run_id }}/docker.bin
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       # No install/build: this workflow only `uses: ./` which reads the
       # committed `dist/index.js`. `ci.yml`'s build-and-check-dist job already
       # guarantees `dist/` is in sync with `src/` on the commit under test.

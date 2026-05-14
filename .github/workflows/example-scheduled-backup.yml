@@ -23,7 +23,7 @@ jobs:
     env:
       BACKUP_KEY: backups/${{ github.run_id }}/snapshot-$(date -u +%Y%m%d).tar.gz
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Build snapshot payload
         id: payload

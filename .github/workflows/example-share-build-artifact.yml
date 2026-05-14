@@ -20,7 +20,7 @@ jobs:
     env:
       ARTIFACT_KEY: pr-builds/${{ github.run_id }}/build.tar.gz
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Build a synthetic artifact
         run: |

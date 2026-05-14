@@ -23,7 +23,7 @@ jobs:
     env:
       PREFIX: examples/purge/${{ github.run_id }}/
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Stage payload tree
         run: |
