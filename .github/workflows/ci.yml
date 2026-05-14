@@ -153,6 +153,9 @@ jobs:
     needs: build-and-check-dist
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
       - name: Invoke the bundle with missing action input
         run: |
           set +e

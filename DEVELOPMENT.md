@@ -87,7 +87,7 @@ Requirements: Node 24+, pnpm 10+. The Action runs on Node 24 in the GitHub Actio
 `pnpm install` runs `husky` (via the `prepare` script) which installs the hooks under [`.husky/`](./.husky/). Two hooks are active:
 
 | Hook | What it runs | Triggers on |
-|---|---|---|
+| --- | --- | --- |
 | `pre-commit` | `pnpm lint` + `pnpm typecheck`. If `src/`, `package.json`, `tsconfig.json`, or `pnpm-lock.yaml` are staged: also `pnpm build` + a `dist/` freshness check that refuses the commit when rebuilt `dist/` differs from staged. If `.github/workflows/` or `.github/actions/` are staged: also `pnpm actionlint`. | Every `git commit` |
 | `pre-push` | `pnpm test` + `pnpm test:coverage`. | Every `git push` |
 
@@ -110,7 +110,7 @@ This repo mirrors the sibling [`b2-typescript-sdk`](https://github.com/backblaze
 Every PR runs:
 
 | Job | What it checks |
-|---|---|
+| --- | --- |
 | `test` (matrix: ubuntu/macos/windows) | typecheck + vitest unit suite |
 | `lint` | biome `--error-on-warnings` |
 | `coverage` | vitest with v8 coverage, threshold 95 % statements / 85 % branches / 100 % functions / 95 % lines |
@@ -129,7 +129,7 @@ Plus, the [example workflows](./.github/workflows/README.md) are the integration
 The example workflows + `daily-smoke.yml` + `benchmark.yml` all hit a real B2 bucket. The upstream project uses:
 
 | Purpose | Bucket name | Required? |
-|---|---|---|
+| --- | --- | --- |
 | Main destination for almost every example | `backblaze-labs-b2-action-ci-tests` | yes |
 | Source bucket for `example-cross-bucket-replicate.yml` | `backblaze-labs-b2-action-ci-tests-src` | optional |
 | Object-Lock-enabled bucket for `example-scheduled-backup.yml` (retention test) | `backblaze-labs-b2-action-ci-tests-lock` | optional |
@@ -158,7 +158,7 @@ Create one application key with these capabilities, scoped to the three buckets 
 In `Settings → Secrets and variables → Actions`, set:
 
 | Secret | Value |
-|---|---|
+| --- | --- |
 | `B2_APPLICATION_KEY_ID` | The application key ID from the previous step. |
 | `B2_APPLICATION_KEY` | The application key (this is shown once at creation: store it). |
 | `B2_TEST_BUCKET` | `backblaze-labs-b2-action-ci-tests` (or your equivalent). |
@@ -203,7 +203,7 @@ Coverage currently sits at ~97.8 % statements / ~90 % branches. The gap to 100 %
 Branches currently uncovered and waiting on the SDK:
 
 | File | Branch | What we need from the simulator |
-|---|---|---|
+| --- | --- | --- |
 | `delete.ts`, `purge.ts` | `error` event from `deleteAll` | The simulator should emit `{ type: 'error' }` when a `deleteFileVersion` call inside `deleteAll` fails (e.g. missing fileId, retention-blocked). |
 | `list.ts`, `download.ts`, `presign.ts` | Multi-page pagination | The simulator should set `nextFileName` on `listFileNames` responses when results exceed the requested `maxFileCount`. Today it returns everything in one page regardless of `maxFileCount`. |
 | `download.ts`, `list.ts` | `f.action !== 'upload'` filter | The simulator's `listFileNames` should return hide markers (`action: 'hide'`) for files that have been hidden via `bucket.hideFile`, matching real-B2 behavior. |
@@ -219,7 +219,7 @@ A handful of remaining gaps are not simulator-related; they're TypeScript-mandat
 Only two workflows need this: the ones that actually run `pnpm install` and `pnpm build`:
 
 | Workflow | Uses the scaffold? |
-|---|---|
+| --- | --- |
 | `ci.yml` | Yes (every job: test, coverage, lint, build-and-check-dist) |
 | `release.yml` | Yes |
 | `daily-smoke.yml` | No: `actions/checkout` + `uses: ./` is enough; the action reads from committed `dist/`. |

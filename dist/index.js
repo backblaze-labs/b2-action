@@ -62894,10 +62894,10 @@ class Bucket {
    * deletes are collected and returned rather than thrown, so partial success
    * does not abort the run.
    * @param targets - File versions to delete.
-   * @param options - Optional concurrency override. Defaults to
-   *   {@link DEFAULT_BULK_CONCURRENCY} (a bulk-metadata setting, higher
-   *   than transfer concurrency because each task is a single tiny API
-   *   round-trip).
+   * @param options - Optional concurrency override. Defaults to the
+   *   SDK-wide bulk-metadata concurrency setting (currently 10, higher
+   *   than the transfer-concurrency default because each task is a
+   *   single tiny API round-trip).
    *
    * @returns A summary of successes and per-target errors.
    */

@@ -70,7 +70,7 @@ For one self-contained example per verb (each is also a live integration test), 
 ## Verbs
 
 | Verb | What it does | Required inputs |
-|---|---|---|
+| --- | --- | --- |
 | `upload` | Single-file or glob upload, with streaming + multipart-resume. | `source`, `bucket` |
 | `download` | Single-file or prefix-bulk download. | `source`, `bucket` |
 | `sync` | Mirror a local directory ↔ a B2 prefix. Direction auto-detected. | `source`, `destination`, `bucket` |
@@ -305,7 +305,7 @@ If you don't need customer-managed keys, **`sse: B2`** (SSE-B2, B2-managed) is t
 ## Inputs (full reference)
 
 | Input | Required | Default | Description |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `action` | yes | | One of 13: `upload`, `download`, `sync`, `copy`, `delete`, `presign`, `list`, `hide`, `unhide`, `verify`, `retention`, `head`, `purge` |
 | `application-key-id` | no\* | | B2 application key ID. Falls back to `$B2_APPLICATION_KEY_ID`. |
 | `application-key` | no\* | | B2 application key. Falls back to `$B2_APPLICATION_KEY`. |
@@ -339,7 +339,7 @@ If you don't need customer-managed keys, **`sse: B2`** (SSE-B2, B2-managed) is t
 ## Outputs (full reference)
 
 | Output | When | Description |
-|---|---|---|
+| --- | --- | --- |
 | `file-id` | upload / copy / hide / retention | B2 file ID. |
 | `file-name` | single-file ops | B2 file name (path). |
 | `content-sha1` | upload (small) / download | SHA-1 hex. |

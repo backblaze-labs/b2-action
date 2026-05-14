@@ -13,7 +13,7 @@ This folder contains:
 Every `example-*.yml` is two things at once: a copy-paste-runnable snippet you can drop into your own repo (with secrets swapped in), and a live integration test that runs against this project's Backblaze test bucket. There is no separate `integration.yml`; these workflows *are* the integration suite.
 
 | Workflow | Demonstrates | Verb(s) |
-|---|---|---|
+| --- | --- | --- |
 | [example-cache-artifacts.yml](./example-cache-artifacts.yml) | Save and restore a build cache between jobs | `upload`, `download` |
 | [example-deploy-site.yml](./example-deploy-site.yml) | Sync a built site to B2 (replacing `b2 sync`) | `sync`, `list` |
 | [example-share-build-artifact.yml](./example-share-build-artifact.yml) | Upload a PR build and post a presigned download URL as a comment | `upload`, `presign` |
