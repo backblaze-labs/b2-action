@@ -34,7 +34,7 @@
     "@backblaze-labs/b2-sdk": "^0.1.0"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.4.15",
+    "@biomejs/biome": "^2.4.16",
     "@types/node": "^25.9.0",
     "@vercel/ncc": "^0.38.3",
     "@vitest/coverage-v8": "^4.1.7",
