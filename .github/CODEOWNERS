@@ -6,15 +6,15 @@
 # See https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-security/managing-repository-settings/about-code-owners
 
 # Default owner for everything in the repo.
-*                               @goanpeca
+*                               @goanpeca @jeronimodeleon @sophiecarreras
 
 # Build / release infrastructure: extra scrutiny because a broken release
 # workflow can publish a broken Action to millions of consumers.
-/.github/workflows/release.yml  @goanpeca
-/.github/workflows/ci.yml       @goanpeca
-/dist/                          @goanpeca
-/action.yml                     @goanpeca
-/package.json                   @goanpeca
+/.github/workflows/release.yml  @goanpeca @jeronimodeleon @sophiecarreras
+/.github/workflows/ci.yml       @goanpeca @jeronimodeleon @sophiecarreras
+/dist/                          @goanpeca @jeronimodeleon @sophiecarreras
+/action.yml                     @goanpeca @jeronimodeleon @sophiecarreras
+/package.json                   @goanpeca @jeronimodeleon @sophiecarreras
 
 # Security policy edits require a security-aware reviewer.
-/SECURITY.md                    @goanpeca
+/SECURITY.md                    @goanpeca @jeronimodeleon @sophiecarreras
