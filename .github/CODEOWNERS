@@ -6,18 +6,15 @@
 # See https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-security/managing-repository-settings/about-code-owners
 
 # Default owner for everything in the repo.
-# TODO: replace `@backblaze-labs/maintainers` with the real team or user handle
-# once the repo is hooked up to the Backblaze GitHub org. A team handle is
-# preferred over an individual so reviews don't block on one person being out.
-*                               @backblaze-labs/maintainers
+*                               @goanpeca
 
 # Build / release infrastructure: extra scrutiny because a broken release
 # workflow can publish a broken Action to millions of consumers.
-/.github/workflows/release.yml  @backblaze-labs/maintainers
-/.github/workflows/ci.yml       @backblaze-labs/maintainers
-/dist/                          @backblaze-labs/maintainers
-/action.yml                     @backblaze-labs/maintainers
-/package.json                   @backblaze-labs/maintainers
+/.github/workflows/release.yml  @goanpeca
+/.github/workflows/ci.yml       @goanpeca
+/dist/                          @goanpeca
+/action.yml                     @goanpeca
+/package.json                   @goanpeca
 
 # Security policy edits require a security-aware reviewer.
-/SECURITY.md                    @backblaze-labs/maintainers
+/SECURITY.md                    @goanpeca
