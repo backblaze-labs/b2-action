@@ -41038,6 +41038,7 @@ async function run() {
                         setOutput('content-sha1', first.contentSha1);
                 }
                 setOutput('files-uploaded', String(result.files.length));
+                setFileCountOutput(result.files.length);
                 setOutput('bytes-transferred', String(result.bytesTransferred));
                 setOutput('summary-json', JSON.stringify(result.files));
                 info(`uploaded ${result.files.length} file(s), ${result.bytesTransferred} bytes`);
@@ -41063,6 +41064,7 @@ async function run() {
                         setOutput('content-sha1', first.contentSha1);
                 }
                 setOutput('files-downloaded', String(result.files.length));
+                setFileCountOutput(result.files.length);
                 setOutput('bytes-transferred', String(result.bytesTransferred));
                 setOutput('summary-json', JSON.stringify(result.files));
                 info(`downloaded ${result.files.length} file(s), ${result.bytesTransferred} bytes`);
@@ -41083,6 +41085,7 @@ async function run() {
                 setOutput('files-uploaded', String(result.uploaded));
                 setOutput('files-downloaded', String(result.downloaded));
                 setOutput('files-deleted', String(result.deleted));
+                setFileCountOutput(result.uploaded + result.downloaded + result.deleted + result.skipped);
                 setOutput('bytes-transferred', String(result.bytesTransferred));
                 setOutput('summary-json', JSON.stringify(result.events));
                 if (result.errors > 0) {
@@ -41119,6 +41122,7 @@ async function run() {
                 const result = await copyCommand(authorized.client, bucket, inputs, signal);
                 setOutput('file-id', result.fileId);
                 setOutput('file-name', result.destinationFileName);
+                setFileCountOutput(1);
                 setOutput('bytes-transferred', String(result.size));
                 setOutput('summary-json', JSON.stringify([result]));
                 await writeStepSummary({
@@ -41147,6 +41151,7 @@ async function run() {
                     setOutput('file-name', first.fileName);
                 }
                 setOutput('files-listed', String(result.files.length));
+                setFileCountOutput(result.files.length);
                 setOutput('summary-json', JSON.stringify(result.files));
                 await writeStepSummary({
                     title: `Backblaze B2: presign (${result.files.length})`,
@@ -41160,6 +41165,7 @@ async function run() {
             case 'list': {
                 const result = await listCommand(bucket, inputs);
                 setOutput('files-listed', String(result.files.length));
+                setFileCountOutput(result.files.length);
                 setOutput('summary-json', JSON.stringify(result.files));
                 if (result.truncated) {
                     warning(`list result truncated at max-results=${inputs.maxResults}; raise it to see more`);
@@ -41184,6 +41190,7 @@ async function run() {
                 const result = await hideCommand(bucket, inputs);
                 setOutput('file-id', result.fileId);
                 setOutput('file-name', result.fileName);
+                setFileCountOutput(1);
                 setOutput('summary-json', JSON.stringify([result]));
                 await writeStepSummary({
                     title: 'Backblaze B2: hide',
@@ -41197,6 +41204,7 @@ async function run() {
                 if (result.removedMarkerFileId !== null) {
                     setOutput('file-id', result.removedMarkerFileId);
                 }
+                setFileCountOutput(1);
                 setOutput('summary-json', JSON.stringify([result]));
                 await writeStepSummary({
                     title: 'Backblaze B2: unhide',
@@ -41214,6 +41222,7 @@ async function run() {
                 const result = await verifyCommand(bucket, inputs);
                 setOutput('verified', String(result.verified));
                 setOutput('file-name', result.fileName);
+                setFileCountOutput(1);
                 if (result.remoteSha1 !== null)
                     setOutput('remote-sha1', result.remoteSha1);
                 if (result.localSha1 !== null)
@@ -41239,6 +41248,7 @@ async function run() {
                 const result = await retentionCommand(bucket, inputs);
                 setOutput('file-id', result.fileId);
                 setOutput('file-name', result.fileName);
+                setFileCountOutput(1);
                 setOutput('summary-json', JSON.stringify([result]));
                 await writeStepSummary({
                     title: 'Backblaze B2: retention',
@@ -41258,6 +41268,7 @@ async function run() {
                 setOutput('file-name', result.fileName);
                 if (result.contentSha1 !== null)
                     setOutput('content-sha1', result.contentSha1);
+                setFileCountOutput(1);
                 setOutput('bytes-transferred', '0');
                 setOutput('summary-json', JSON.stringify([result]));
                 await writeStepSummary({
@@ -41312,6 +41323,7 @@ async function emitDeletionSummary(verb, result, inputs) {
     const actuallyDeleted = result.files.filter((f) => !f.skipped).length;
     const wouldDelete = result.files.filter((f) => f.skipped).length;
     setOutput('files-deleted', String(actuallyDeleted));
+    setFileCountOutput(result.files.length);
     setOutput('summary-json', JSON.stringify(result.files));
     if (result.errors > 0) {
         const labels = { delete: 'Delete', purge: 'Purge' };
@@ -41329,6 +41341,9 @@ async function emitDeletionSummary(verb, result, inputs) {
             status: f.skipped ? future : past,
         })),
     });
+}
+function setFileCountOutput(count) {
+    setOutput('file_count', String(count));
 }
 function retentionStatusLine(result) {
     const parts = [`mode=${result.appliedMode ?? '-'}`];

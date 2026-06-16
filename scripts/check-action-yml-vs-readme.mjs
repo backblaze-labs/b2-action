@@ -2,8 +2,15 @@
 /**
  * Verify that every input and output declared in `action.yml` appears in
  * `README.md`'s "Inputs (full reference)" and "Outputs (full reference)"
- * tables. Catches the common "added a new input, forgot to document it"
- * drift mode.
+ * tables, and that every output declared in `action.yml` is emitted by the
+ * action implementation via `core.setOutput(...)`.
+ *
+ * Catches common drift modes:
+ *
+ *   - added a new input, forgot to document it
+ *   - added a new output, forgot to document it
+ *   - documented an output, forgot to emit it
+ *   - emitted an output, forgot to declare it
  *
  * The action.yml parser is regex-based (no external YAML dep) because
  * the file's shape is well-known and stable:
@@ -17,7 +24,7 @@
  *
  * Run with:  pnpm docs:check-action-yml
  */
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -44,7 +51,7 @@ function extractActionYmlKeys(section) {
   const body = end === -1 ? rest : rest.slice(0, end)
   const keys = []
   for (const line of body.split('\n')) {
-    const m = line.match(/^ {2}([a-z][a-z0-9-]*):\s*$/)
+    const m = line.match(/^ {2}([a-z][a-z0-9_-]*):\s*$/)
     if (m) keys.push(m[1])
   }
   return keys
@@ -78,11 +85,41 @@ function extractKeysFromSection(heading) {
 
 const readmeInputs = extractKeysFromSection('Inputs (full reference)')
 const readmeOutputs = extractKeysFromSection('Outputs (full reference)')
+const implementationOutputs = extractSetOutputKeys(join(REPO, 'src'))
 
 const missingFromReadmeInputs = declaredInputs.filter((k) => !readmeInputs.has(k))
 const missingFromReadmeOutputs = declaredOutputs.filter((k) => !readmeOutputs.has(k))
 const orphanedInReadmeInputs = [...readmeInputs].filter((k) => !declaredInputs.includes(k))
 const orphanedInReadmeOutputs = [...readmeOutputs].filter((k) => !declaredOutputs.includes(k))
+const missingFromImplementationOutputs = declaredOutputs.filter(
+  (k) => !implementationOutputs.has(k),
+)
+const undeclaredImplementationOutputs = [...implementationOutputs].filter(
+  (k) => !declaredOutputs.includes(k),
+)
+
+function* walkTsFiles(dir) {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const path = join(dir, entry.name)
+    if (entry.isDirectory()) {
+      yield* walkTsFiles(path)
+    } else if (entry.isFile() && path.endsWith('.ts')) {
+      yield path
+    }
+  }
+}
+
+function extractSetOutputKeys(dir) {
+  const keys = new Set()
+  for (const file of walkTsFiles(dir)) {
+    if (!statSync(file).isFile()) continue
+    const source = readFileSync(file, 'utf8')
+    for (const match of source.matchAll(/core\.setOutput\(\s*['"]([a-z][a-z0-9_-]*)['"]/g)) {
+      keys.add(match[1])
+    }
+  }
+  return keys
+}
 
 let failed = false
 function report(label, missing, orphaned) {
@@ -101,13 +138,24 @@ function report(label, missing, orphaned) {
 report('Inputs', missingFromReadmeInputs, orphanedInReadmeInputs)
 report('Outputs', missingFromReadmeOutputs, orphanedInReadmeOutputs)
 
+if (missingFromImplementationOutputs.length > 0) {
+  failed = true
+  console.error('✗ Outputs: in action.yml but not emitted by src/:')
+  for (const k of missingFromImplementationOutputs) console.error(`    - ${k}`)
+}
+if (undeclaredImplementationOutputs.length > 0) {
+  failed = true
+  console.error('✗ Outputs: emitted by src/ but not declared in action.yml:')
+  for (const k of undeclaredImplementationOutputs) console.error(`    - ${k}`)
+}
+
 if (failed) {
   console.error('')
-  console.error('action.yml is the source of truth. Either add the missing entries to README.md,')
-  console.error('or remove the orphans from README.md, then re-run `pnpm docs:check-action-yml`.')
+  console.error('action.yml is the source of truth for docs, and src/ is the output contract.')
+  console.error('Update the mismatched surface, then re-run `pnpm docs:check-action-yml`.')
   process.exit(1)
 }
 
 console.log(
-  `✓ ${declaredInputs.length} inputs and ${declaredOutputs.length} outputs aligned across action.yml and README.md.`,
+  `✓ ${declaredInputs.length} inputs and ${declaredOutputs.length} outputs aligned across action.yml, README.md, and src/.`,
 )

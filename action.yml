@@ -105,21 +105,23 @@ inputs:
 
 outputs:
   file-id:
-    description: 'B2 file ID of a single-file op (upload, copy, hide, retention).'
+    description: 'B2 file ID of a single-file op (upload, copy, hide, unhide, retention, head).'
   file-name:
     description: 'B2 file name (path) of a single-file op.'
   content-sha1:
-    description: 'SHA-1 hex digest of an uploaded/downloaded object.'
+    description: 'SHA-1 hex digest of an uploaded/downloaded/head object.'
   bytes-transferred:
-    description: 'Total bytes uploaded/downloaded.'
+    description: 'Total bytes uploaded/downloaded/copied/synced. Head emits 0.'
+  file_count:
+    description: 'Aggregate count of files matched or processed. Prefer verb-specific count outputs when available.'
   files-uploaded:
     description: 'Number of files uploaded (upload glob / sync up).'
   files-downloaded:
     description: 'Number of files downloaded (download prefix / sync down).'
   files-deleted:
-    description: 'Number of files deleted (delete / sync).'
+    description: 'Number of files deleted (delete / purge / sync).'
   files-listed:
-    description: 'Number of files returned by `list`.'
+    description: 'Number of files returned by `list` or prefix `presign`.'
   presigned-url:
     description: 'Presigned download URL (presign action).'
   verified:

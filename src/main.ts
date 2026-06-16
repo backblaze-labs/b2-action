@@ -67,6 +67,7 @@ export async function run(): Promise<void> {
           if (first.contentSha1 !== null) core.setOutput('content-sha1', first.contentSha1)
         }
         core.setOutput('files-uploaded', String(result.files.length))
+        setFileCountOutput(result.files.length)
         core.setOutput('bytes-transferred', String(result.bytesTransferred))
         core.setOutput('summary-json', JSON.stringify(result.files))
         core.info(`uploaded ${result.files.length} file(s), ${result.bytesTransferred} bytes`)
@@ -91,6 +92,7 @@ export async function run(): Promise<void> {
           if (first.contentSha1 !== null) core.setOutput('content-sha1', first.contentSha1)
         }
         core.setOutput('files-downloaded', String(result.files.length))
+        setFileCountOutput(result.files.length)
         core.setOutput('bytes-transferred', String(result.bytesTransferred))
         core.setOutput('summary-json', JSON.stringify(result.files))
         core.info(`downloaded ${result.files.length} file(s), ${result.bytesTransferred} bytes`)
@@ -111,6 +113,7 @@ export async function run(): Promise<void> {
         core.setOutput('files-uploaded', String(result.uploaded))
         core.setOutput('files-downloaded', String(result.downloaded))
         core.setOutput('files-deleted', String(result.deleted))
+        setFileCountOutput(result.uploaded + result.downloaded + result.deleted + result.skipped)
         core.setOutput('bytes-transferred', String(result.bytesTransferred))
         core.setOutput('summary-json', JSON.stringify(result.events))
         if (result.errors > 0) {
@@ -147,6 +150,7 @@ export async function run(): Promise<void> {
         const result = await copyCommand(authorized.client, bucket, inputs, signal)
         core.setOutput('file-id', result.fileId)
         core.setOutput('file-name', result.destinationFileName)
+        setFileCountOutput(1)
         core.setOutput('bytes-transferred', String(result.size))
         core.setOutput('summary-json', JSON.stringify([result]))
         await writeStepSummary({
@@ -175,6 +179,7 @@ export async function run(): Promise<void> {
           core.setOutput('file-name', first.fileName)
         }
         core.setOutput('files-listed', String(result.files.length))
+        setFileCountOutput(result.files.length)
         core.setOutput('summary-json', JSON.stringify(result.files))
         await writeStepSummary({
           title: `Backblaze B2: presign (${result.files.length})`,
@@ -188,6 +193,7 @@ export async function run(): Promise<void> {
       case 'list': {
         const result = await listCommand(bucket, inputs)
         core.setOutput('files-listed', String(result.files.length))
+        setFileCountOutput(result.files.length)
         core.setOutput('summary-json', JSON.stringify(result.files))
         if (result.truncated) {
           core.warning(
@@ -214,6 +220,7 @@ export async function run(): Promise<void> {
         const result = await hideCommand(bucket, inputs)
         core.setOutput('file-id', result.fileId)
         core.setOutput('file-name', result.fileName)
+        setFileCountOutput(1)
         core.setOutput('summary-json', JSON.stringify([result]))
         await writeStepSummary({
           title: 'Backblaze B2: hide',
@@ -227,6 +234,7 @@ export async function run(): Promise<void> {
         if (result.removedMarkerFileId !== null) {
           core.setOutput('file-id', result.removedMarkerFileId)
         }
+        setFileCountOutput(1)
         core.setOutput('summary-json', JSON.stringify([result]))
         await writeStepSummary({
           title: 'Backblaze B2: unhide',
@@ -244,6 +252,7 @@ export async function run(): Promise<void> {
         const result = await verifyCommand(bucket, inputs)
         core.setOutput('verified', String(result.verified))
         core.setOutput('file-name', result.fileName)
+        setFileCountOutput(1)
         if (result.remoteSha1 !== null) core.setOutput('remote-sha1', result.remoteSha1)
         if (result.localSha1 !== null) core.setOutput('local-sha1', result.localSha1)
         core.setOutput('summary-json', JSON.stringify([result]))
@@ -267,6 +276,7 @@ export async function run(): Promise<void> {
         const result = await retentionCommand(bucket, inputs)
         core.setOutput('file-id', result.fileId)
         core.setOutput('file-name', result.fileName)
+        setFileCountOutput(1)
         core.setOutput('summary-json', JSON.stringify([result]))
         await writeStepSummary({
           title: 'Backblaze B2: retention',
@@ -285,6 +295,7 @@ export async function run(): Promise<void> {
         core.setOutput('file-id', result.fileId)
         core.setOutput('file-name', result.fileName)
         if (result.contentSha1 !== null) core.setOutput('content-sha1', result.contentSha1)
+        setFileCountOutput(1)
         core.setOutput('bytes-transferred', '0')
         core.setOutput('summary-json', JSON.stringify([result]))
         await writeStepSummary({
@@ -344,6 +355,7 @@ async function emitDeletionSummary(
   const actuallyDeleted = result.files.filter((f) => !f.skipped).length
   const wouldDelete = result.files.filter((f) => f.skipped).length
   core.setOutput('files-deleted', String(actuallyDeleted))
+  setFileCountOutput(result.files.length)
   core.setOutput('summary-json', JSON.stringify(result.files))
   if (result.errors > 0) {
     const labels = { delete: 'Delete', purge: 'Purge' } as const
@@ -361,6 +373,10 @@ async function emitDeletionSummary(
       status: f.skipped ? future : past,
     })),
   })
+}
+
+function setFileCountOutput(count: number): void {
+  core.setOutput('file_count', String(count))
 }
 
 function retentionStatusLine(result: {
