@@ -1,0 +1,156 @@
+name: Large multipart smoke (real B2)
+
+# Weekly real-B2 exercise for the memory-bounded multipart upload path. This
+# intentionally stays off push/PR triggers because it transfers a
+# multi-hundred-MB object and then downloads it for an integrity check.
+
+on:
+  schedule:
+    # 04:23 UTC Sundays. Kept away from daily smoke to spread B2 traffic out.
+    - cron: '23 4 * * 0'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: large-multipart-smoke
+  cancel-in-progress: false
+
+jobs:
+  large-multipart:
+    name: large multipart upload
+    if: github.repository == 'backblaze-labs/b2-action'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      RUN_PREFIX: smoke/large-multipart/${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      # No `pnpm install` / `pnpm build`: this workflow invokes the action via
+      # `uses: ./`, which reads committed `dist/index.js`. The CI dist job
+      # already verifies that `dist/` matches `src/`.
+
+      - name: Build payload above B2 recommended part size
+        id: payload
+        env:
+          B2_APPLICATION_KEY_ID: ${{ secrets.B2_APPLICATION_KEY_ID }}
+          B2_APPLICATION_KEY: ${{ secrets.B2_APPLICATION_KEY }}
+        run: |
+          set -euo pipefail
+
+          : "${B2_APPLICATION_KEY_ID:?B2_APPLICATION_KEY_ID is required}"
+          : "${B2_APPLICATION_KEY:?B2_APPLICATION_KEY is required}"
+
+          auth_json="$(mktemp)"
+          trap 'rm -f "$auth_json"' EXIT
+
+          curl -fsS -u "$B2_APPLICATION_KEY_ID:$B2_APPLICATION_KEY" \
+            https://api.backblazeb2.com/b2api/v3/b2_authorize_account > "$auth_json"
+
+          AUTH_JSON="$auth_json" python3 <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          with open(os.environ['AUTH_JSON'], encoding='utf-8') as f:
+              auth = json.load(f)
+
+          token = auth.get('authorizationToken')
+          if token:
+              print(f'::add-mask::{token}')
+
+          storage = auth['apiInfo']['storageApi']
+          recommended = int(storage['recommendedPartSize'])
+          minimum = int(storage['absoluteMinimumPartSize'])
+          payload_bytes = max(recommended + minimum, 256 * 1024 * 1024)
+
+          path = Path('fixture/large.bin')
+          path.parent.mkdir(parents=True, exist_ok=True)
+
+          block = bytes((i * 17 + 29) % 256 for i in range(1024 * 1024))
+          sha1 = hashlib.sha1()
+          remaining = payload_bytes
+
+          with path.open('wb') as f:
+              while remaining > 0:
+                  chunk = block[: min(len(block), remaining)]
+                  f.write(chunk)
+                  sha1.update(chunk)
+                  remaining -= len(chunk)
+
+          digest = sha1.hexdigest()
+          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as out:
+              print(f'recommended-part-size={recommended}', file=out)
+              print(f'payload-bytes={payload_bytes}', file=out)
+              print(f'payload-mib={payload_bytes / 1024 / 1024:.1f}', file=out)
+              print(f'sha1={digest}', file=out)
+
+          print(
+              f'Built {path} with {payload_bytes} bytes '
+              f'({payload_bytes / 1024 / 1024:.1f} MiB); '
+              f'B2 recommended part size is {recommended} bytes.'
+          )
+          PY
+
+      - name: Upload multipart payload
+        id: upload
+        uses: ./
+        with:
+          action: upload
+          application-key-id: ${{ secrets.B2_APPLICATION_KEY_ID }}
+          application-key: ${{ secrets.B2_APPLICATION_KEY }}
+          bucket: ${{ secrets.B2_TEST_BUCKET }}
+          source: ./fixture/large.bin
+          destination: ${{ env.RUN_PREFIX }}/large.bin
+          part-size: ${{ steps.payload.outputs.recommended-part-size }}
+          concurrency: 2
+
+      - name: Confirm multipart upload path
+        env:
+          CONTENT_SHA1: ${{ steps.upload.outputs.content-sha1 }}
+          PAYLOAD_BYTES: ${{ steps.payload.outputs.payload-bytes }}
+          RECOMMENDED_PART_SIZE: ${{ steps.payload.outputs.recommended-part-size }}
+        run: |
+          set -euo pipefail
+
+          test "$PAYLOAD_BYTES" -gt "$RECOMMENDED_PART_SIZE"
+          if [ -n "$CONTENT_SHA1" ]; then
+            echo "::error::Expected multipart upload to omit whole-file SHA-1, got $CONTENT_SHA1"
+            exit 1
+          fi
+
+      - name: Download multipart payload
+        uses: ./
+        with:
+          action: download
+          application-key-id: ${{ secrets.B2_APPLICATION_KEY_ID }}
+          application-key: ${{ secrets.B2_APPLICATION_KEY }}
+          bucket: ${{ secrets.B2_TEST_BUCKET }}
+          source: ${{ env.RUN_PREFIX }}/large.bin
+          destination: ./roundtrip/large.bin
+
+      - name: Verify downloaded SHA-1
+        env:
+          EXPECTED_SHA1: ${{ steps.payload.outputs.sha1 }}
+        run: |
+          set -euo pipefail
+
+          actual_sha1="$(sha1sum ./roundtrip/large.bin | awk '{print $1}')"
+          if [ "$actual_sha1" != "$EXPECTED_SHA1" ]; then
+            echo "::error::SHA-1 mismatch: expected $EXPECTED_SHA1, got $actual_sha1"
+            exit 1
+          fi
+
+      - name: Cleanup
+        if: always()
+        uses: ./
+        with:
+          action: delete
+          application-key-id: ${{ secrets.B2_APPLICATION_KEY_ID }}
+          application-key: ${{ secrets.B2_APPLICATION_KEY }}
+          bucket: ${{ secrets.B2_TEST_BUCKET }}
+          source: ${{ env.RUN_PREFIX }}/

@@ -7,6 +7,7 @@ This folder contains:
 - **`codeql.yml`**: CodeQL (SAST) static analysis of the TypeScript source. Runs on PRs to `main`, on push to `main`, and weekly; findings surface in the repo Security tab.
 - **`release.yml`**: fires on three-component `vX.Y.Z` tags (a bare `v1` does **not** trigger it): full gate + GitHub Release + floats the major-version tag (`v1`, `v2`, …).
 - **`daily-smoke.yml`**: 03:13 UTC cron: real-B2 end-to-end smoke against the test bucket.
+- **`large-multipart-smoke.yml`**: weekly real-B2 multipart upload + download SHA-1 integrity check for a payload above B2's recommended part size.
 - **`example-*.yml`**: twelve **example workflows that are also the integration test suite**. See the table below.
 
 ## Example workflows (= integration test suite)

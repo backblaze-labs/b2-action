@@ -57,6 +57,7 @@ __tests__/
   codeql.yml            # CodeQL (SAST) static analysis of the TypeScript source
   release.yml           # see RELEASE.md
   daily-smoke.yml       # 03:13 UTC: real-B2 end-to-end against the test bucket
+  large-multipart-smoke.yml  # weekly real-B2 multipart upload integrity check
   example-*.yml         # 12 copy-paste workflows that double as integration tests
 action.yml         # Marketplace manifest (inputs, outputs, branding)
 dist/index.js      # ncc-bundled entrypoint (committed; CI fails if stale)
@@ -142,7 +143,7 @@ Every third-party action under `.github/workflows/` is pinned to a full commit S
 
 ## Test bucket setup
 
-The example workflows + `daily-smoke.yml` all hit a real B2 bucket. The upstream project uses:
+The example workflows, `daily-smoke.yml`, and `large-multipart-smoke.yml` all hit a real B2 bucket. The upstream project uses:
 
 | Purpose | Bucket name | Required? |
 | --- | --- | --- |
@@ -182,7 +183,7 @@ In `Settings → Secrets and variables → Actions`, set:
 | `B2_TEST_BUCKET_LOCKED` | `backblaze-labs-b2-action-ci-tests-lock` (optional; unlocks `scheduled-backup`). |
 | `B2_SSE_C_KEY_B64` | Optional base64-encoded 32-byte SSE-C key. If unset, the `sse-encryption` example generates a per-run key as fallback. |
 
-Once those are in place, the example workflows trigger on every PR (other than forks, which can't see secrets) and the `daily-smoke.yml` cron runs nightly. There's no manual step beyond setting the secrets.
+Once those are in place, the example workflows trigger on every PR (other than forks, which can't see secrets), the `daily-smoke.yml` cron runs nightly, and `large-multipart-smoke.yml` runs weekly. There's no manual step beyond setting the secrets.
 
 ### Simulator vs real bucket: what each layer catches
 

@@ -13,6 +13,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Add a dependency vulnerability gate: a CI `audit` job runs `pnpm audit --prod --audit-level high` (available locally as `pnpm run audit`), failing the build on a high or critical advisory in a production dependency. Scoped to production deps so a dev-tooling advisory cannot block an unrelated PR. ([#21](https://github.com/backblaze-labs/b2-action/issues/21))
 - Add a CodeQL (SAST) workflow (`.github/workflows/codeql.yml`) that statically analyzes the TypeScript source on every PR to `main`, on push to `main`, and weekly, surfacing findings in the repo Security tab. Uses `build-mode: none` (no compile needed) and SHA-pinned `github/codeql-action`. ([#20](https://github.com/backblaze-labs/b2-action/issues/20))
 
+### Added
+
+- Add a weekly real-B2 large multipart smoke workflow that uploads a payload above B2's recommended part size, downloads it, checks SHA-1 integrity, and deletes the test prefix. ([#25](https://github.com/backblaze-labs/b2-action/issues/25))
+
 ### Changed
 
 - `upload`: directory/glob uploads now consistently treat `destination` as a prefix even when the source resolves to a single file; only an explicit single-file source treats a non-trailing-slash `destination` as the exact object key.
