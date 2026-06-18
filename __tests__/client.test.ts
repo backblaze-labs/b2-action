@@ -1,9 +1,16 @@
 import { rm } from 'node:fs/promises'
 import type { HttpTransport } from '@backblaze-labs/b2-sdk'
 import { B2Simulator } from '@backblaze-labs/b2-sdk/simulator'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { buildClient, findFileByName, getBucket } from '../src/client.ts'
 import { captureStdout, makeFixture, seedFile } from './_helpers.ts'
+
+afterEach(() => {
+  vi.restoreAllMocks()
+  vi.resetModules()
+  vi.doUnmock('@actions/core')
+  vi.doUnmock('@backblaze-labs/b2-sdk')
+})
 
 describe('client helpers', () => {
   it('builds an authorized simulator-backed client and masks the auth token', async () => {
@@ -53,6 +60,39 @@ describe('client helpers', () => {
         transport,
       }),
     ).rejects.toThrow(/nope|unauthorized/i)
+  })
+
+  it('omits optional SDK constructor fields and skips empty-token masking', async () => {
+    const core = { setSecret: vi.fn() }
+    const constructedOptions: unknown[] = []
+    class FakeB2Client {
+      accountInfo = { getAuthToken: () => '' }
+
+      constructor(options: unknown) {
+        constructedOptions.push(options)
+      }
+
+      async authorize() {}
+    }
+
+    vi.doMock('@actions/core', () => core)
+    vi.doMock('@backblaze-labs/b2-sdk', () => ({ B2Client: FakeB2Client }))
+
+    const { buildClient: buildMockedClient } = await import('../src/client.ts')
+    const result = await buildMockedClient({
+      applicationKeyId: 'mock-key-id',
+      applicationKey: 'mock-key',
+      bucket: 'mock-bucket',
+    })
+
+    expect(result.bucketName).toBe('mock-bucket')
+    expect(constructedOptions[0]).toMatchObject({
+      applicationKeyId: 'mock-key-id',
+      applicationKey: 'mock-key',
+    })
+    expect(constructedOptions[0]).not.toHaveProperty('transport')
+    expect(constructedOptions[0]).not.toHaveProperty('realm')
+    expect(core.setSecret).not.toHaveBeenCalled()
   })
 
   it('resolves buckets by name and reports a clear missing-bucket error', async () => {
