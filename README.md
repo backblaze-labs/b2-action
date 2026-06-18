@@ -363,9 +363,9 @@ If you don't need customer-managed keys, **`sse: B2`** (SSE-B2, B2-managed) is t
 
 | Output | When | Description |
 | --- | --- | --- |
-| `file-id` | upload / copy / hide / unhide / retention / head | B2 file ID. |
+| `file-id` | upload / copy / hide / retention / head; unhide if a hide marker was removed | B2 file ID. For `unhide`, this identifies the removed hide marker, not the target object. |
 | `file-name` | single-file ops | B2 file name (path). |
-| `content-sha1` | upload (small) / download / head | SHA-1 hex. |
+| `content-sha1` | upload (small) / download / head when available | SHA-1 hex. For `head`, omitted for multipart objects when B2 does not expose a whole-file SHA-1. |
 | `bytes-transferred` | upload / download / sync / copy / head | Total bytes moved. Head emits `0`. |
 | `file-count` | every command | Aggregate count of files matched or processed, including skipped sync entries and dry-run delete/purge matches. Prefer verb-specific count outputs when available. |
 | `files-uploaded` | upload / sync up | Count. |

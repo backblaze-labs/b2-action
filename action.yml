@@ -105,11 +105,11 @@ inputs:
 
 outputs:
   file-id:
-    description: 'B2 file ID of a single-file op (upload, copy, hide, unhide, retention, head).'
+    description: 'B2 file ID of a single-file op (upload, copy, hide, retention, head). For `unhide`, set only when a hide marker is removed and identifies that removed marker.'
   file-name:
     description: 'B2 file name (path) of a single-file op.'
   content-sha1:
-    description: 'SHA-1 hex digest of an uploaded/downloaded/head object.'
+    description: 'SHA-1 hex digest when B2 provides a whole-file digest; omitted for multipart head objects without one.'
   bytes-transferred:
     description: 'Total bytes uploaded/downloaded/copied/synced. Head emits 0.'
   file-count:

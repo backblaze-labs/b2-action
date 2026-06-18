@@ -94,9 +94,9 @@ const orphanedInReadmeOutputs = [...readmeOutputs].filter((k) => !declaredOutput
 const missingFromImplementationOutputs = declaredOutputs.filter(
   (k) => !implementationOutputs.has(k),
 )
-const undeclaredImplementationOutputs = [...implementationOutputs].filter(
-  (k) => !declaredOutputs.includes(k),
-)
+const undeclaredImplementationOutputs = [...implementationOutputs]
+  .filter((k) => !declaredOutputs.includes(k))
+  .sort()
 
 function* walkTsFiles(dir) {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {

@@ -729,8 +729,29 @@ async function loadMain() {
   vi.doMock('../src/commands/head.ts', () => ({ headCommand: commands.headCommand }))
   vi.doMock('../src/commands/purge.ts', () => ({ purgeCommand: commands.purgeCommand }))
 
-  const main = await import('../src/main.ts')
+  const main = await importMainForTest()
   return { ...main, core, parseInputs, buildClient, getBucket, writeStepSummary, commands }
+}
+
+async function importMainForTest() {
+  const originalArgv1 = process.argv[1]
+  const processOnce = vi
+    .spyOn(process, 'once')
+    .mockImplementation(
+      ((..._args: Parameters<typeof process.once>) => process) as typeof process.once,
+    )
+
+  try {
+    process.argv[1] = join(tmpdir(), 'vitest-main-test.js')
+    return await import('../src/main.ts')
+  } finally {
+    if (originalArgv1 === undefined) {
+      process.argv.splice(1, 1)
+    } else {
+      process.argv[1] = originalArgv1
+    }
+    processOnce.mockRestore()
+  }
 }
 
 function setupSuccessfulAction(ctx: LoadedMain, action: ActionName): Record<string, string> {
