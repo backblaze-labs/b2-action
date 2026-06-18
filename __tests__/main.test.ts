@@ -168,6 +168,7 @@ describe('main dispatcher', () => {
     expect(ctx.core.setFailed).not.toHaveBeenCalled()
     expect(outputs(ctx)).toEqual({
       'files-uploaded': '0',
+      'file-count': '0',
       'bytes-transferred': '0',
       'summary-json': '[]',
     })
@@ -190,6 +191,7 @@ describe('main dispatcher', () => {
       'file-id': 'id-multipart',
       'file-name': 'multipart.txt',
       'files-uploaded': '1',
+      'file-count': '1',
       'bytes-transferred': '20',
       'summary-json': JSON.stringify([file]),
     })
@@ -205,6 +207,7 @@ describe('main dispatcher', () => {
     expect(ctx.core.setFailed).not.toHaveBeenCalled()
     expect(outputs(ctx)).toEqual({
       'files-downloaded': '0',
+      'file-count': '0',
       'bytes-transferred': '0',
       'summary-json': '[]',
     })
@@ -226,6 +229,7 @@ describe('main dispatcher', () => {
     expect(outputs(ctx)).toEqual({
       'file-name': 'multipart.bin',
       'files-downloaded': '1',
+      'file-count': '1',
       'bytes-transferred': '20',
       'summary-json': JSON.stringify([file]),
     })
@@ -249,6 +253,7 @@ describe('main dispatcher', () => {
     expect(outputs(ctx)).toEqual({
       verified: 'true',
       'file-name': 'multipart.bin',
+      'file-count': '1',
       'summary-json': JSON.stringify([result]),
     })
   })
@@ -269,6 +274,7 @@ describe('main dispatcher', () => {
     expect(outputs(ctx)).toEqual({
       'file-id': 'id-head-multipart',
       'file-name': 'multipart-head.bin',
+      'file-count': '1',
       'bytes-transferred': '0',
       'summary-json': JSON.stringify([result]),
     })
@@ -284,6 +290,7 @@ describe('main dispatcher', () => {
 
     expect(outputs(ctx)).toEqual({
       'file-name': 'visible.txt',
+      'file-count': '1',
       'summary-json': JSON.stringify([result]),
     })
     expect(ctx.writeStepSummary).toHaveBeenCalledWith({
@@ -415,6 +422,7 @@ describe('main dispatcher', () => {
 
     expect(outputs(ctx)).toEqual({
       'files-listed': '0',
+      'file-count': '0',
       'summary-json': '[]',
     })
   })
@@ -612,6 +620,7 @@ describe('main dispatcher', () => {
     expect(ctx.core.setFailed).toHaveBeenCalledWith('Delete completed with 1 error(s)')
     expect(outputs(ctx)).toEqual({
       'files-deleted': '1',
+      'file-count': '1',
       'summary-json': JSON.stringify(files),
     })
     expect(ctx.writeStepSummary).not.toHaveBeenCalled()
@@ -628,6 +637,7 @@ describe('main dispatcher', () => {
     expect(ctx.core.setFailed).toHaveBeenCalledWith('Purge completed with 2 error(s)')
     expect(outputs(ctx)).toEqual({
       'files-deleted': '1',
+      'file-count': '1',
       'summary-json': JSON.stringify(files),
     })
     expect(ctx.writeStepSummary).not.toHaveBeenCalled()
@@ -737,6 +747,7 @@ function setupSuccessfulAction(ctx: LoadedMain, action: ActionName): Record<stri
         'file-name': 'upload.txt',
         'content-sha1': 'sha-upload.txt',
         'files-uploaded': '1',
+        'file-count': '1',
         'bytes-transferred': '10',
         'summary-json': JSON.stringify([file]),
       }
@@ -753,6 +764,7 @@ function setupSuccessfulAction(ctx: LoadedMain, action: ActionName): Record<stri
         'file-name': 'download.txt',
         'content-sha1': 'sha-download',
         'files-downloaded': '1',
+        'file-count': '1',
         'bytes-transferred': '11',
         'summary-json': JSON.stringify([file]),
       }
@@ -773,6 +785,7 @@ function setupSuccessfulAction(ctx: LoadedMain, action: ActionName): Record<stri
         'files-uploaded': '1',
         'files-downloaded': '0',
         'files-deleted': '0',
+        'file-count': '3',
         'bytes-transferred': '12',
         'summary-json': JSON.stringify(events),
       }
@@ -790,6 +803,7 @@ function setupSuccessfulAction(ctx: LoadedMain, action: ActionName): Record<stri
       return {
         'file-id': 'id-copy',
         'file-name': 'copied.txt',
+        'file-count': '1',
         'bytes-transferred': '13',
         'summary-json': JSON.stringify([result]),
       }
@@ -802,6 +816,7 @@ function setupSuccessfulAction(ctx: LoadedMain, action: ActionName): Record<stri
       ctx.commands.deleteCommand.mockResolvedValue({ files, errors: 0 })
       return {
         'files-deleted': '1',
+        'file-count': '2',
         'summary-json': JSON.stringify(files),
       }
     }
@@ -814,6 +829,7 @@ function setupSuccessfulAction(ctx: LoadedMain, action: ActionName): Record<stri
         'presigned-url': 'https://signed.example/file',
         'file-name': 'signed.txt',
         'files-listed': '1',
+        'file-count': '1',
         'summary-json': JSON.stringify(files),
       }
     }
@@ -829,6 +845,7 @@ function setupSuccessfulAction(ctx: LoadedMain, action: ActionName): Record<stri
       ctx.commands.listCommand.mockResolvedValue({ files, truncated: true })
       return {
         'files-listed': '1',
+        'file-count': '1',
         'summary-json': JSON.stringify(files),
       }
     }
@@ -838,6 +855,7 @@ function setupSuccessfulAction(ctx: LoadedMain, action: ActionName): Record<stri
       return {
         'file-id': 'id-hide',
         'file-name': 'hidden.txt',
+        'file-count': '1',
         'summary-json': JSON.stringify([result]),
       }
     }
@@ -847,6 +865,7 @@ function setupSuccessfulAction(ctx: LoadedMain, action: ActionName): Record<stri
       return {
         'file-name': 'visible.txt',
         'file-id': 'id-marker',
+        'file-count': '1',
         'summary-json': JSON.stringify([result]),
       }
     }
@@ -863,6 +882,7 @@ function setupSuccessfulAction(ctx: LoadedMain, action: ActionName): Record<stri
       return {
         verified: 'true',
         'file-name': 'verified.txt',
+        'file-count': '1',
         'remote-sha1': 'remote-sha',
         'local-sha1': 'local-sha',
         'summary-json': JSON.stringify([result]),
@@ -880,6 +900,7 @@ function setupSuccessfulAction(ctx: LoadedMain, action: ActionName): Record<stri
       return {
         'file-id': 'id-retention',
         'file-name': 'locked.txt',
+        'file-count': '1',
         'summary-json': JSON.stringify([result]),
       }
     }
@@ -895,6 +916,7 @@ function setupSuccessfulAction(ctx: LoadedMain, action: ActionName): Record<stri
         'file-id': 'id-head',
         'file-name': 'head.txt',
         'content-sha1': 'sha-head',
+        'file-count': '1',
         'bytes-transferred': '0',
         'summary-json': JSON.stringify([result]),
       }
@@ -907,6 +929,7 @@ function setupSuccessfulAction(ctx: LoadedMain, action: ActionName): Record<stri
       ctx.commands.purgeCommand.mockResolvedValue({ files, errors: 0 })
       return {
         'files-deleted': '1',
+        'file-count': '2',
         'summary-json': JSON.stringify(files),
       }
     }
