@@ -367,6 +367,41 @@ describe('main dispatcher', () => {
     })
   })
 
+  it('warns when list results are truncated and caps summary rows', async () => {
+    const ctx = await loadMain()
+    const files = Array.from({ length: 120 }, (_, i) =>
+      listedFile({
+        fileName: `listed-${i}.txt`,
+        fileId: `id-listed-${i}`,
+        size: 1,
+      }),
+    )
+    ctx.parseInputs.mockReturnValue(inputs('list', { maxResults: 25 }))
+    ctx.commands.listCommand.mockResolvedValue({ files, truncated: true })
+
+    await ctx.run()
+
+    expect(ctx.core.warning).toHaveBeenCalledWith(
+      'list result truncated at max-results=25; raise it to see more',
+    )
+    const summary = firstSummary(ctx)
+    expect(summary).toMatchObject({
+      title: 'Backblaze B2: list (120+)',
+      totals: { files: 120, bytes: 120 },
+    })
+    expect(summary?.rows).toHaveLength(100)
+    expect(summary?.rows?.[0]).toMatchObject({
+      fileName: 'listed-0.txt',
+      fileId: 'id-listed-0',
+      status: 'application/octet-stream',
+    })
+    expect(summary?.rows?.at(-1)).toMatchObject({
+      fileName: 'listed-99.txt',
+      fileId: 'id-listed-99',
+      status: 'application/octet-stream',
+    })
+  })
+
   it('reports parser/auth errors through setFailed', async () => {
     const ctx = await loadMain()
     ctx.parseInputs.mockImplementation(() => {
@@ -376,6 +411,19 @@ describe('main dispatcher', () => {
     await ctx.run()
 
     expect(ctx.core.setFailed).toHaveBeenCalledWith('bad input')
+    expect(ctx.buildClient).not.toHaveBeenCalled()
+  })
+
+  it('reports non-Error failures through setFailed', async () => {
+    const ctx = await loadMain()
+    const plainFailure = { toString: () => 'plain string' }
+    ctx.parseInputs.mockImplementation(() => {
+      throw plainFailure
+    })
+
+    await ctx.run()
+
+    expect(ctx.core.setFailed).toHaveBeenCalledWith('plain string')
     expect(ctx.buildClient).not.toHaveBeenCalled()
   })
 
@@ -425,6 +473,35 @@ describe('main dispatcher', () => {
     })
   })
 
+  it('reports failed verify results with default diagnostics when reason is absent', async () => {
+    const ctx = await loadMain()
+    const result = {
+      fileName: 'unknown.bin',
+      remoteSize: 9,
+      remoteSha1: 'remote-sha',
+      localSha1: 'local-sha',
+      verified: false,
+      reason: undefined,
+    }
+    ctx.parseInputs.mockReturnValue(inputs('verify'))
+    ctx.commands.verifyCommand.mockResolvedValue(result)
+
+    await ctx.run()
+
+    expect(ctx.core.setFailed).toHaveBeenCalledWith('verify failed: SHA-1 mismatch')
+    expect(ctx.writeStepSummary).toHaveBeenCalledWith({
+      title: 'Backblaze B2: verify ✗',
+      rows: [
+        {
+          fileName: 'unknown.bin',
+          size: 9,
+          sha1: 'remote-sha',
+          status: 'mismatch',
+        },
+      ],
+    })
+  })
+
   it('reports deletion aggregate errors after publishing deletion outputs', async () => {
     const ctx = await loadMain()
     const files = [{ fileName: 'stuck.txt', fileId: 'id-stuck', skipped: false }]
@@ -469,22 +546,18 @@ describe('main dispatcher', () => {
 
     await ctx.run()
 
-    const summary = (
-      ctx.writeStepSummary.mock.calls as unknown as Array<
-        [{ title: string; totals: { files: number; bytes: number }; rows: unknown[] }]
-      >
-    )[0]?.[0]
+    const summary = firstSummary(ctx)
     expect(summary).toMatchObject({
       title: 'Backblaze B2: purge',
       totals: { files: 150, bytes: 0 },
     })
     expect(summary?.rows).toHaveLength(100)
-    expect(summary?.rows[0]).toEqual({
+    expect(summary?.rows?.[0]).toEqual({
       fileName: 'f0.txt',
       fileId: 'id-0',
       status: 'purged',
     })
-    expect(summary?.rows.at(-1)).toEqual({
+    expect(summary?.rows?.at(-1)).toEqual({
       fileName: 'f99.txt',
       fileId: 'id-99',
       status: 'purged',
@@ -758,7 +831,15 @@ function outputs(ctx: LoadedMain): Record<string, string> {
   )
 }
 
+type SummaryCall = { title: string; totals?: unknown; rows?: unknown[] }
+
+function firstSummary(ctx: LoadedMain): SummaryCall | undefined {
+  const calls = ctx.writeStepSummary.mock.calls as unknown as Array<[SummaryCall]>
+  return calls[0]?.[0]
+}
+
 function fileSha1(override: { fileName: string; contentSha1?: string | null }): string | null {
+  // Preserve an explicit null instead of replacing it with the default test SHA.
   return 'contentSha1' in override ? (override.contentSha1 ?? null) : `sha-${override.fileName}`
 }
 
