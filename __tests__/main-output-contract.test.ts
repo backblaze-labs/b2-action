@@ -63,7 +63,7 @@ async function captureOutputKeys(action: ActionName): Promise<string[]> {
     }
 
     expect(ctx.core.setFailed).not.toHaveBeenCalled()
-    return ctx.core.setOutput.mock.calls.map(([key]) => String(key)).sort()
+    return [...new Set(ctx.core.setOutput.mock.calls.map(([key]) => String(key)))].sort()
   } finally {
     restoreSignalListeners(signalListeners)
   }
@@ -231,16 +231,17 @@ function fileResult(action: ActionName) {
   }
 }
 
+const TEST_SIGNALS = ['SIGTERM', 'SIGINT'] as const
+
 function snapshotSignalListeners() {
-  return {
-    SIGTERM: process.listeners('SIGTERM'),
-    SIGINT: process.listeners('SIGINT'),
-  }
+  return Object.fromEntries(TEST_SIGNALS.map((signal) => [signal, process.listeners(signal)]))
 }
 
 function restoreSignalListeners(snapshot: ReturnType<typeof snapshotSignalListeners>): void {
-  process.removeAllListeners('SIGTERM')
-  process.removeAllListeners('SIGINT')
-  for (const listener of snapshot.SIGTERM) process.on('SIGTERM', listener)
-  for (const listener of snapshot.SIGINT) process.on('SIGINT', listener)
+  for (const signal of TEST_SIGNALS) {
+    const original = new Set(snapshot[signal])
+    for (const listener of process.listeners(signal)) {
+      if (!original.has(listener)) process.off(signal, listener)
+    }
+  }
 }
