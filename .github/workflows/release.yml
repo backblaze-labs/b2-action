@@ -113,7 +113,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
-      contents: write # creates GitHub Releases and moves floating major-version tags
+      contents: write # creates GitHub Releases/assets and moves floating major-version tags
+      id-token: write # mints Sigstore signing certificates for artifact provenance
+      attestations: write # persists GitHub Artifact Attestations for dist/index.js
     env:
       REF: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
     steps:
@@ -294,6 +296,17 @@ jobs:
       # If this step fails after the floating tag moved, rerun this same
       # workflow/tag. The refs API update and GitHub Release operation are
       # idempotent, so reruns safely heal that partial publish state.
+
+      - name: Generate dist checksum
+        run: |
+          HASH=$(sha256sum dist/index.js | cut -d ' ' -f1)
+          printf '%s  index.js\n' "$HASH" > dist/index.js.sha256
+
+      - name: Attest dist/index.js provenance
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+        with:
+          subject-path: dist/index.js
+
       - name: Create / update GitHub Release
         uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3.0.0
         with:
@@ -301,6 +314,9 @@ jobs:
           name: ${{ env.REF }}
           generate_release_notes: true
           prerelease: ${{ steps.prerelease.outputs.is_prerelease == 'true' }}
-          fail_on_unmatched_files: false
+          files: |
+            dist/index.js
+            dist/index.js.sha256
+          fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

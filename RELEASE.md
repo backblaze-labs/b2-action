@@ -52,7 +52,33 @@ To re-run a release for an existing tag, use the `workflow_dispatch` input on `r
 5. Detects any pre-release suffix (`vX.Y.Z-*`). Pre-releases skip the floating-tag step.
 6. Verifies a stable tag is the newest `vX.Y.Z` tag for its major version before any publish-side effects.
 7. Moves the floating major tag (e.g. `v1`) to the release commit via the refs API. See [Floating tag automation](#floating-tag-automation) below for the token requirement; missing or unusable credentials fail before a stable GitHub Release is created or updated.
-8. Creates the GitHub Release via `softprops/action-gh-release@v3` with `generate_release_notes: true`.
+8. Generates a SHA-256 checksum for `dist/index.js` and creates a GitHub Artifact Attestation for that exact bundle.
+9. Creates the GitHub Release via `softprops/action-gh-release@v3` with `generate_release_notes: true`, uploading both `index.js` and `index.js.sha256` as release assets.
+
+## Verifying release provenance
+
+Every release includes an `index.js` asset that is byte-for-byte the committed `dist/index.js` bundle at the release tag, plus a GitHub Artifact Attestation signed by the release workflow. Verify both the checksum and provenance before auditing the bundle:
+
+```bash
+TAG=v1.0.1
+DIR=/tmp/b2-action-release
+rm -rf "$DIR"
+mkdir -p "$DIR"
+
+gh release download "$TAG" \
+  --repo backblaze-labs/b2-action \
+  --pattern 'index.js*' \
+  --dir "$DIR"
+
+(cd "$DIR" && sha256sum -c index.js.sha256)
+
+gh attestation verify "$DIR/index.js" \
+  --repo backblaze-labs/b2-action \
+  --signer-workflow backblaze-labs/b2-action/.github/workflows/release.yml \
+  --source-ref "refs/tags/$TAG"
+```
+
+Use the exact `vX.Y.Z` release tag when verifying. The floating `v1` tag is intentionally mutable and should not be used as the verification ref.
 
 ## One-time setup
 
