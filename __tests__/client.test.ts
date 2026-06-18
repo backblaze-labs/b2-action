@@ -63,7 +63,7 @@ describe('client helpers', () => {
     ).rejects.toThrow(/nope|unauthorized/i)
   })
 
-  it('omits optional SDK constructor fields and skips empty-token masking', async () => {
+  it('maps optional SDK constructor fields and skips empty-token masking', async () => {
     const core = { setSecret: vi.fn() }
     const constructedOptions: unknown[] = []
     class FakeB2Client {
@@ -94,6 +94,17 @@ describe('client helpers', () => {
     expect(constructedOptions[0]).not.toHaveProperty('transport')
     expect(constructedOptions[0]).not.toHaveProperty('realm')
     expect(core.setSecret).not.toHaveBeenCalled()
+
+    await buildMockedClient({
+      applicationKeyId: 'mock-key-id',
+      applicationKey: 'mock-key',
+      bucket: 'endpoint-bucket',
+      endpoint: 'https://staging.example',
+    })
+
+    expect(constructedOptions[1]).toMatchObject({
+      realm: 'https://staging.example',
+    })
   })
 
   describe('fixture-backed helpers', () => {

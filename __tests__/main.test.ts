@@ -7,11 +7,14 @@ import type { DownloadedFile } from '../src/commands/download.ts'
 import type { ListedFile } from '../src/commands/list.ts'
 import type { UploadedFile } from '../src/commands/upload.ts'
 import type { ActionName, ParsedInputs } from '../src/inputs.ts'
+import type * as Summary from '../src/summary.ts'
 import { makeParsedInputs, TEST_APPLICATION_KEY, TEST_APPLICATION_KEY_ID } from './parsed-inputs.ts'
 
 type LoadedMain = Awaited<ReturnType<typeof loadMain>>
 
 const DISPATCH_BUCKET = 'dispatch-bucket'
+const RETAIN_UNTIL = Date.parse('2030-01-01T00:00:00Z')
+const FIXTURE_UPLOAD_TS = Date.parse('2026-01-01T00:00:00Z')
 
 afterEach(() => {
   vi.restoreAllMocks()
@@ -86,6 +89,25 @@ describe('main dispatcher', () => {
       applicationKey: TEST_APPLICATION_KEY,
       bucket: DISPATCH_BUCKET,
       endpoint: 'https://staging.example',
+    })
+  })
+
+  it('renders copy summaries with source and destination URLs', async () => {
+    const ctx = await loadMain()
+    setupSuccessfulAction(ctx, 'copy')
+
+    await ctx.run()
+
+    expect(ctx.writeStepSummary).toHaveBeenCalledWith({
+      title: 'Backblaze B2: copy',
+      rows: [
+        {
+          fileName: 'b2://source-bucket/source.txt → b2://dispatch-bucket/copied.txt',
+          size: 13,
+          fileId: 'id-copy',
+          status: 'copied (server-side)',
+        },
+      ],
     })
   })
 
@@ -291,7 +313,7 @@ describe('main dispatcher', () => {
       fileName: 'locked.txt',
       fileId: 'id-locked',
       appliedMode: 'governance',
-      retainUntilTimestamp: Date.parse('2030-01-01T00:00:00Z'),
+      retainUntilTimestamp: RETAIN_UNTIL,
       appliedLegalHold: 'on',
     }
     ctx.parseInputs.mockReturnValue(inputs('retention'))
@@ -305,7 +327,7 @@ describe('main dispatcher', () => {
         {
           fileName: 'locked.txt',
           fileId: 'id-locked',
-          status: 'mode=governance until=2030-01-01T00:00:00.000Z legal-hold=on',
+          status: `mode=governance until=${new Date(RETAIN_UNTIL).toISOString()} legal-hold=on`,
         },
       ],
     })
@@ -364,6 +386,32 @@ describe('main dispatcher', () => {
     expect(outputs(ctx)).toEqual({
       'files-listed': '0',
       'summary-json': '[]',
+    })
+  })
+
+  it('caps presign summary rows and renders expiry timestamps', async () => {
+    const ctx = await loadMain()
+    const baseExpiry = 1_900_000_000
+    const files = Array.from({ length: 60 }, (_, i) => ({
+      fileName: `signed-${i}.txt`,
+      url: `https://signed.example/${i}`,
+      expiresAt: baseExpiry + i,
+    }))
+    ctx.parseInputs.mockReturnValue(inputs('presign'))
+    ctx.commands.presignCommand.mockResolvedValue({ files })
+
+    await ctx.run()
+
+    const summary = firstSummary(ctx)
+    expect(summary).toMatchObject({ title: 'Backblaze B2: presign (60)' })
+    expect(summary?.rows).toHaveLength(50)
+    expect(summary?.rows?.[0]).toEqual({
+      fileName: 'signed-0.txt',
+      status: `expires at ${new Date(baseExpiry * 1000).toISOString()}`,
+    })
+    expect(summary?.rows?.at(-1)).toEqual({
+      fileName: 'signed-49.txt',
+      status: `expires at ${new Date((baseExpiry + 49) * 1000).toISOString()}`,
     })
   })
 
@@ -579,7 +627,7 @@ async function loadMain() {
   const bucket = { name: DISPATCH_BUCKET }
   const buildClient = vi.fn<() => Promise<typeof authorized>>().mockResolvedValue(authorized)
   const getBucket = vi.fn<() => Promise<typeof bucket>>().mockResolvedValue(bucket)
-  const writeStepSummary = vi.fn<() => Promise<void>>().mockResolvedValue(undefined)
+  const writeStepSummary = vi.fn<typeof Summary.writeStepSummary>().mockResolvedValue(undefined)
   const commands = {
     uploadCommand: vi.fn(),
     downloadCommand: vi.fn(),
@@ -774,7 +822,7 @@ function setupSuccessfulAction(ctx: LoadedMain, action: ActionName): Record<stri
         fileName: 'locked.txt',
         fileId: 'id-retention',
         appliedMode: 'governance',
-        retainUntilTimestamp: Date.parse('2030-01-01T00:00:00Z'),
+        retainUntilTimestamp: RETAIN_UNTIL,
         appliedLegalHold: 'on',
       }
       ctx.commands.retentionCommand.mockResolvedValue(result)
@@ -831,11 +879,8 @@ function outputs(ctx: LoadedMain): Record<string, string> {
   )
 }
 
-type SummaryCall = { title: string; totals?: unknown; rows?: unknown[] }
-
-function firstSummary(ctx: LoadedMain): SummaryCall | undefined {
-  const calls = ctx.writeStepSummary.mock.calls as unknown as Array<[SummaryCall]>
-  return calls[0]?.[0]
+function firstSummary(ctx: LoadedMain): Parameters<typeof Summary.writeStepSummary>[0] | undefined {
+  return ctx.writeStepSummary.mock.calls[0]?.[0]
 }
 
 function fileSha1(override: { fileName: string; contentSha1?: string | null }): string | null {
@@ -870,7 +915,7 @@ function listedFile(override: {
     fileId: override.fileId,
     size: override.size,
     contentSha1: fileSha1(override),
-    uploadTimestamp: Date.parse('2026-01-01T00:00:00Z'),
+    uploadTimestamp: FIXTURE_UPLOAD_TS,
     contentType: override.contentType ?? 'application/octet-stream',
     fileInfo: {},
   }
