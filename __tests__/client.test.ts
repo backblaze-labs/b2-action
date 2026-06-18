@@ -1,9 +1,10 @@
 import { rm } from 'node:fs/promises'
 import type { HttpTransport } from '@backblaze-labs/b2-sdk'
 import { B2Simulator } from '@backblaze-labs/b2-sdk/simulator'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { buildClient, findFileByName, getBucket } from '../src/client.ts'
-import { captureStdout, makeFixture, seedFile } from './_helpers.ts'
+import { captureStdout, makeFixture, seedFile, type TestFixture } from './_helpers.ts'
+import { TEST_APPLICATION_KEY, TEST_APPLICATION_KEY_ID } from './parsed-inputs.ts'
 
 afterEach(() => {
   vi.restoreAllMocks()
@@ -19,8 +20,8 @@ describe('client helpers', () => {
 
     const stdout = await captureStdout(async () => {
       authorized = await buildClient({
-        applicationKeyId: 'test-key-id',
-        applicationKey: 'test-key',
+        applicationKeyId: TEST_APPLICATION_KEY_ID,
+        applicationKey: TEST_APPLICATION_KEY,
         bucket: 'client-bucket',
         endpoint: 'https://staging.example',
         transport: sim.transport(),
@@ -95,9 +96,18 @@ describe('client helpers', () => {
     expect(core.setSecret).not.toHaveBeenCalled()
   })
 
-  it('resolves buckets by name and reports a clear missing-bucket error', async () => {
-    const fx = await makeFixture('client-helper-bucket')
-    try {
+  describe('fixture-backed helpers', () => {
+    let fx: TestFixture
+
+    beforeEach(async () => {
+      fx = await makeFixture('client-helper-bucket')
+    })
+
+    afterEach(async () => {
+      await rm(fx.workDir, { recursive: true, force: true })
+    })
+
+    it('resolves buckets by name and reports a clear missing-bucket error', async () => {
       const found = await getBucket({ client: fx.client, bucketName: fx.bucket.name })
       expect(found.id).toBe(fx.bucket.id)
       expect(found.name).toBe(fx.bucket.name)
@@ -105,14 +115,9 @@ describe('client helpers', () => {
       await expect(
         getBucket({ client: missingClient as never, bucketName: 'missing-bucket' }),
       ).rejects.toThrow(/Bucket "missing-bucket" not found/)
-    } finally {
-      await rm(fx.workDir, { recursive: true, force: true })
-    }
-  })
+    })
 
-  it('finds the latest visible file version and rejects missing files', async () => {
-    const fx = await makeFixture('client-find-file')
-    try {
+    it('finds the latest visible file version and rejects missing files', async () => {
       await seedFile(fx, 'visible.txt', 'hello')
 
       await expect(findFileByName(fx.bucket, 'visible.txt')).resolves.toMatchObject({
@@ -120,10 +125,11 @@ describe('client helpers', () => {
         action: 'upload',
       })
       await expect(findFileByName(fx.bucket, 'missing.txt')).rejects.toThrow(
-        /File not found in bucket "client-find-file": missing.txt/,
+        /File not found in bucket "client-helper-bucket": missing.txt/,
       )
-    } finally {
-      await rm(fx.workDir, { recursive: true, force: true })
-    }
+      await expect(findFileByName(fx.bucket, 'source.txt', 'source-bucket')).rejects.toThrow(
+        /File not found in bucket "source-bucket": source.txt/,
+      )
+    })
   })
 })

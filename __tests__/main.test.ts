@@ -1,5 +1,9 @@
-import { fileURLToPath } from 'node:url'
+import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { DownloadedFile } from '../src/commands/download.ts'
 import type { ListedFile } from '../src/commands/list.ts'
 import type { UploadedFile } from '../src/commands/upload.ts'
 import type { ActionName, ParsedInputs } from '../src/inputs.ts'
@@ -22,6 +26,20 @@ describe('main dispatcher', () => {
     expect(isEntrypoint(mainUrl.href, fileURLToPath(mainUrl))).toBe(true)
     expect(isEntrypoint(mainUrl.href, '/tmp/other.js')).toBe(false)
     expect(isEntrypoint(mainUrl.href, undefined)).toBe(false)
+
+    const tempDir = await mkdtemp(join(tmpdir(), 'b2-entrypoint-'))
+    try {
+      const realDir = join(tempDir, 'real')
+      const linkDir = join(tempDir, 'link')
+      const realEntrypoint = join(realDir, 'index.js')
+      await mkdir(realDir)
+      await writeFile(realEntrypoint, '')
+      await symlink(realDir, linkDir)
+
+      expect(isEntrypoint(pathToFileURL(realEntrypoint).href, join(linkDir, 'index.js'))).toBe(true)
+    } finally {
+      await rm(tempDir, { recursive: true, force: true })
+    }
   })
 
   it.each([
@@ -83,6 +101,8 @@ describe('main dispatcher', () => {
     ctx.parseInputs.mockReturnValue(inputs('upload'))
     ctx.commands.uploadCommand.mockImplementation(async (_bucket, _inputs, commandSignal) => {
       signal = commandSignal
+      // The handler is registered inside run() before dispatch, so these
+      // synchronous emits are contained by the run() finally cleanup below.
       process.emit('SIGTERM')
       process.emit('SIGINT')
       return { files: [file], bytesTransferred: file.size }
@@ -148,6 +168,42 @@ describe('main dispatcher', () => {
     })
   })
 
+  it('omits per-file outputs when download returns no files', async () => {
+    const ctx = await loadMain()
+    ctx.parseInputs.mockReturnValue(inputs('download'))
+    ctx.commands.downloadCommand.mockResolvedValue({ files: [], bytesTransferred: 0 })
+
+    await ctx.run()
+
+    expect(ctx.core.setFailed).not.toHaveBeenCalled()
+    expect(outputs(ctx)).toEqual({
+      'files-downloaded': '0',
+      'bytes-transferred': '0',
+      'summary-json': '[]',
+    })
+  })
+
+  it('omits download SHA-1 outputs when hashes are unavailable', async () => {
+    const ctx = await loadMain()
+    const file: DownloadedFile = {
+      fileName: 'multipart.bin',
+      localPath: '/tmp/multipart.bin',
+      size: 20,
+      contentSha1: null,
+    }
+    ctx.parseInputs.mockReturnValue(inputs('download'))
+    ctx.commands.downloadCommand.mockResolvedValue({ files: [file], bytesTransferred: file.size })
+
+    await ctx.run()
+
+    expect(outputs(ctx)).toEqual({
+      'file-name': 'multipart.bin',
+      'files-downloaded': '1',
+      'bytes-transferred': '20',
+      'summary-json': JSON.stringify([file]),
+    })
+  })
+
   it('omits verify SHA-1 outputs when hashes are unavailable', async () => {
     const ctx = await loadMain()
     const result = {
@@ -166,6 +222,27 @@ describe('main dispatcher', () => {
     expect(outputs(ctx)).toEqual({
       verified: 'true',
       'file-name': 'multipart.bin',
+      'summary-json': JSON.stringify([result]),
+    })
+  })
+
+  it('omits head SHA-1 outputs when hashes are unavailable', async () => {
+    const ctx = await loadMain()
+    const result = listedFile({
+      fileName: 'multipart-head.bin',
+      fileId: 'id-head-multipart',
+      size: 20,
+      contentSha1: null,
+    })
+    ctx.parseInputs.mockReturnValue(inputs('head'))
+    ctx.commands.headCommand.mockResolvedValue(result)
+
+    await ctx.run()
+
+    expect(outputs(ctx)).toEqual({
+      'file-id': 'id-head-multipart',
+      'file-name': 'multipart-head.bin',
+      'bytes-transferred': '0',
       'summary-json': JSON.stringify([result]),
     })
   })
@@ -205,6 +282,32 @@ describe('main dispatcher', () => {
     expect(ctx.writeStepSummary).toHaveBeenCalledWith({
       title: 'Backblaze B2: retention',
       rows: [{ fileName: 'unlocked.txt', fileId: 'id-unlocked', status: 'mode=-' }],
+    })
+  })
+
+  it('renders retention summaries with retain-until and legal-hold details', async () => {
+    const ctx = await loadMain()
+    const result = {
+      fileName: 'locked.txt',
+      fileId: 'id-locked',
+      appliedMode: 'governance',
+      retainUntilTimestamp: Date.parse('2030-01-01T00:00:00Z'),
+      appliedLegalHold: 'on',
+    }
+    ctx.parseInputs.mockReturnValue(inputs('retention'))
+    ctx.commands.retentionCommand.mockResolvedValue(result)
+
+    await ctx.run()
+
+    expect(ctx.writeStepSummary).toHaveBeenCalledWith({
+      title: 'Backblaze B2: retention',
+      rows: [
+        {
+          fileName: 'locked.txt',
+          fileId: 'id-locked',
+          status: 'mode=governance until=2030-01-01T00:00:00.000Z legal-hold=on',
+        },
+      ],
     })
   })
 
@@ -248,6 +351,19 @@ describe('main dispatcher', () => {
       title: 'Backblaze B2: delete (dry-run)',
       totals: { files: 1, bytes: 0 },
       rows: [{ fileName: 'preview.txt', fileId: 'id-preview', status: 'would delete' }],
+    })
+  })
+
+  it('omits presign per-file outputs when no URLs are generated', async () => {
+    const ctx = await loadMain()
+    ctx.parseInputs.mockReturnValue(inputs('presign'))
+    ctx.commands.presignCommand.mockResolvedValue({ files: [] })
+
+    await ctx.run()
+
+    expect(outputs(ctx)).toEqual({
+      'files-listed': '0',
+      'summary-json': '[]',
     })
   })
 
@@ -589,6 +705,8 @@ function setupSuccessfulAction(ctx: LoadedMain, action: ActionName): Record<stri
       }
     }
   }
+  const exhaustive: never = action
+  throw new Error(`unhandled action: ${exhaustive}`)
 }
 
 function inputs(action: ActionName, override: Partial<ParsedInputs> = {}): ParsedInputs {
@@ -617,6 +735,7 @@ function uploadedFile(override: {
     fileName: override.fileName,
     fileId: override.fileId,
     size: override.size,
+    // Preserve an explicit null instead of replacing it with the default test SHA.
     contentSha1: 'contentSha1' in override ? override.contentSha1 : `sha-${override.fileName}`,
   }
 }
@@ -632,6 +751,7 @@ function listedFile(override: {
     fileName: override.fileName,
     fileId: override.fileId,
     size: override.size,
+    // Preserve an explicit null instead of replacing it with the default test SHA.
     contentSha1: 'contentSha1' in override ? override.contentSha1 : `sha-${override.fileName}`,
     uploadTimestamp: Date.parse('2026-01-01T00:00:00Z'),
     contentType: override.contentType ?? 'application/octet-stream',

@@ -5,7 +5,12 @@ import { B2Client, type Bucket } from '@backblaze-labs/b2-sdk'
 import { B2Simulator } from '@backblaze-labs/b2-sdk/simulator'
 import { uploadCommand } from '../src/commands/upload.ts'
 import type { ActionName, ParsedInputs } from '../src/inputs.ts'
-import { DEFAULT_TEST_BUCKET, makeParsedInputs } from './parsed-inputs.ts'
+import {
+  DEFAULT_TEST_BUCKET,
+  makeParsedInputs,
+  TEST_APPLICATION_KEY,
+  TEST_APPLICATION_KEY_ID,
+} from './parsed-inputs.ts'
 
 /**
  * Part size used by the multipart fixture. Small enough that a few-hundred-KB
@@ -77,13 +82,13 @@ export interface TestFixture {
  * The caller is responsible for `rm`-ing `workDir` in their `afterEach`.
  */
 export async function makeFixture(
-  bucketName = 'gh-action-test',
+  bucketName = DEFAULT_TEST_BUCKET,
   simOptions: { minimumPartSize?: number; recommendedPartSize?: number } = {},
 ): Promise<TestFixture> {
   const sim = new B2Simulator(simOptions)
   const client = new B2Client({
-    applicationKeyId: 'test-key-id',
-    applicationKey: 'test-key',
+    applicationKeyId: TEST_APPLICATION_KEY_ID,
+    applicationKey: TEST_APPLICATION_KEY,
     transport: sim.transport(),
   })
   await client.authorize()

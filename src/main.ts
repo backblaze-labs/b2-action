@@ -1,3 +1,4 @@
+import { realpathSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import * as core from '@actions/core'
@@ -316,7 +317,11 @@ export async function run(): Promise<void> {
 
 export function isEntrypoint(metaUrl: string, argv1: string | undefined): boolean {
   if (argv1 === undefined) return false
-  return fileURLToPath(metaUrl) === resolve(argv1)
+  try {
+    return realpathSync(fileURLToPath(metaUrl)) === realpathSync(resolve(argv1))
+  } catch {
+    return false
+  }
 }
 
 /**

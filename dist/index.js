@@ -28054,6 +28054,8 @@ __nccwpck_require__.d(__webpack_exports__, {
   e: () => (/* binding */ run)
 });
 
+;// CONCATENATED MODULE: external "node:fs"
+const external_node_fs_namespaceObject = __WEBPACK_EXTERNAL_createRequire(import.meta.url)("node:fs");
 // EXTERNAL MODULE: external "node:path"
 var external_node_path_ = __nccwpck_require__(6760);
 // EXTERNAL MODULE: external "node:url"
@@ -35656,8 +35658,6 @@ async function deleteOne(bucket, fileName, dryRun) {
     }
 }
 
-;// CONCATENATED MODULE: external "node:fs"
-const external_node_fs_namespaceObject = __WEBPACK_EXTERNAL_createRequire(import.meta.url)("node:fs");
 // EXTERNAL MODULE: external "node:fs/promises"
 var promises_ = __nccwpck_require__(1455);
 // EXTERNAL MODULE: external "node:stream"
@@ -40991,6 +40991,7 @@ function escapeHtml(value) {
 
 
 
+
 /**
  * Action entrypoint. Parses inputs, builds an authorized B2Client, dispatches
  * to the requested subcommand, and writes structured outputs back via
@@ -41291,7 +41292,12 @@ async function run() {
 function isEntrypoint(metaUrl, argv1) {
     if (argv1 === undefined)
         return false;
-    return (0,external_node_url_.fileURLToPath)(metaUrl) === (0,external_node_path_.resolve)(argv1);
+    try {
+        return (0,external_node_fs_namespaceObject.realpathSync)((0,external_node_url_.fileURLToPath)(metaUrl)) === (0,external_node_fs_namespaceObject.realpathSync)((0,external_node_path_.resolve)(argv1));
+    }
+    catch {
+        return false;
+    }
 }
 /**
  * Shared output-emission + step-summary for the two deletion verbs.
