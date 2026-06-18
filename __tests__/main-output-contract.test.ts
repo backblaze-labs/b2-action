@@ -42,7 +42,7 @@ describe('main output contract', () => {
   )('emits the golden output key set for %s', async (action) => {
     const keys = await captureOutputKeys(action)
 
-    expect(keys).toEqual(EXPECTED_OUTPUT_KEYS[action])
+    expect(keys).toEqual([...EXPECTED_OUTPUT_KEYS[action]].sort())
   })
 })
 
