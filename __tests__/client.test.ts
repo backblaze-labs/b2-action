@@ -97,10 +97,11 @@ describe('client helpers', () => {
   })
 
   describe('fixture-backed helpers', () => {
+    const BUCKET = 'client-helper-bucket'
     let fx: TestFixture
 
     beforeEach(async () => {
-      fx = await makeFixture('client-helper-bucket')
+      fx = await makeFixture(BUCKET)
     })
 
     afterEach(async () => {
@@ -125,10 +126,19 @@ describe('client helpers', () => {
         action: 'upload',
       })
       await expect(findFileByName(fx.bucket, 'missing.txt')).rejects.toThrow(
-        /File not found in bucket "client-helper-bucket": missing.txt/,
+        `File not found in bucket "${BUCKET}": missing.txt`,
       )
       await expect(findFileByName(fx.bucket, 'source.txt', 'source-bucket')).rejects.toThrow(
         /File not found in bucket "source-bucket": source.txt/,
+      )
+    })
+
+    it('rejects hidden files whose latest version is a hide marker', async () => {
+      await seedFile(fx, 'hidden.txt', 'hello')
+      await fx.bucket.hideFile('hidden.txt')
+
+      await expect(findFileByName(fx.bucket, 'hidden.txt')).rejects.toThrow(
+        `File not found in bucket "${BUCKET}": hidden.txt`,
       )
     })
   })

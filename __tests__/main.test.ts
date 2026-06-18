@@ -456,6 +456,40 @@ describe('main dispatcher', () => {
     })
     expect(ctx.writeStepSummary).not.toHaveBeenCalled()
   })
+
+  it('caps purge summary rows while counting every file', async () => {
+    const ctx = await loadMain()
+    const files = Array.from({ length: 150 }, (_, i) => ({
+      fileName: `f${i}.txt`,
+      fileId: `id-${i}`,
+      skipped: false,
+    }))
+    ctx.parseInputs.mockReturnValue(inputs('purge', { allowBucketPurge: true }))
+    ctx.commands.purgeCommand.mockResolvedValue({ files, errors: 0 })
+
+    await ctx.run()
+
+    const summary = (
+      ctx.writeStepSummary.mock.calls as unknown as Array<
+        [{ title: string; totals: { files: number; bytes: number }; rows: unknown[] }]
+      >
+    )[0]?.[0]
+    expect(summary).toMatchObject({
+      title: 'Backblaze B2: purge',
+      totals: { files: 150, bytes: 0 },
+    })
+    expect(summary?.rows).toHaveLength(100)
+    expect(summary?.rows[0]).toEqual({
+      fileName: 'f0.txt',
+      fileId: 'id-0',
+      status: 'purged',
+    })
+    expect(summary?.rows.at(-1)).toEqual({
+      fileName: 'f99.txt',
+      fileId: 'id-99',
+      status: 'purged',
+    })
+  })
 })
 
 async function loadMain() {
@@ -724,6 +758,10 @@ function outputs(ctx: LoadedMain): Record<string, string> {
   )
 }
 
+function fileSha1(override: { fileName: string; contentSha1?: string | null }): string | null {
+  return 'contentSha1' in override ? (override.contentSha1 ?? null) : `sha-${override.fileName}`
+}
+
 function uploadedFile(override: {
   fileName: string
   fileId: string
@@ -735,8 +773,7 @@ function uploadedFile(override: {
     fileName: override.fileName,
     fileId: override.fileId,
     size: override.size,
-    // Preserve an explicit null instead of replacing it with the default test SHA.
-    contentSha1: 'contentSha1' in override ? override.contentSha1 : `sha-${override.fileName}`,
+    contentSha1: fileSha1(override),
   }
 }
 
@@ -751,8 +788,7 @@ function listedFile(override: {
     fileName: override.fileName,
     fileId: override.fileId,
     size: override.size,
-    // Preserve an explicit null instead of replacing it with the default test SHA.
-    contentSha1: 'contentSha1' in override ? override.contentSha1 : `sha-${override.fileName}`,
+    contentSha1: fileSha1(override),
     uploadTimestamp: Date.parse('2026-01-01T00:00:00Z'),
     contentType: override.contentType ?? 'application/octet-stream',
     fileInfo: {},
