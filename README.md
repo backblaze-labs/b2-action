@@ -367,7 +367,7 @@ If you don't need customer-managed keys, **`sse: B2`** (SSE-B2, B2-managed) is t
 | `file-name` | single-file ops | B2 file name (path). |
 | `content-sha1` | upload (small) / download / head | SHA-1 hex. |
 | `bytes-transferred` | upload / download / sync / copy / head | Total bytes moved. Head emits `0`. |
-| `file-count` | most commands | Aggregate count of files matched or processed. Prefer verb-specific count outputs when available. |
+| `file-count` | every command | Aggregate count of files matched or processed, including skipped sync entries and dry-run delete/purge matches. Prefer verb-specific count outputs when available. |
 | `files-uploaded` | upload / sync up | Count. |
 | `files-downloaded` | download / sync down | Count. |
 | `files-deleted` | delete / purge / sync | Count. |

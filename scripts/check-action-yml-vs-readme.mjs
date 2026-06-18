@@ -24,7 +24,7 @@
  *
  * Run with:  pnpm docs:check-action-yml
  */
-import { readdirSync, readFileSync, statSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -112,7 +112,6 @@ function* walkTsFiles(dir) {
 function extractSetOutputKeys(dir) {
   const keys = new Set()
   for (const file of walkTsFiles(dir)) {
-    if (!statSync(file).isFile()) continue
     const source = readFileSync(file, 'utf8')
     for (const match of source.matchAll(/core\.setOutput\(\s*['"]([a-z][a-z0-9-]*)['"]/g)) {
       keys.add(match[1])
