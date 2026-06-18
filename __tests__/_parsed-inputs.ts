@@ -2,6 +2,7 @@ import type { ActionName, ParsedInputs } from '../src/inputs.ts'
 
 export const TEST_APPLICATION_KEY_ID = 'test-key-id'
 export const TEST_APPLICATION_KEY = 'test-key'
+export const TEST_ENDPOINT = 'https://staging.example'
 export const DEFAULT_TEST_BUCKET = 'gh-action-test'
 
 export function makeParsedInputs(

@@ -4,7 +4,7 @@ import { B2Simulator } from '@backblaze-labs/b2-sdk/simulator'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { buildClient, findFileByName, getBucket } from '../src/client.ts'
 import { captureStdout, makeFixture, seedFile, type TestFixture } from './_helpers.ts'
-import { TEST_APPLICATION_KEY, TEST_APPLICATION_KEY_ID } from './parsed-inputs.ts'
+import { TEST_APPLICATION_KEY, TEST_APPLICATION_KEY_ID, TEST_ENDPOINT } from './_parsed-inputs.ts'
 
 afterEach(() => {
   vi.restoreAllMocks()
@@ -23,7 +23,7 @@ describe('client helpers', () => {
         applicationKeyId: TEST_APPLICATION_KEY_ID,
         applicationKey: TEST_APPLICATION_KEY,
         bucket: 'client-bucket',
-        endpoint: 'https://staging.example',
+        endpoint: TEST_ENDPOINT,
         transport: sim.transport(),
       })
     })
@@ -99,11 +99,11 @@ describe('client helpers', () => {
       applicationKeyId: 'mock-key-id',
       applicationKey: 'mock-key',
       bucket: 'endpoint-bucket',
-      endpoint: 'https://staging.example',
+      endpoint: TEST_ENDPOINT,
     })
 
     expect(constructedOptions[1]).toMatchObject({
-      realm: 'https://staging.example',
+      realm: TEST_ENDPOINT,
     })
   })
 
@@ -150,6 +150,14 @@ describe('client helpers', () => {
 
       await expect(findFileByName(fx.bucket, 'hidden.txt')).rejects.toThrow(
         `File not found in bucket "${BUCKET}": hidden.txt`,
+      )
+    })
+
+    it('rejects prefix matches that are not exact file names', async () => {
+      await seedFile(fx, 'report.csv.bak', 'x')
+
+      await expect(findFileByName(fx.bucket, 'report.csv')).rejects.toThrow(
+        `File not found in bucket "${BUCKET}": report.csv`,
       )
     })
   })

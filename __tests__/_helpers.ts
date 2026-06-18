@@ -10,7 +10,7 @@ import {
   makeParsedInputs,
   TEST_APPLICATION_KEY,
   TEST_APPLICATION_KEY_ID,
-} from './parsed-inputs.ts'
+} from './_parsed-inputs.ts'
 
 /**
  * Part size used by the multipart fixture. Small enough that a few-hundred-KB

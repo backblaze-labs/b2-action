@@ -8,7 +8,12 @@ import type { ListedFile } from '../src/commands/list.ts'
 import type { UploadedFile } from '../src/commands/upload.ts'
 import type { ActionName, ParsedInputs } from '../src/inputs.ts'
 import type * as Summary from '../src/summary.ts'
-import { makeParsedInputs, TEST_APPLICATION_KEY, TEST_APPLICATION_KEY_ID } from './parsed-inputs.ts'
+import {
+  makeParsedInputs,
+  TEST_APPLICATION_KEY,
+  TEST_APPLICATION_KEY_ID,
+  TEST_ENDPOINT,
+} from './_parsed-inputs.ts'
 
 type LoadedMain = Awaited<ReturnType<typeof loadMain>>
 
@@ -79,7 +84,7 @@ describe('main dispatcher', () => {
         size: 12,
       }),
     ]
-    ctx.parseInputs.mockReturnValue(inputs('list', { endpoint: 'https://staging.example' }))
+    ctx.parseInputs.mockReturnValue(inputs('list', { endpoint: TEST_ENDPOINT }))
     ctx.commands.listCommand.mockResolvedValue({ files, truncated: false })
 
     await ctx.run()
@@ -88,7 +93,7 @@ describe('main dispatcher', () => {
       applicationKeyId: TEST_APPLICATION_KEY_ID,
       applicationKey: TEST_APPLICATION_KEY,
       bucket: DISPATCH_BUCKET,
-      endpoint: 'https://staging.example',
+      endpoint: TEST_ENDPOINT,
     })
   })
 
@@ -376,6 +381,31 @@ describe('main dispatcher', () => {
     })
   })
 
+  it('renders every delete row without the purge summary cap', async () => {
+    const ctx = await loadMain()
+    const files = Array.from({ length: 150 }, (_, i) => ({
+      fileName: `d${i}.txt`,
+      fileId: `id-${i}`,
+      skipped: false,
+    }))
+    ctx.parseInputs.mockReturnValue(inputs('delete'))
+    ctx.commands.deleteCommand.mockResolvedValue({ files, errors: 0 })
+
+    await ctx.run()
+
+    const summary = firstSummary(ctx)
+    expect(summary).toMatchObject({
+      title: 'Backblaze B2: delete',
+      totals: { files: 150, bytes: 0 },
+    })
+    expect(summary?.rows).toHaveLength(150)
+    expect(summary?.rows?.at(-1)).toEqual({
+      fileName: 'd149.txt',
+      fileId: 'id-149',
+      status: 'deleted',
+    })
+  })
+
   it('omits presign per-file outputs when no URLs are generated', async () => {
     const ctx = await loadMain()
     ctx.parseInputs.mockReturnValue(inputs('presign'))
@@ -447,6 +477,27 @@ describe('main dispatcher', () => {
       fileName: 'listed-99.txt',
       fileId: 'id-listed-99',
       status: 'application/octet-stream',
+    })
+  })
+
+  it('omits list truncation markers when results fit', async () => {
+    const ctx = await loadMain()
+    const files = [
+      listedFile({
+        fileName: 'a.txt',
+        fileId: 'id-a',
+        size: 1,
+      }),
+    ]
+    ctx.parseInputs.mockReturnValue(inputs('list'))
+    ctx.commands.listCommand.mockResolvedValue({ files, truncated: false })
+
+    await ctx.run()
+
+    expect(ctx.core.warning).not.toHaveBeenCalled()
+    expect(firstSummary(ctx)).toMatchObject({
+      title: 'Backblaze B2: list (1)',
+      totals: { files: 1, bytes: 1 },
     })
   })
 
