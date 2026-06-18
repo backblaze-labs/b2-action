@@ -5,6 +5,7 @@ import { B2Client, type Bucket } from '@backblaze-labs/b2-sdk'
 import { B2Simulator } from '@backblaze-labs/b2-sdk/simulator'
 import { uploadCommand } from '../src/commands/upload.ts'
 import type { ActionName, ParsedInputs } from '../src/inputs.ts'
+import { DEFAULT_TEST_BUCKET, makeParsedInputs } from './parsed-inputs.ts'
 
 /**
  * Part size used by the multipart fixture. Small enough that a few-hundred-KB
@@ -41,38 +42,10 @@ export function makeInputs(
   const isFx = 'workDir' in fxOrOverride && 'bucket' in fxOrOverride && 'client' in fxOrOverride
   const fx = isFx ? (fxOrOverride as TestFixture) : undefined
   const override = isFx ? maybeOverride : (fxOrOverride as Partial<ParsedInputs>)
-  return {
-    action,
-    applicationKeyId: 'test-key-id',
-    applicationKey: 'test-key',
-    bucket: fx?.bucket.name ?? 'gh-action-test',
-    sourceBucket: undefined,
-    source: undefined,
-    destination: undefined,
-    include: [],
-    exclude: [],
-    concurrency: 2,
-    partSize: undefined,
-    resume: true,
-    contentType: undefined,
-    dryRun: false,
-    allowBucketPurge: false,
-    presignTtlSeconds: 3600,
-    endpoint: undefined,
-    failOnEmpty: true,
-    sse: undefined,
-    encryption: undefined,
-    compareMode: 'modtime',
-    keepMode: 'no-delete',
-    syncDirection: 'auto',
-    maxResults: 1000,
-    expectedSha1: undefined,
-    retentionMode: undefined,
-    retentionUntil: undefined,
-    legalHold: undefined,
-    bypassGovernance: false,
+  return makeParsedInputs(action, {
+    bucket: fx?.bucket.name ?? DEFAULT_TEST_BUCKET,
     ...override,
-  }
+  })
 }
 
 /** The standard fixture every command test sets up. */

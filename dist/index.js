@@ -28050,9 +28050,14 @@ var __webpack_exports__ = {};
 
 // EXPORTS
 __nccwpck_require__.d(__webpack_exports__, {
+  z: () => (/* binding */ isEntrypoint),
   e: () => (/* binding */ run)
 });
 
+// EXTERNAL MODULE: external "node:path"
+var external_node_path_ = __nccwpck_require__(6760);
+// EXTERNAL MODULE: external "node:url"
+var external_node_url_ = __nccwpck_require__(3136);
 ;// CONCATENATED MODULE: external "os"
 const external_os_namespaceObject = __WEBPACK_EXTERNAL_createRequire(import.meta.url)("os");
 ;// CONCATENATED MODULE: ./node_modules/.pnpm/@actions+core@3.0.1/node_modules/@actions/core/lib/utils.js
@@ -35655,8 +35660,6 @@ async function deleteOne(bucket, fileName, dryRun) {
 const external_node_fs_namespaceObject = __WEBPACK_EXTERNAL_createRequire(import.meta.url)("node:fs");
 // EXTERNAL MODULE: external "node:fs/promises"
 var promises_ = __nccwpck_require__(1455);
-// EXTERNAL MODULE: external "node:path"
-var external_node_path_ = __nccwpck_require__(6760);
 // EXTERNAL MODULE: external "node:stream"
 var external_node_stream_ = __nccwpck_require__(7075);
 ;// CONCATENATED MODULE: external "node:stream/promises"
@@ -40986,6 +40989,8 @@ function escapeHtml(value) {
 
 
 
+
+
 /**
  * Action entrypoint. Parses inputs, builds an authorized B2Client, dispatches
  * to the requested subcommand, and writes structured outputs back via
@@ -41007,8 +41012,10 @@ async function run() {
         warning(`Received ${sig}; cancelling in-flight B2 operations.`);
         controller.abort(new Error(`${sig} received`));
     };
-    process.once('SIGTERM', () => onSignal('SIGTERM'));
-    process.once('SIGINT', () => onSignal('SIGINT'));
+    const onSigterm = () => onSignal('SIGTERM');
+    const onSigint = () => onSignal('SIGINT');
+    process.once('SIGTERM', onSigterm);
+    process.once('SIGINT', onSigint);
     const signal = controller.signal;
     try {
         const inputs = parseInputs();
@@ -41276,6 +41283,15 @@ async function run() {
     catch (err) {
         setFailed(err instanceof Error ? err.message : String(err));
     }
+    finally {
+        process.off('SIGTERM', onSigterm);
+        process.off('SIGINT', onSigint);
+    }
+}
+function isEntrypoint(metaUrl, argv1) {
+    if (argv1 === undefined)
+        return false;
+    return (0,external_node_url_.fileURLToPath)(metaUrl) === (0,external_node_path_.resolve)(argv1);
 }
 /**
  * Shared output-emission + step-summary for the two deletion verbs.
@@ -41318,9 +41334,12 @@ function retentionStatusLine(result) {
     }
     return parts.join(' ');
 }
-run();
+if (isEntrypoint(import.meta.url, process.argv[1])) {
+    void run();
+}
 
+var __webpack_exports__isEntrypoint = __webpack_exports__.z;
 var __webpack_exports__run = __webpack_exports__.e;
-export { __webpack_exports__run as run };
+export { __webpack_exports__isEntrypoint as isEntrypoint, __webpack_exports__run as run };
 
 //# sourceMappingURL=index.js.map

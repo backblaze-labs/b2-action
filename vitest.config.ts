@@ -9,12 +9,8 @@ export default defineConfig({
       provider: 'v8',
       include: ['src/**/*.ts'],
       // Excluded:
-      //   - main.ts: only useful via the bundle, exercised by `self-smoke` in CI.
       //   - version.ts: a constant.
-      //   - client.ts: thin SDK wrapper exercised by every command test
-      //     indirectly; mocking `B2Client.authorize` to add direct coverage
-      //     would just duplicate the simulator setup the commands already use.
-      exclude: ['src/main.ts', 'src/version.ts', 'src/client.ts'],
+      exclude: ['src/version.ts'],
       reporter: ['text', 'lcov'],
       thresholds: {
         // Tightened after the coverage-stress pass. Headroom of ~2 points
