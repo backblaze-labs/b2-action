@@ -51,7 +51,7 @@ function extractActionYmlKeys(section) {
   const body = end === -1 ? rest : rest.slice(0, end)
   const keys = []
   for (const line of body.split('\n')) {
-    const m = line.match(/^ {2}([a-z][a-z0-9_-]*):\s*$/)
+    const m = line.match(/^ {2}([a-z][a-z0-9-]*):\s*$/)
     if (m) keys.push(m[1])
   }
   return keys
@@ -114,7 +114,7 @@ function extractSetOutputKeys(dir) {
   for (const file of walkTsFiles(dir)) {
     if (!statSync(file).isFile()) continue
     const source = readFileSync(file, 'utf8')
-    for (const match of source.matchAll(/core\.setOutput\(\s*['"]([a-z][a-z0-9_-]*)['"]/g)) {
+    for (const match of source.matchAll(/core\.setOutput\(\s*['"]([a-z][a-z0-9-]*)['"]/g)) {
       keys.add(match[1])
     }
   }

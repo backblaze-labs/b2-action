@@ -376,7 +376,7 @@ async function emitDeletionSummary(
 }
 
 function setFileCountOutput(count: number): void {
-  core.setOutput('file_count', String(count))
+  core.setOutput('file-count', String(count))
 }
 
 function retentionStatusLine(result: {

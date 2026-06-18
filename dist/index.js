@@ -41343,7 +41343,7 @@ async function emitDeletionSummary(verb, result, inputs) {
     });
 }
 function setFileCountOutput(count) {
-    setOutput('file_count', String(count));
+    setOutput('file-count', String(count));
 }
 function retentionStatusLine(result) {
     const parts = [`mode=${result.appliedMode ?? '-'}`];
