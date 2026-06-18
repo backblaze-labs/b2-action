@@ -109,7 +109,7 @@ outputs:
   file-name:
     description: 'B2 file name (path) of a single-file op.'
   content-sha1:
-    description: 'SHA-1 hex digest when B2 provides a whole-file digest; omitted for multipart head objects without one.'
+    description: 'SHA-1 hex digest when B2 provides a whole-file digest; omitted when unavailable, including multipart objects.'
   bytes-transferred:
     description: 'Total bytes uploaded/downloaded/copied/synced. Head emits 0.'
   file-count:
