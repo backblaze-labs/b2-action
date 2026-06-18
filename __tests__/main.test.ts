@@ -146,6 +146,24 @@ describe('main dispatcher', () => {
     )
   })
 
+  it('reports a SIGTERM-triggered command abort through setFailed', async () => {
+    const ctx = await loadMain()
+    ctx.parseInputs.mockReturnValue(inputs('upload'))
+    ctx.commands.uploadCommand.mockImplementation(async (_bucket, _inputs, commandSignal) => {
+      process.emit('SIGTERM')
+      commandSignal?.throwIfAborted()
+      return { files: [], bytesTransferred: 0 }
+    })
+
+    await ctx.run()
+
+    expect(ctx.core.warning).toHaveBeenCalledWith(
+      'Received SIGTERM; cancelling in-flight B2 operations.',
+    )
+    expect(ctx.core.setFailed).toHaveBeenCalledWith('SIGTERM received')
+    expect(ctx.writeStepSummary).not.toHaveBeenCalled()
+  })
+
   it('removes signal listeners after run completes', async () => {
     const ctx = await loadMain()
     const beforeSigterm = process.listenerCount('SIGTERM')

@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { downloadCommand } from '../../src/commands/download.ts'
 import { uploadCommand } from '../../src/commands/upload.ts'
 import type { ParsedInputs } from '../../src/inputs.ts'
-import { makeFixture, makeInputs, type TestFixture } from '../_helpers.ts'
+import { makeFixture, makeInputs, makeMultipartFixture, type TestFixture } from '../_helpers.ts'
 
 function baseInputs(): ParsedInputs {
   return makeInputs('upload')
@@ -189,6 +189,53 @@ describe('upload + download commands (B2Simulator)', () => {
     })
 
     expect(partConcurrency).toBe(3)
+  })
+
+  it('cancels an unfinished multipart upload when the signal aborts after start', async () => {
+    await rm(fx.workDir, { recursive: true, force: true })
+    fx = await makeMultipartFixture('gh-action-upload-abort-cleanup')
+    const local = join(fx.workDir, 'abort-large.bin')
+    await writeFile(local, randomBytes(256 * 1024))
+
+    const controller = new AbortController()
+    let sawStartedLargeFile = false
+    let cancelCalls = 0
+    const originalStartLargeFile = fx.client.raw.startLargeFile.bind(fx.client.raw)
+    const originalCancelLargeFile = fx.client.raw.cancelLargeFile.bind(fx.client.raw)
+    fx.client.raw.startLargeFile = async (
+      ...args: Parameters<typeof fx.client.raw.startLargeFile>
+    ) => {
+      const response = await originalStartLargeFile(...args)
+      sawStartedLargeFile = true
+      controller.abort(new Error('test abort after multipart start'))
+      return response
+    }
+    fx.client.raw.cancelLargeFile = async (
+      ...args: Parameters<typeof fx.client.raw.cancelLargeFile>
+    ) => {
+      cancelCalls++
+      return await originalCancelLargeFile(...args)
+    }
+
+    await expect(
+      uploadCommand(
+        fx.bucket,
+        {
+          ...baseInputs(),
+          bucket: fx.bucket.name,
+          source: local,
+          destination: 'abort-large.bin',
+        },
+        controller.signal,
+      ),
+    ).rejects.toThrow('test abort after multipart start')
+
+    const unfinished = await fx.bucket.listUnfinishedLargeFiles({
+      namePrefix: 'abort-large.bin',
+    })
+    expect(sawStartedLargeFile).toBe(true)
+    expect(cancelCalls).toBe(1)
+    expect(unfinished.files).toHaveLength(0)
   })
 
   it('waits for active glob uploads before rethrowing the first failure', async () => {
