@@ -148,14 +148,19 @@ jobs:
             echo "::error::FLOATING_TAG_TOKEN is invalid, expired, or lacks access to $GITHUB_REPOSITORY. The GitHub Release has not been created yet."
             exit 1
           fi
-          if ! EXISTING_REFS=$(gh api "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/$MAJOR"); then
+          if REF_RESPONSE=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$MAJOR" 2>&1); then
+            REF_EXISTS=true
+          elif printf '%s\n' "$REF_RESPONSE" | grep -q "HTTP 404"; then
+            REF_EXISTS=false
+          else
+            printf '%s\n' "$REF_RESPONSE"
             echo "::error::FLOATING_TAG_TOKEN cannot read tag refs for $GITHUB_REPOSITORY; confirm it has Contents: Read and write. The GitHub Release has not been created yet."
             exit 1
           fi
           SHA=$(git rev-parse "${REF}^{commit}")
           echo "Pointing floating tag $MAJOR at $REF ($SHA)"
           # Update the tag if it already exists, otherwise create it.
-          if printf '%s\n' "$EXISTING_REFS" | grep -q "\"ref\":[[:space:]]*\"refs/tags/$MAJOR\""; then
+          if [ "$REF_EXISTS" = "true" ]; then
             if ! gh api --method PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/$MAJOR" \
               -f sha="$SHA" -F force=true; then
               echo "::error::FLOATING_TAG_TOKEN could not update $MAJOR; confirm it has Contents + Workflows: Read and write. The GitHub Release has not been created yet."
@@ -173,6 +178,10 @@ jobs:
         if: steps.prerelease.outputs.is_prerelease == 'false' && github.event_name == 'workflow_dispatch' && inputs['skip-floating-tag'] == true
         run: |
           MAJOR=$(echo "$REF" | sed -nE 's/^(v[0-9]+).*/\1/p')
+          if [ -z "$MAJOR" ]; then
+            echo "::error::skip-floating-tag=true but no major-version tag could be derived from '$REF'; refusing to publish an ambiguous stable release."
+            exit 1
+          fi
           echo "::warning::skip-floating-tag=true; publishing $REF without moving $MAJOR. Users pinned to @$MAJOR remain on the previous release until manual follow-up. See RELEASE.md#floating-tag-automation."
 
       - name: Create / update GitHub Release

@@ -13,7 +13,7 @@ describe('release workflow floating tag safety', () => {
     const publishIndex = stepIndex(workflow, 'Create / update GitHub Release')
     const missingTokenGuard = moveStep.search(/if \[ -z "\$\{GH_TOKEN:-\}" \]; then/)
     const authProbe = moveStep.indexOf('gh api "repos/$GITHUB_REPOSITORY"')
-    const tagRead = moveStep.indexOf('git/matching-refs/tags/$MAJOR')
+    const tagRead = moveStep.indexOf('git/ref/tags/$MAJOR')
     const tagPatch = moveStep.indexOf('gh api --method PATCH')
 
     expect(stepIndex(workflow, 'Move major-version floating tag (e.g. v1)')).toBeLessThan(
@@ -22,6 +22,7 @@ describe('release workflow floating tag safety', () => {
     expect(missingTokenGuard).toBeGreaterThan(-1)
     expect(authProbe).toBeGreaterThan(-1)
     expect(tagRead).toBeGreaterThan(-1)
+    expect(moveStep).toContain('HTTP 404')
     expect(missingTokenGuard).toBeLessThan(tagPatch)
     expect(authProbe).toBeLessThan(tagPatch)
     expect(moveStep).toContain('The GitHub Release has not been created yet')
@@ -35,6 +36,7 @@ describe('release workflow floating tag safety', () => {
     expect(workflow).toContain('skip-floating-tag:')
     expect(moveStep).toContain("inputs['skip-floating-tag'] == false")
     expect(warningStep).toContain('skip-floating-tag=true')
+    expect(warningStep).toContain('no major-version tag could be derived')
     expect(stepIndex(workflow, 'Warn when stable floating tag is skipped')).toBeLessThan(
       stepIndex(workflow, 'Create / update GitHub Release'),
     )
