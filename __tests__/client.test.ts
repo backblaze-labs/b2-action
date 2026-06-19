@@ -190,9 +190,10 @@ describe('client helpers', () => {
 
       expect(error.message).toBe(`File not found in bucket "${BUCKET}": private.txt`)
       expect(`${stdout}\n${error.message}`).not.toMatch(/File is hidden|hide marker/)
+      expect(listFileVersions).not.toHaveBeenCalled()
     })
 
-    it('does not log raw version-probe failures or secret-like values by default', async () => {
+    it('does not call or log version-probe failures by default', async () => {
       const fakeSecret = 'fake-application-key-3b8431cbd02e'
       const listFileNames = vi.fn(async () => ({ files: [], nextFileName: null }))
       const listFileVersions = vi.fn(async () => {
@@ -209,6 +210,7 @@ describe('client helpers', () => {
       expect(error.message).toBe(`File not found in bucket "${BUCKET}": missing.txt`)
       expect(`${stdout}\n${error.message}`).not.toContain(fakeSecret)
       expect(stdout).not.toContain('temporary listFileVersions failure')
+      expect(listFileVersions).not.toHaveBeenCalled()
     })
   })
 })
