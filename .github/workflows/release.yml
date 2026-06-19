@@ -40,7 +40,9 @@ permissions:
   contents: read # default read-only access; publish escalates below
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  # Serialize all release publishes so two stable tags cannot race to move the
+  # same floating major tag and leave it pointing at the older commit.
+  group: ${{ github.workflow }}
   cancel-in-progress: false
 
 jobs:
@@ -109,6 +111,7 @@ jobs:
     name: publish release
     needs: validate
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: write # creates GitHub Releases and moves floating major-version tags
     env:
@@ -135,10 +138,35 @@ jobs:
         run: |
           MAJOR=$(echo "$REF" | sed -nE 's/^(v[0-9]+).*/\1/p')
           if [ -z "$MAJOR" ]; then
-            echo "::error::Could not derive major-version tag from '$REF'; refusing to publish an ambiguous stable release. The GitHub Release has not been created yet."
+            echo "::error::Could not derive major-version tag from the requested ref; refusing to publish an ambiguous stable release. The GitHub Release has not been created yet."
             exit 1
           fi
           echo "major=$MAJOR" >> "$GITHUB_OUTPUT"
+
+      - name: Verify stable tag is latest for major
+        if: steps.prerelease.outputs.is_prerelease == 'false'
+        env:
+          MAJOR: ${{ steps.major.outputs.major }}
+        run: |
+          if [ -z "${MAJOR:-}" ]; then
+            echo "::error::Major-version tag output is missing; refusing to publish an ambiguous stable release. The GitHub Release has not been created yet."
+            exit 1
+          fi
+
+          LATEST_STABLE=$(
+            git tag --list "$MAJOR.*" |
+              sed -nE "s/^(${MAJOR}\.[0-9]+\.[0-9]+)$/\1/p" |
+              sort -t. -k2,2n -k3,3n |
+              tail -n 1
+          )
+          if [ -z "$LATEST_STABLE" ]; then
+            echo "::error::Could not find any stable tags for $MAJOR; refusing to publish. The GitHub Release has not been created yet."
+            exit 1
+          fi
+          if [ "$REF" != "$LATEST_STABLE" ]; then
+            echo "::error::Requested stable tag is not the latest for $MAJOR (latest is $LATEST_STABLE); refusing to move $MAJOR. Use a reviewed manual rollback process instead. The GitHub Release has not been created yet."
+            exit 1
+          fi
 
       - name: Move major-version floating tag (e.g. v1)
         if: steps.prerelease.outputs.is_prerelease == 'false' && (github.event_name != 'workflow_dispatch' || inputs['skip-floating-tag'] == false)
@@ -259,8 +287,9 @@ jobs:
           }
 
           ESCAPED_JUSTIFICATION=$(escape_workflow_command "$JUSTIFICATION")
+          ESCAPED_REF=$(escape_workflow_command "$REF")
           echo "::notice::skip-floating-tag justification: $ESCAPED_JUSTIFICATION"
-          echo "::warning::skip-floating-tag=true; publishing $REF without moving $MAJOR. Users pinned to @$MAJOR remain on the previous release until manual follow-up. See RELEASE.md#floating-tag-automation."
+          echo "::warning::skip-floating-tag=true; publishing $ESCAPED_REF without moving $MAJOR. Users pinned to @$MAJOR remain on the previous release until manual follow-up. See RELEASE.md#floating-tag-automation."
 
       # If this step fails after the floating tag moved, rerun this same
       # workflow/tag. The refs API update and GitHub Release operation are

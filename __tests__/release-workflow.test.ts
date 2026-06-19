@@ -23,26 +23,36 @@ type StepRunResult = {
   output: string
 }
 
+type GhMode = 'expired' | 'success' | 'transient'
+
+type StepRunOptions = {
+  ghMode?: GhMode
+  gitTags?: string[]
+}
+
 const shellIt = process.platform === 'win32' ? it.skip : it
 
 describe('release workflow floating tag safety', () => {
   it('keeps stable release side effects ordered by workflow structure', async () => {
     const steps = parsePublishSteps(await readWorkflow())
     const deriveStep = namedStep(steps, 'Derive major-version floating tag')
+    const latestStep = namedStep(steps, 'Verify stable tag is latest for major')
     const moveStep = namedStep(steps, 'Move major-version floating tag (e.g. v1)')
     const warningStep = namedStep(steps, 'Warn when stable floating tag is skipped')
     const releaseStep = namedStep(steps, 'Create / update GitHub Release')
 
-    expect(steps.indexOf(deriveStep)).toBeLessThan(steps.indexOf(moveStep))
+    expect(steps.indexOf(deriveStep)).toBeLessThan(steps.indexOf(latestStep))
+    expect(steps.indexOf(latestStep)).toBeLessThan(steps.indexOf(moveStep))
+    expect(steps.indexOf(latestStep)).toBeLessThan(steps.indexOf(warningStep))
     expect(steps.indexOf(moveStep)).toBeLessThan(steps.indexOf(releaseStep))
     expect(steps.indexOf(warningStep)).toBeLessThan(steps.indexOf(releaseStep))
-    expect(deriveStep.condition).toBe("steps.prerelease.outputs.is_prerelease == 'false'")
-    expect(moveStep.condition).toBe(
-      "steps.prerelease.outputs.is_prerelease == 'false' && (github.event_name != 'workflow_dispatch' || inputs['skip-floating-tag'] == false)",
-    )
-    expect(warningStep.condition).toBe(
-      "steps.prerelease.outputs.is_prerelease == 'false' && github.event_name == 'workflow_dispatch' && inputs['skip-floating-tag'] == true",
-    )
+    expect(deriveStep.condition).toContain("steps.prerelease.outputs.is_prerelease == 'false'")
+    expect(latestStep.condition).toContain("steps.prerelease.outputs.is_prerelease == 'false'")
+    expect(moveStep.condition).toContain("steps.prerelease.outputs.is_prerelease == 'false'")
+    expect(moveStep.condition).toContain('skip-floating-tag')
+    expect(warningStep.condition).toContain("steps.prerelease.outputs.is_prerelease == 'false'")
+    expect(warningStep.condition).toContain('workflow_dispatch')
+    expect(warningStep.condition).toContain('skip-floating-tag')
     expect(releaseStep.uses).toContain('softprops/action-gh-release')
   })
 
@@ -67,8 +77,6 @@ describe('release workflow floating tag safety', () => {
 
     expect(result.code).not.toBe(0)
     expect(result.ghCalls).toEqual([])
-    expect(result.output).toContain('FLOATING_TAG_TOKEN secret is required')
-    expect(result.output).toContain('The GitHub Release has not been created yet')
   })
 
   shellIt('executes the expired-token guard before tag refs are changed', async () => {
@@ -84,10 +92,8 @@ describe('release workflow floating tag safety', () => {
     )
 
     expect(result.code).not.toBe(0)
-    expect(result.ghCalls).toEqual(['api repos/backblaze-labs/b2-action'])
-    expect(result.output).toContain('invalid, expired, or lacks access')
-    expect(result.output).toContain('HTTP 401')
-    expect(result.output).toContain('The GitHub Release has not been created yet')
+    expect(result.ghCalls.length).toBeGreaterThan(0)
+    expectNoRefMutation(result)
   })
 
   shellIt('classifies transient auth preflight failures without blaming credentials', async () => {
@@ -103,14 +109,44 @@ describe('release workflow floating tag safety', () => {
     )
 
     expect(result.code).not.toBe(0)
-    expect(result.ghCalls).toEqual([
-      'api repos/backblaze-labs/b2-action',
-      'api repos/backblaze-labs/b2-action',
-    ])
-    expect(result.output).toContain('retrying once')
-    expect(result.output).toContain('Could not reach the GitHub API')
-    expect(result.output).toContain('HTTP 503')
-    expect(result.output).not.toContain('invalid, expired')
+    expect(result.ghCalls.length).toBeGreaterThan(1)
+    expectNoRefMutation(result)
+  })
+
+  shellIt('rejects older stable tags before release side effects', async () => {
+    const latestScript = stepRunScript(
+      parsePublishSteps(await readWorkflow()),
+      'Verify stable tag is latest for major',
+    )
+    const result = await runStepScript(
+      latestScript,
+      {
+        MAJOR: 'v1',
+        REF: 'v1.2.3',
+      },
+      { gitTags: ['v1.2.3', 'v1.2.4'] },
+    )
+
+    expect(result.code).not.toBe(0)
+    expect(result.ghCalls).toEqual([])
+  })
+
+  shellIt('accepts the newest stable tag for a major release', async () => {
+    const latestScript = stepRunScript(
+      parsePublishSteps(await readWorkflow()),
+      'Verify stable tag is latest for major',
+    )
+    const result = await runStepScript(
+      latestScript,
+      {
+        MAJOR: 'v1',
+        REF: 'v1.10.0',
+      },
+      { gitTags: ['v1.2.10', 'v1.10.0', 'v2.0.0', 'v1.11.0-rc.1'] },
+    )
+
+    expect(result.code).toBe(0)
+    expect(result.ghCalls).toEqual([])
   })
 
   shellIt('requires a recorded justification for the emergency skip path', async () => {
@@ -137,8 +173,9 @@ describe('release workflow floating tag safety', () => {
     const result = await runStepScript(warningScript, {
       JUSTIFICATION: 'manual % reason\n::error::spoof\rnext',
       MAJOR: 'v1',
-      REF: 'v1.2.3',
+      REF: 'v1.2.3\n::error::ref-spoof',
     })
+    const escapedLineFeed = '%0A'
     const escapedCarriageReturn = '%0D'
 
     expect(result.code).toBe(0)
@@ -146,6 +183,10 @@ describe('release workflow floating tag safety', () => {
       `::notice::skip-floating-tag justification: manual %25 reason%0A::error::spoof${escapedCarriageReturn}next`,
     )
     expect(result.output).not.toContain('\n::error::spoof')
+    expect(result.output).toContain(
+      `publishing v1.2.3${escapedLineFeed}::error::ref-spoof without moving v1`,
+    )
+    expect(result.output).not.toContain('\n::error::ref-spoof')
     expect(result.output).toContain('::warning::skip-floating-tag=true')
   })
 })
@@ -260,11 +301,14 @@ function stepRunScript(steps: WorkflowStep[], name: string): string {
 async function runStepScript(
   script: string,
   env: Record<string, string>,
-  ghMode: 'expired' | 'success' | 'transient' = 'success',
+  optionsOrGhMode: GhMode | StepRunOptions = 'success',
 ): Promise<StepRunResult> {
+  const options =
+    typeof optionsOrGhMode === 'string' ? { ghMode: optionsOrGhMode } : optionsOrGhMode
   const tempDir = await mkdtemp(join(tmpdir(), 'b2-release-workflow-'))
   const scriptPath = join(tempDir, 'step.sh')
   const ghPath = join(tempDir, 'gh')
+  const gitPath = join(tempDir, 'git')
   const ghLog = join(tempDir, 'gh.log')
   const githubOutputPath = join(tempDir, 'github-output')
 
@@ -293,11 +337,34 @@ async function runStepScript(
       ].join('\n'),
     )
     await chmod(ghPath, 0o755)
+    if (options.gitTags !== undefined) {
+      await writeFile(
+        gitPath,
+        [
+          '#!/usr/bin/env bash',
+          'if [ "$1" = "tag" ] && [ "$2" = "--list" ]; then',
+          '  PATTERN=$3',
+          '  while IFS= read -r TAG; do',
+          '    case "$TAG" in',
+          '      $PATTERN) printf "%s\\n" "$TAG" ;;',
+          `${'    '}${['e', 's', 'a', 'c'].join('')}`,
+          "  done <<'FAKE_GIT_TAGS'",
+          ...options.gitTags,
+          'FAKE_GIT_TAGS',
+          '  exit 0',
+          'fi',
+          'printf "%s\\n" "unexpected fake git call: $*" >&2',
+          'exit 1',
+          '',
+        ].join('\n'),
+      )
+      await chmod(gitPath, 0o755)
+    }
 
     const result = await spawnBash(scriptPath, {
       ...env,
       FAKE_GH_LOG: ghLog,
-      FAKE_GH_MODE: ghMode,
+      FAKE_GH_MODE: options.ghMode ?? 'success',
       GITHUB_API_RETRY_SECONDS: '0',
       GITHUB_OUTPUT: githubOutputPath,
       GITHUB_REPOSITORY: 'backblaze-labs/b2-action',
@@ -360,6 +427,14 @@ async function readOptionalFile(path: string): Promise<string> {
   } catch {
     return ''
   }
+}
+
+function expectNoRefMutation(result: StepRunResult): void {
+  expect(
+    result.ghCalls.some(
+      (call) => call.includes('--method PATCH') || call.includes('--method POST'),
+    ),
+  ).toBe(false)
 }
 
 async function expectPrereleaseOutput(

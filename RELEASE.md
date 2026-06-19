@@ -50,8 +50,9 @@ To re-run a release for an existing tag, use the `workflow_dispatch` input on `r
 3. Verifies `git diff --exit-code -- dist/` is clean: the committed bundle must match a fresh build at the tagged commit.
 4. Verifies the tag equals `package.json` version, that the bundle contains the `b2-github-action/` User-Agent token, and that the bundle inlines the same version string. ncc tree-shakes the JSON import in `src/version.ts` so the token and the version appear separately in the bundle, not as one contiguous literal; checking each independently is the end-to-end "bake" gate.
 5. Detects any pre-release suffix (`vX.Y.Z-*`). Pre-releases skip the floating-tag step.
-6. Moves the floating major tag (e.g. `v1`) to the release commit via the refs API. See [Floating tag automation](#floating-tag-automation) below for the token requirement; missing or unusable credentials fail before a stable GitHub Release is created or updated.
-7. Creates the GitHub Release via `softprops/action-gh-release@v3` with `generate_release_notes: true`.
+6. Verifies a stable tag is the newest `vX.Y.Z` tag for its major version before any publish-side effects.
+7. Moves the floating major tag (e.g. `v1`) to the release commit via the refs API. See [Floating tag automation](#floating-tag-automation) below for the token requirement; missing or unusable credentials fail before a stable GitHub Release is created or updated.
+8. Creates the GitHub Release via `softprops/action-gh-release@v3` with `generate_release_notes: true`.
 
 ## One-time setup
 
@@ -90,7 +91,7 @@ Store it as a repo secret:
 gh secret set FLOATING_TAG_TOKEN --repo backblaze-labs/b2-action
 ```
 
-For stable tags, the workflow moves `vN` before it creates or updates the GitHub Release. If the secret is absent, expired, revoked, or cannot read tag refs, the job fails before the public GitHub Release / Marketplace artifact is published; the immutable `vX.Y.Z` Git tag still exists because it is what triggered the workflow. Treat that failure as a release blocker: configure the secret and rerun the release workflow, or move the floating tag by hand before publishing.
+For stable tags, the workflow first confirms the tag is the newest stable `vX.Y.Z` for that major version, then moves `vN` before it creates or updates the GitHub Release. A `workflow_dispatch` run for an older stable tag is rejected so the floating tag cannot be forced backward without a reviewed manual rollback process. If the secret is absent, expired, revoked, or cannot read tag refs, the job fails before the public GitHub Release / Marketplace artifact is published; the immutable `vX.Y.Z` Git tag still exists because it is what triggered the workflow. Treat that failure as a release blocker: configure the secret and rerun the release workflow, or move the floating tag by hand before publishing.
 
 After `vN` moves, the following GitHub Release creation step can still fail because of a transient GitHub API or runner problem. In that state, `@vN` consumers may receive the new commit before the GitHub Release page exists. Rerun the same workflow for the same `vX.Y.Z` tag; the floating-tag update and GitHub Release creation are idempotent, so a rerun is the expected recovery path when `vN` is already advanced.
 
