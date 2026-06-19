@@ -22,6 +22,8 @@ type StepRunResult = {
   output: string
 }
 
+const shellIt = process.platform === 'win32' ? it.skip : it
+
 describe('release workflow floating tag safety', () => {
   it('keeps stable release side effects ordered by workflow structure', async () => {
     const steps = parsePublishSteps(await readWorkflow())
@@ -43,7 +45,7 @@ describe('release workflow floating tag safety', () => {
     expect(releaseStep.uses).toContain('softprops/action-gh-release')
   })
 
-  it('executes the missing-token guard before any GitHub API call', async () => {
+  shellIt('executes the missing-token guard before any GitHub API call', async () => {
     const moveScript = moveFloatingTagScript(await readWorkflow())
     const result = await runStepScript(moveScript, {
       GH_TOKEN: '',
@@ -57,7 +59,7 @@ describe('release workflow floating tag safety', () => {
     expect(result.output).toContain('The GitHub Release has not been created yet')
   })
 
-  it('executes the expired-token guard before tag refs are changed', async () => {
+  shellIt('executes the expired-token guard before tag refs are changed', async () => {
     const moveScript = moveFloatingTagScript(await readWorkflow())
     const result = await runStepScript(
       moveScript,
@@ -76,7 +78,7 @@ describe('release workflow floating tag safety', () => {
     expect(result.output).toContain('The GitHub Release has not been created yet')
   })
 
-  it('classifies transient auth preflight failures without blaming credentials', async () => {
+  shellIt('classifies transient auth preflight failures without blaming credentials', async () => {
     const moveScript = moveFloatingTagScript(await readWorkflow())
     const result = await runStepScript(
       moveScript,
@@ -99,7 +101,7 @@ describe('release workflow floating tag safety', () => {
     expect(result.output).not.toContain('invalid, expired')
   })
 
-  it('requires a recorded justification for the emergency skip path', async () => {
+  shellIt('requires a recorded justification for the emergency skip path', async () => {
     const warningScript = stepRunScript(
       parsePublishSteps(await readWorkflow()),
       'Warn when stable floating tag is skipped',
