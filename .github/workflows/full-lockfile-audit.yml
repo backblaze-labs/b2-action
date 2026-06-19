@@ -1,12 +1,6 @@
 name: Full lockfile audit
 
 on:
-  pull_request:
-    paths:
-      - package.json
-      - pnpm-lock.yaml
-      - pnpm-workspace.yaml
-      - .github/workflows/full-lockfile-audit.yml
   schedule:
     # Weekly, Monday 04:37 UTC (off-the-hour to avoid the GH Actions cron stampede).
     - cron: '37 4 * * 1'
@@ -20,49 +14,8 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  full-lockfile-audit-pr:
-    name: full-lockfile dependency audit (PR)
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          persist-credentials: false
-      - uses: pnpm/action-setup@0e279bb959325dab635dd2c09392533439d90093 # v6.0.8
-        with:
-          version: 11
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
-        with:
-          node-version: 24
-      # Covers dev/build tooling too. Run directly against the committed lockfile;
-      # no install is needed.
-      - name: Audit full lockfile
-        run: |
-          set +e
-          audit_attempt_timeout_seconds=120
-          status=1
-          for attempt in 1 2 3; do
-            timeout "${audit_attempt_timeout_seconds}s" pnpm audit --audit-level moderate > audit-output.txt 2>&1
-            status=$?
-            if [ "$status" -eq 124 ]; then
-              echo "pnpm audit timed out after ${audit_attempt_timeout_seconds}s on attempt ${attempt}" >> audit-output.txt
-            fi
-            if [ "$status" -eq 0 ]; then
-              break
-            fi
-            if [ "$attempt" -lt 3 ]; then
-              sleep $((attempt * 15))
-            fi
-          done
-          cat audit-output.txt
-          exit "$status"
-
   full-lockfile-audit:
     name: full-lockfile dependency audit
-    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -74,7 +27,7 @@ jobs:
           persist-credentials: false
       - uses: pnpm/action-setup@0e279bb959325dab635dd2c09392533439d90093 # v6.0.8
         with:
-          version: 11
+          version: 11.5.3
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: 24
@@ -85,13 +38,25 @@ jobs:
           set +e
           audit_attempt_timeout_seconds=120
           status=1
+          retryable_audit_failure() {
+            failure_status="$1"
+            if [ "$failure_status" -eq 124 ]; then
+              return 0
+            fi
+            grep -Eiq \
+              '(ERR_PNPM_(FETCH|META_FETCH)_FAIL|EAI_AGAIN|ECONNRESET|ETIMEDOUT|ENOTFOUND|ECONNREFUSED|fetch failed|network timeout|socket hang up|TLS|registry.npmjs.org)' \
+              audit-output.txt
+          }
           for attempt in 1 2 3; do
-            timeout "${audit_attempt_timeout_seconds}s" pnpm audit --audit-level moderate > audit-output.txt 2>&1
+            timeout "${audit_attempt_timeout_seconds}s" pnpm audit --audit-level high > audit-output.txt 2>&1
             status=$?
             if [ "$status" -eq 124 ]; then
               echo "pnpm audit timed out after ${audit_attempt_timeout_seconds}s on attempt ${attempt}" >> audit-output.txt
             fi
             if [ "$status" -eq 0 ]; then
+              break
+            fi
+            if ! retryable_audit_failure "$status"; then
               break
             fi
             if [ "$attempt" -lt 3 ]; then
@@ -100,7 +65,31 @@ jobs:
           done
           cat audit-output.txt
           exit "$status"
-      - name: Open issue on audit failure
+      - name: Close audit issue on recovery
+        if: success() && github.repository == 'backblaze-labs/b2-action'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          title="Full-lockfile dependency audit failure"
+          tracking_label="full-lockfile-audit-failure"
+          issue_number="$(TITLE="$title" gh api \
+            --method GET "repos/$REPO/issues" \
+            -f state=open \
+            -f labels="$tracking_label" \
+            -f creator='github-actions[bot]' \
+            --jq 'map(select(.title == env.TITLE and (.pull_request | not))) | .[0].number // ""')"
+          if [ -n "$issue_number" ]; then
+            gh issue comment "$issue_number" --repo "$REPO" \
+              --body "Full-lockfile audit recovered and passed: $RUN_URL"
+            gh api --method PATCH "repos/$REPO/issues/$issue_number" \
+              -f state=closed \
+              -f state_reason=completed \
+              >/dev/null
+          fi
+      - name: Open or update issue on audit failure
         if: failure() && github.repository == 'backblaze-labs/b2-action'
         env:
           GH_TOKEN: ${{ github.token }}
@@ -109,15 +98,22 @@ jobs:
         run: |
           set -euo pipefail
           title="Full-lockfile dependency audit failure"
+          tracking_label="full-lockfile-audit-failure"
           max_audit_output_bytes=50000
-          issue_number="$(gh issue list \
+          gh label create "$tracking_label" \
             --repo "$REPO" \
-            --state open \
-            --search "$title in:title" \
-            --json number \
-            --jq '.[0].number // ""')"
+            --description "Workflow-owned full-lockfile audit failure tracking" \
+            --color B60205 \
+            2>/dev/null || true
+          issue_number="$(TITLE="$title" gh api \
+            --method GET "repos/$REPO/issues" \
+            -f state=open \
+            -f labels="$tracking_label" \
+            -f creator='github-actions[bot]' \
+            --jq 'map(select(.title == env.TITLE and (.pull_request | not))) | .[0].number // ""')"
           body="$(mktemp)"
           {
+            echo "<!-- full-lockfile-audit-failure -->"
             echo "The scheduled/manual full-lockfile dependency audit failed."
             echo ""
             echo "Run: $RUN_URL"
@@ -138,7 +134,7 @@ jobs:
             echo '```'
           } > "$body"
           if [ -n "$issue_number" ]; then
-            gh issue comment "$issue_number" --repo "$REPO" --body-file "$body"
+            gh issue edit "$issue_number" --repo "$REPO" --body-file "$body"
           else
-            gh issue create --title "$title" --repo "$REPO" --body-file "$body"
+            gh issue create --title "$title" --repo "$REPO" --label "$tracking_label" --body-file "$body"
           fi

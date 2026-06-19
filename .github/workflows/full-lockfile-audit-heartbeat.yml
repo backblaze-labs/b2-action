@@ -31,51 +31,72 @@ jobs:
         run: |
           set -euo pipefail
 
-          threshold_epoch="$(date -u -d '8 days ago' +%s)"
+          title="Full-lockfile audit heartbeat missing"
+          tracking_label="full-lockfile-audit-heartbeat"
+          threshold_epoch="$(date -u -d '10 days ago' +%s)"
           latest_run="$(gh run list \
             --repo "$REPO" \
             --workflow full-lockfile-audit.yml \
-            --event schedule \
             --branch main \
-            --limit 1 \
-            --json createdAt,status,conclusion,url \
-            --jq 'if length > 0 then [.[0].createdAt, (.[0].status // ""), (.[0].conclusion // ""), (.[0].url // "")] | @tsv else "" end')"
+            --limit 20 \
+            --json createdAt,event,status,conclusion,url \
+            --jq 'map(select(.event == "schedule" or .event == "workflow_dispatch")) | sort_by(.createdAt) | reverse | if length > 0 then [.[0].createdAt, (.[0].event // ""), (.[0].status // ""), (.[0].conclusion // ""), (.[0].url // "")] | @tsv else "" end')"
           latest_created=""
+          latest_event=""
           latest_status=""
           latest_conclusion=""
           latest_url=""
           if [ -n "$latest_run" ]; then
-            IFS=$'\t' read -r latest_created latest_status latest_conclusion latest_url <<< "$latest_run"
+            IFS=$'\t' read -r latest_created latest_event latest_status latest_conclusion latest_url <<< "$latest_run"
           fi
 
           if [ -n "$latest_created" ]; then
             latest_epoch="$(date -u -d "$latest_created" +%s)"
             if [ "$latest_epoch" -ge "$threshold_epoch" ]; then
-              echo "Latest scheduled audit fired at $latest_created ($latest_status/$latest_conclusion): $latest_url"
+              echo "Latest audit fired by $latest_event at $latest_created ($latest_status/$latest_conclusion): $latest_url"
+              issue_number="$(TITLE="$title" gh api \
+                --method GET "repos/$REPO/issues" \
+                -f state=open \
+                -f labels="$tracking_label" \
+                -f creator='github-actions[bot]' \
+                --jq 'map(select(.title == env.TITLE and (.pull_request | not))) | .[0].number // ""')"
+              if [ -n "$issue_number" ]; then
+                gh issue comment "$issue_number" --repo "$REPO" \
+                  --body "Full-lockfile audit heartbeat recovered: $latest_url"
+                gh api --method PATCH "repos/$REPO/issues/$issue_number" \
+                  -f state=closed \
+                  -f state_reason=completed \
+                  >/dev/null
+              fi
               exit 0
             fi
           fi
 
-          title="Full-lockfile audit heartbeat missing"
-          issue_number="$(gh issue list \
+          gh label create "$tracking_label" \
             --repo "$REPO" \
-            --state open \
-            --search "$title in:title" \
-            --json number \
-            --jq '.[0].number // ""')"
+            --description "Workflow-owned full-lockfile audit heartbeat tracking" \
+            --color D93F0B \
+            2>/dev/null || true
+          issue_number="$(TITLE="$title" gh api \
+            --method GET "repos/$REPO/issues" \
+            -f state=open \
+            -f labels="$tracking_label" \
+            -f creator='github-actions[bot]' \
+            --jq 'map(select(.title == env.TITLE and (.pull_request | not))) | .[0].number // ""')"
           body="$(mktemp)"
           {
-            echo "No scheduled full-lockfile audit run has been observed in the last 8 days."
+            echo "<!-- full-lockfile-audit-heartbeat -->"
+            echo "No scheduled or manual full-lockfile audit run has been observed in the last 10 days."
             echo ""
             echo "Heartbeat run: $RUN_URL"
             if [ -n "$latest_created" ]; then
               echo ""
-              echo "Latest scheduled audit run: $latest_created ($latest_status/$latest_conclusion): $latest_url"
+              echo "Latest audit run: $latest_created ($latest_event/$latest_status/$latest_conclusion): $latest_url"
             fi
           } > "$body"
           if [ -n "$issue_number" ]; then
             gh issue edit "$issue_number" --repo "$REPO" --body-file "$body"
           else
-            gh issue create --title "$title" --repo "$REPO" --body-file "$body"
+            gh issue create --title "$title" --repo "$REPO" --label "$tracking_label" --body-file "$body"
           fi
           exit 1
