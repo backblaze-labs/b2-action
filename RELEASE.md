@@ -6,7 +6,7 @@ The single source of truth for how releases of this Action are cut, automated, a
 
 - The Action is consumed as `uses: backblaze-labs/b2-action@v1`. There is no npm package and no CLI: `package.json` is `private: true`, `name: "b2"`.
 - Releases are tag-driven. Push an annotated `vX.Y.Z` tag and [`.github/workflows/release.yml`](./.github/workflows/release.yml) runs the full gate, moves the floating major tag (`v1`, `v2`, ...) to the new commit, and cuts a GitHub Release so consumers pinned to a major continue to track the latest minor/patch.
-- Pre-release tags (`vX.Y.Z-alpha`, `-beta`, `-rc.N`) are published as pre-releases and do **not** move the floating major tag. Bare `v1` / `v2` deliberately do not match the release trigger, so the workflow re-pointing them never re-runs itself.
+- Pre-release tags (`vX.Y.Z-*`) are published as pre-releases and do **not** move the floating major tag. Bare `v1` / `v2` deliberately do not match the release trigger, so the workflow re-pointing them never re-runs itself.
 - Versioning is semver. The first public release is `1.0.0`.
 
 ## Runbook: cut a release
@@ -49,7 +49,7 @@ To re-run a release for an existing tag, use the `workflow_dispatch` input on `r
 2. Installs with `--frozen-lockfile`, then runs `lint`, `typecheck`, `test`, `build`.
 3. Verifies `git diff --exit-code -- dist/` is clean: the committed bundle must match a fresh build at the tagged commit.
 4. Verifies the tag equals `package.json` version, that the bundle contains the `b2-github-action/` User-Agent token, and that the bundle inlines the same version string. ncc tree-shakes the JSON import in `src/version.ts` so the token and the version appear separately in the bundle, not as one contiguous literal; checking each independently is the end-to-end "bake" gate.
-5. Detects pre-release suffixes (`-alpha`, `-beta`, `-rc...`). Pre-releases skip the floating-tag step.
+5. Detects any pre-release suffix (`vX.Y.Z-*`). Pre-releases skip the floating-tag step.
 6. Moves the floating major tag (e.g. `v1`) to the release commit via the refs API. See [Floating tag automation](#floating-tag-automation) below for the token requirement; missing or unusable credentials fail before a stable GitHub Release is created or updated.
 7. Creates the GitHub Release via `softprops/action-gh-release@v3` with `generate_release_notes: true`.
 

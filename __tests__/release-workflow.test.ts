@@ -19,6 +19,7 @@ type WorkflowStep = {
 type StepRunResult = {
   code: number | null
   ghCalls: string[]
+  githubOutput: string
   output: string
 }
 
@@ -43,6 +44,17 @@ describe('release workflow floating tag safety', () => {
       "steps.prerelease.outputs.is_prerelease == 'false' && github.event_name == 'workflow_dispatch' && inputs['skip-floating-tag'] == true",
     )
     expect(releaseStep.uses).toContain('softprops/action-gh-release')
+  })
+
+  shellIt('classifies every hyphenated release tag as a pre-release', async () => {
+    const prereleaseScript = stepRunScript(
+      parsePublishSteps(await readWorkflow()),
+      'Identify pre-release',
+    )
+
+    await expectPrereleaseOutput(prereleaseScript, 'v1.2.3-preview', true)
+    await expectPrereleaseOutput(prereleaseScript, 'v1.2.3-alpha.1', true)
+    await expectPrereleaseOutput(prereleaseScript, 'v1.2.3', false)
   })
 
   shellIt('executes the missing-token guard before any GitHub API call', async () => {
@@ -234,6 +246,7 @@ async function runStepScript(
   const scriptPath = join(tempDir, 'step.sh')
   const ghPath = join(tempDir, 'gh')
   const ghLog = join(tempDir, 'gh.log')
+  const githubOutputPath = join(tempDir, 'github-output')
 
   try {
     await writeFile(scriptPath, script)
@@ -266,6 +279,7 @@ async function runStepScript(
       FAKE_GH_LOG: ghLog,
       FAKE_GH_MODE: ghMode,
       GITHUB_API_RETRY_SECONDS: '0',
+      GITHUB_OUTPUT: githubOutputPath,
       GITHUB_REPOSITORY: 'backblaze-labs/b2-action',
       PATH: `${tempDir}${delimiter}${process.env.PATH ?? ''}`,
     })
@@ -273,6 +287,7 @@ async function runStepScript(
     return {
       ...result,
       ghCalls: await readGhCalls(ghLog),
+      githubOutput: await readOptionalFile(githubOutputPath),
     }
   } finally {
     await rm(tempDir, { force: true, recursive: true })
@@ -282,7 +297,7 @@ async function runStepScript(
 function spawnBash(
   scriptPath: string,
   env: Record<string, string>,
-): Promise<Omit<StepRunResult, 'ghCalls'>> {
+): Promise<Omit<StepRunResult, 'ghCalls' | 'githubOutput'>> {
   return new Promise((resolvePromise, reject) => {
     const child = spawn('bash', ['-euo', 'pipefail', scriptPath], {
       env: {
@@ -312,13 +327,28 @@ function spawnBash(
 }
 
 async function readGhCalls(logPath: string): Promise<string[]> {
+  const log = await readOptionalFile(logPath)
+  return log
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+}
+
+async function readOptionalFile(path: string): Promise<string> {
   try {
-    const log = await readFile(logPath, 'utf8')
-    return log
-      .split('\n')
-      .map((line) => line.trim())
-      .filter(Boolean)
+    return await readFile(path, 'utf8')
   } catch {
-    return []
+    return ''
   }
+}
+
+async function expectPrereleaseOutput(
+  script: string,
+  ref: string,
+  expected: boolean,
+): Promise<void> {
+  const result = await runStepScript(script, { REF: ref })
+
+  expect(result.code).toBe(0)
+  expect(result.githubOutput).toContain(`is_prerelease=${expected}`)
 }

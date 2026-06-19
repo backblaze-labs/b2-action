@@ -1,14 +1,14 @@
 name: Release
 
-# Tag-driven release flow. Push a three-component `vX.Y.Z` tag (or a
-# `vX.Y.Z-rc.N` pre-release) and this workflow:
+# Tag-driven release flow. Push a three-component `vX.Y.Z` tag (or any
+# `vX.Y.Z-*` pre-release) and this workflow:
 #   1. Runs the full test + lint + typecheck + build suite as a gate.
 #   2. Verifies the `dist/` committed at the tag matches a fresh `pnpm build`.
 #   3. Moves the floating major tag (e.g. `v1`) to the tagged commit so users
 #      pinning `uses: backblaze-labs/b2-action@v1` track the latest minor/patch.
 #   4. Cuts a GitHub Release with a generated body.
 #
-# Pre-release tags (`vX.Y.Z-alpha`, `-beta`, `-rc.*`) are published as
+# Pre-release tags (`vX.Y.Z-*`) are published as
 # pre-releases and DO NOT update the floating major tag. The bare floating
 # tags `v1` / `v2` deliberately do NOT match the trigger below, so this
 # workflow re-pointing them never re-runs itself.
@@ -123,7 +123,7 @@ jobs:
       - name: Identify pre-release
         id: prerelease
         run: |
-          if [[ "$REF" =~ -(alpha|beta|rc)([.-][0-9]+)?$ ]]; then
+          if [[ "$REF" == *-* ]]; then
             echo "is_prerelease=true" >> "$GITHUB_OUTPUT"
           else
             echo "is_prerelease=false" >> "$GITHUB_OUTPUT"
