@@ -58,8 +58,11 @@ function workflowFiles() {
 }
 
 function permissionIsWrite(permissions, name) {
+  const shorthand = typeof permissions === 'string' ? permissions.trim().toLowerCase() : ''
+  if (shorthand === 'write-all') return true
+
   const value = asMapping(permissions)[name]
-  return typeof value === 'string' && value.toLowerCase() === 'write'
+  return typeof value === 'string' && value.trim().toLowerCase() === 'write'
 }
 
 function canMintAttestation(permissions) {
@@ -146,7 +149,7 @@ function requireTimeout(jobName, jobConfig, minutes) {
 }
 
 function checkPermissionIsolation(doc, label, report = fail) {
-  const workflowPermissions = asMapping(doc.permissions)
+  const workflowPermissions = doc.permissions
 
   for (const permission of ['id-token', 'attestations']) {
     if (permissionIsWrite(workflowPermissions, permission)) {
@@ -155,7 +158,7 @@ function checkPermissionIsolation(doc, label, report = fail) {
   }
 
   for (const [name, config] of Object.entries(asMapping(doc.jobs))) {
-    const permissions = asMapping(asMapping(config).permissions)
+    const permissions = asMapping(config).permissions
     if (canMintAttestation(permissions) && name !== 'attest') {
       report(
         `${label}: only the attest job may request id-token: write or attestations: write (${name})`,
@@ -173,12 +176,12 @@ function checkGlobalAttestationPermissions() {
     const label = basename(filePath)
     if (label === 'release.yml') continue
 
-    if (permissionIsWrite(asMapping(doc.permissions), 'attestations')) {
+    if (permissionIsWrite(doc.permissions, 'attestations')) {
       fail(`${label} must not request workflow-level attestations: write`)
     }
 
     for (const [name, config] of Object.entries(asMapping(doc.jobs))) {
-      if (permissionIsWrite(asMapping(asMapping(config).permissions), 'attestations')) {
+      if (permissionIsWrite(asMapping(config).permissions, 'attestations')) {
         fail(`${label}:${name} must not request attestations: write`)
       }
     }
