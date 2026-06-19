@@ -88,7 +88,7 @@ The full-lockfile audit uses the pnpm builtin directly, not a package script:
 `pnpm audit --audit-level moderate`. This mirrors the scheduled/manual workflow
 and the dependency-policy PR gate.
 
-Requirements: Node 24+, pnpm 10+. The Action runs on Node 24 in the GitHub Actions runtime; CI tests Node 24 across Ubuntu / macOS / Windows.
+Requirements: Node 24+, pnpm 11+. The Action runs on Node 24 in the GitHub Actions runtime; CI tests Node 24 across Ubuntu / macOS / Windows.
 
 ### Managed lychee binary
 

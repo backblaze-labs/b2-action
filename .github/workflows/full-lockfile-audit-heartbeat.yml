@@ -31,38 +31,21 @@ jobs:
           set -euo pipefail
 
           threshold_epoch="$(date -u -d '8 days ago' +%s)"
-          latest_created="$(gh run list \
+          latest_run="$(gh run list \
             --repo "$REPO" \
             --workflow full-lockfile-audit.yml \
             --event schedule \
             --branch main \
-            --limit 20 \
-            --json createdAt \
-            --jq '.[0].createdAt // ""')"
-          latest_status="$(gh run list \
-            --repo "$REPO" \
-            --workflow full-lockfile-audit.yml \
-            --event schedule \
-            --branch main \
-            --limit 20 \
-            --json status \
-            --jq '.[0].status // ""')"
-          latest_conclusion="$(gh run list \
-            --repo "$REPO" \
-            --workflow full-lockfile-audit.yml \
-            --event schedule \
-            --branch main \
-            --limit 20 \
-            --json conclusion \
-            --jq '.[0].conclusion // ""')"
-          latest_url="$(gh run list \
-            --repo "$REPO" \
-            --workflow full-lockfile-audit.yml \
-            --event schedule \
-            --branch main \
-            --limit 20 \
-            --json url \
-            --jq '.[0].url // ""')"
+            --limit 1 \
+            --json createdAt,status,conclusion,url \
+            --jq 'if length > 0 then [.[0].createdAt, (.[0].status // ""), (.[0].conclusion // ""), (.[0].url // "")] | @tsv else "" end')"
+          latest_created=""
+          latest_status=""
+          latest_conclusion=""
+          latest_url=""
+          if [ -n "$latest_run" ]; then
+            IFS=$'\t' read -r latest_created latest_status latest_conclusion latest_url <<< "$latest_run"
+          fi
 
           if [ -n "$latest_created" ]; then
             latest_epoch="$(date -u -d "$latest_created" +%s)"

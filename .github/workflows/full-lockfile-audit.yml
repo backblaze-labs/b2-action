@@ -42,10 +42,14 @@ jobs:
       - name: Audit full lockfile
         run: |
           set +e
+          audit_attempt_timeout_seconds=120
           status=1
           for attempt in 1 2 3; do
-            pnpm audit --audit-level moderate > audit-output.txt 2>&1
+            timeout "${audit_attempt_timeout_seconds}s" pnpm audit --audit-level moderate > audit-output.txt 2>&1
             status=$?
+            if [ "$status" -eq 124 ]; then
+              echo "pnpm audit timed out after ${audit_attempt_timeout_seconds}s on attempt ${attempt}" >> audit-output.txt
+            fi
             if [ "$status" -eq 0 ]; then
               break
             fi
@@ -79,10 +83,14 @@ jobs:
       - name: Audit full lockfile
         run: |
           set +e
+          audit_attempt_timeout_seconds=120
           status=1
           for attempt in 1 2 3; do
-            pnpm audit --audit-level moderate > audit-output.txt 2>&1
+            timeout "${audit_attempt_timeout_seconds}s" pnpm audit --audit-level moderate > audit-output.txt 2>&1
             status=$?
+            if [ "$status" -eq 124 ]; then
+              echo "pnpm audit timed out after ${audit_attempt_timeout_seconds}s on attempt ${attempt}" >> audit-output.txt
+            fi
             if [ "$status" -eq 0 ]; then
               break
             fi
