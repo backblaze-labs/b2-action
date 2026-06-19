@@ -187,6 +187,8 @@ describe('client helpers', () => {
       await expect(findFileByName(bucket, 'missing.txt')).rejects.toThrow(
         `File not found in bucket "${BUCKET}": missing.txt`,
       )
+      expect(listFileNames).toHaveBeenCalledWith({ prefix: 'missing.txt', pageSize: 1 })
+      expect(listFileVersions).toHaveBeenCalledWith({ prefix: 'missing.txt', pageSize: 1 })
     })
 
     it('rejects prefix matches that are not exact file names', async () => {
