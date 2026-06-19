@@ -23,7 +23,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
-- `pnpm docs:links` now downloads and runs a pinned lychee binary, and CI uses the same command, so contributors can reproduce the markdown-link gate locally from a clean checkout. ([#39](https://github.com/backblaze-labs/b2-action/issues/39))
+- `pnpm docs:links` now downloads, verifies, and runs a pinned lychee binary, and CI uses the same command, so contributors can reproduce the markdown-link gate locally from a clean checkout. ([#39](https://github.com/backblaze-labs/b2-action/issues/39))
 
 ### Documentation
 

@@ -86,6 +86,20 @@ pnpm docs:check-action-yml  # action.yml <> README sync check
 
 Requirements: Node 24+, pnpm 10+. The Action runs on Node 24 in the GitHub Actions runtime; CI tests Node 24 across Ubuntu / macOS / Windows.
 
+### Managed lychee binary
+
+`pnpm docs:links` runs [`scripts/run-lychee.mjs`](./scripts/run-lychee.mjs), a Node built-ins-only wrapper around [lycheeverse/lychee](https://github.com/lycheeverse/lychee). CI intentionally runs this command without `pnpm install`, so the wrapper must stay dependency-free.
+
+Current managed tool:
+
+| Tool | Version | Source | License | Cache |
+| --- | --- | --- | --- | --- |
+| lychee | `0.23.0` | [`lychee-v0.23.0`](https://github.com/lycheeverse/lychee/releases/tag/lychee-v0.23.0) | Apache-2.0 OR MIT | `node_modules/.cache/lychee` |
+
+Supported local platforms are `darwin-arm64`, `linux-arm64`, `linux-x64`, and `win32-x64`. Lychee `0.23.0` does not publish an Intel macOS (`darwin-x64`) binary; Intel macOS contributors can rely on the CI `link-check` job for this gate.
+
+When bumping lychee, update `LYCHEE_VERSION`, re-check every asset name in `PLATFORM_ASSETS`, and refresh the committed `archiveSha256` and `binarySha256` values. The asset names are part of the pin because lychee has renamed release assets across versions.
+
 ## Git hooks
 
 `pnpm install` runs `husky` (via the `prepare` script) which installs the hooks under [`.husky/`](./.husky/). Two hooks are active:
