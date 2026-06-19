@@ -41532,7 +41532,10 @@ async function run() {
         }
     }
     catch (err) {
-        const failure = classifyActionError(err, { action, secretValues });
+        const failure = classifyActionError(err, {
+            ...(action !== undefined ? { action } : {}),
+            secretValues,
+        });
         if (failure.retryable !== undefined)
             setOutput('retryable', String(failure.retryable));
         if (failure.retryAfter !== undefined)

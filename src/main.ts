@@ -326,7 +326,10 @@ export async function run(): Promise<void> {
       }
     }
   } catch (err) {
-    const failure = classifyActionError(err, { action, secretValues })
+    const failure = classifyActionError(err, {
+      ...(action !== undefined ? { action } : {}),
+      secretValues,
+    })
     if (failure.retryable !== undefined) core.setOutput('retryable', String(failure.retryable))
     if (failure.retryAfter !== undefined) core.setOutput('retry-after', String(failure.retryAfter))
     core.setFailed(failure.message)

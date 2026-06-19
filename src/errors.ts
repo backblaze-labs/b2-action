@@ -19,8 +19,8 @@ const READ_ONLY_ACTIONS = new Set<ActionName>(['download', 'list', 'presign', 'v
 const MAX_LOG_FIELD_LENGTH = 1_000
 
 export interface ActionErrorOptions {
-  action?: ActionName | undefined
-  secretValues?: readonly string[] | undefined
+  action?: ActionName
+  secretValues?: readonly string[]
 }
 
 export interface ClassifiedActionError {
