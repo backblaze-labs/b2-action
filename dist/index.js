@@ -35243,7 +35243,8 @@ async function buildClient(options) {
 }
 class SecretMaskingAccountInfo extends InMemoryAccountInfo {
     setAuth(auth) {
-        core_setSecret(auth.authorizationToken);
+        if (auth.authorizationToken)
+            core_setSecret(auth.authorizationToken);
         super.setAuth(auth);
     }
 }

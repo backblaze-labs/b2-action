@@ -73,7 +73,7 @@ export async function buildClient(options: BuildClientOptions): Promise<Authoriz
 
 class SecretMaskingAccountInfo extends InMemoryAccountInfo {
   override setAuth(auth: AuthorizeAccountResponse): void {
-    core.setSecret(auth.authorizationToken)
+    if (auth.authorizationToken) core.setSecret(auth.authorizationToken)
     super.setAuth(auth)
   }
 }

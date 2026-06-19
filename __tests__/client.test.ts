@@ -74,16 +74,26 @@ describe('client helpers', () => {
   it('maps optional SDK constructor fields and skips empty-token masking', async () => {
     const core = { setSecret: vi.fn() }
     const constructedOptions: unknown[] = []
+    type FakeAccountInfoLike = {
+      setAuth(auth: { authorizationToken: string }): void
+    }
     class FakeB2Client {
-      accountInfo = { getAuthToken: () => '' }
+      accountInfo: FakeAccountInfoLike
 
       constructor(options: unknown) {
         constructedOptions.push(options)
+        this.accountInfo = (options as { accountInfo: FakeAccountInfoLike }).accountInfo
       }
 
-      async authorize() {}
+      async authorize() {
+        this.accountInfo.setAuth({ authorizationToken: '' })
+      }
     }
-    class FakeAccountInfo {}
+    class FakeAccountInfo {
+      setAuth(_auth: { authorizationToken: string }) {
+        // The mocked SDK stores nothing; this only lets the wrapper delegate.
+      }
+    }
 
     vi.doMock('@actions/core', () => core)
     vi.doMock('@backblaze-labs/b2-sdk', () => ({
