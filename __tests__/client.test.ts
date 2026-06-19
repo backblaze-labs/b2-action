@@ -180,6 +180,7 @@ describe('client helpers', () => {
       await expect(findFileByName(bucket, 'hidden.txt')).rejects.toThrow(
         `File is hidden in bucket "${BUCKET}" (latest version is a hide marker): hidden.txt`,
       )
+      expect(listFileVersions).toHaveBeenCalledTimes(1)
     })
 
     it('warns when hidden-file fallback lookup fails', async () => {
@@ -202,6 +203,7 @@ describe('client helpers', () => {
       expect(stdout).toContain(
         'Could not inspect file versions for hidden-file diagnostics; reporting as not found: temporary listFileVersions failure',
       )
+      expect(listFileVersions).toHaveBeenCalledTimes(1)
     })
 
     it('detects hidden exact names when listFileNames returns a prefix match', async () => {
@@ -223,6 +225,7 @@ describe('client helpers', () => {
       await expect(findFileByName(bucket, 'hidden.txt')).rejects.toThrow(
         `File is hidden in bucket "${BUCKET}" (latest version is a hide marker): hidden.txt`,
       )
+      expect(listFileVersions).toHaveBeenCalledTimes(1)
     })
   })
 })
