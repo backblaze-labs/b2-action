@@ -190,11 +190,21 @@ describe('client helpers', () => {
     })
 
     it('rejects prefix matches that are not exact file names', async () => {
-      await seedFile(fx, 'report.csv.bak', 'x')
+      const listFileNames = vi.fn(async () => ({
+        files: [{ fileName: 'report.csv.bak', action: 'upload' }],
+        nextFileName: null,
+      }))
+      const listFileVersions = vi.fn()
+      const bucket = {
+        name: BUCKET,
+        listFileNames,
+        listFileVersions,
+      } as unknown as Bucket
 
-      await expect(findFileByName(fx.bucket, 'report.csv')).rejects.toThrow(
+      await expect(findFileByName(bucket, 'report.csv')).rejects.toThrow(
         `File not found in bucket "${BUCKET}": report.csv`,
       )
+      expect(listFileVersions).not.toHaveBeenCalled()
     })
   })
 })

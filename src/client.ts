@@ -112,10 +112,13 @@ export async function findFileByName(
   if (exactLatest?.action === 'upload') return exactLatest
 
   // Production B2 omits hidden files from listFileNames, so a latest hide
-  // marker usually appears only through listFileVersions. B2Simulator exposes
-  // the hide marker directly from listFileNames, so both branches are kept and
-  // tested to cover simulator and production semantics.
-  if (exactLatest?.action === 'hide' || (await latestVersionIsHideMarker(bucket, fileName))) {
+  // marker usually appears only through listFileVersions on an empty name page.
+  // B2Simulator exposes the hide marker directly from listFileNames, so both
+  // branches are kept and tested to cover simulator and production semantics.
+  if (
+    exactLatest?.action === 'hide' ||
+    (page.files.length === 0 && (await latestVersionIsHideMarker(bucket, fileName)))
+  ) {
     throw new Error(
       `File is hidden in bucket "${bucketDisplayName ?? bucket.name}" (latest version is a hide marker): ${fileName}`,
     )
