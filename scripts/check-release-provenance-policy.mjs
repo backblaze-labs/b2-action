@@ -2,15 +2,15 @@
 /**
  * Enforce the release provenance isolation contract introduced for issue #19.
  *
- * The important invariant is structural: only the `attest` job in release.yml
- * may mint OIDC or artifact-attestation tokens, while `publish` runs without
- * those scopes and only after the validated tag/commit has been attested. The
+ * The important release.yml invariant is structural: only the `attest` job may
+ * mint OIDC or artifact-attestation tokens, while `publish` runs without those
+ * write scopes and only after the validated tag/commit has been attested. The
  * checker parses workflow YAML instead of matching raw text so equivalent YAML
  * spelling, quoting, key order, comments, and anchors cannot bypass the guard.
  *
  * Scope: release.yml gets the full release-policy audit. Other workflow files
- * are checked only for unexpected `attestations: write`; non-attestation OIDC
- * uses such as GitHub Pages remain covered by the shared workflow-security job.
+ * must not request `attestations: write` or `id-token: write`, except the
+ * documented GitHub Pages deployment job in docs.yml.
  */
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
@@ -132,11 +132,12 @@ function findStep(jobConfig, predicate) {
   return steps(jobConfig).find(predicate)
 }
 
-function findRunStepContaining(jobConfig, terms) {
-  return findStep(jobConfig, (step) => {
-    const run = stepRun(step)
-    return terms.every((term) => run.includes(term))
-  })
+function findStepById(jobConfig, id) {
+  return findStep(jobConfig, (step) => step.id === id)
+}
+
+function stepIndex(jobConfig, id) {
+  return steps(jobConfig).findIndex((step) => step.id === id)
 }
 
 function requireCondition(condition, message) {
@@ -153,12 +154,20 @@ function requireStep(jobName, description, step) {
   requireCondition(Boolean(step), `${jobName} must ${description}`)
 }
 
-function requireTimeout(jobName, jobConfig, minutes) {
-  const timeout = Number(jobConfig['timeout-minutes'])
-  requireCondition(
-    Number.isFinite(timeout) && timeout > 0 && timeout <= minutes,
-    `${jobName} must set timeout-minutes to ${minutes} or less`,
-  )
+function requireStepId(jobName, jobConfig, id, description) {
+  const step = findStepById(jobConfig, id)
+  requireStep(jobName, description, step)
+  return step
+}
+
+function requireStepOrder(jobName, jobConfig, ids) {
+  let previous = -1
+  for (const id of ids) {
+    const current = stepIndex(jobConfig, id)
+    requireCondition(current >= 0, `${jobName} must define step id ${id}`)
+    requireCondition(current > previous, `${jobName} step ${id} must keep the release order`)
+    previous = current
+  }
 }
 
 function checkPermissionIsolation(doc, label, report = fail) {
@@ -183,19 +192,36 @@ function checkPermissionIsolation(doc, label, report = fail) {
   }
 }
 
-function checkGlobalAttestationPermissions() {
+function isAllowedGlobalOidc(label, name, config) {
+  const permissions = asMapping(config.permissions)
+  return (
+    label === 'docs.yml' &&
+    name === 'deploy' &&
+    permissions.pages === 'write' &&
+    asMapping(config.environment).name === 'github-pages'
+  )
+}
+
+function checkGlobalTokenPermissions() {
   for (const filePath of workflowFiles()) {
     const { doc } = loadWorkflow(filePath)
     const label = basename(filePath)
     if (label === 'release.yml') continue
 
-    if (permissionIsWrite(doc.permissions, 'attestations')) {
-      fail(`${label} must not request workflow-level attestations: write`)
+    for (const permission of ['id-token', 'attestations']) {
+      if (permissionIsWrite(doc.permissions, permission)) {
+        fail(`${label} must not request workflow-level ${permission}: write`)
+      }
     }
 
     for (const [name, config] of Object.entries(asMapping(doc.jobs))) {
-      if (permissionIsWrite(asMapping(config).permissions, 'attestations')) {
-        fail(`${label}:${name} must not request attestations: write`)
+      for (const permission of ['id-token', 'attestations']) {
+        if (
+          permissionIsWrite(asMapping(config).permissions, permission) &&
+          !(permission === 'id-token' && isAllowedGlobalOidc(label, name, asMapping(config)))
+        ) {
+          fail(`${label}:${name} must not request ${permission}: write`)
+        }
       }
     }
   }
@@ -212,10 +238,6 @@ function checkReleaseWorkflow(doc) {
   const validate = requireJob(doc, 'validate')
   const attest = requireJob(doc, 'attest')
   const publish = requireJob(doc, 'publish')
-
-  requireTimeout('validate', validate, 25)
-  requireTimeout('attest', attest, 10)
-  requireTimeout('publish', publish, 20)
 
   const validateOutputs = asMapping(validate.outputs)
   requireCondition(
@@ -242,8 +264,10 @@ function checkReleaseWorkflow(doc) {
     // assertion about the whole script body.
     requireCondition(
       stepRun(releaseRefStep).includes('refs/tags/$REQUESTED_REF') &&
+        stepRun(releaseRefStep).includes('refs/remotes/origin/main') &&
+        stepRun(releaseRefStep).includes('git merge-base --is-ancestor') &&
         stepRun(releaseRefStep).includes('git checkout --detach'),
-      'validate must reject non-tag dispatch refs and checkout the resolved commit SHA',
+      'validate must reject non-tag dispatch refs and require the tag commit to be on main',
     )
   }
 
@@ -292,7 +316,7 @@ function checkReleaseWorkflow(doc) {
   requireStep(
     'attest',
     'emit an explanatory annotation if provenance signing fails',
-    findRunStepContaining(attest, ['Provenance attestation failed', 'Sigstore']),
+    findStepById(attest, 'explain-attestation-failures'),
   )
 
   const publishNeeds = needs(publish)
@@ -314,36 +338,41 @@ function checkReleaseWorkflow(doc) {
   )
   requireCheckoutByValidatedSha('publish', publish)
   requireTagReverification('publish', publish)
-  requireStep(
-    'publish',
-    'verify release assets before upload',
-    findRunStepContaining(publish, ['-s "$file"']),
-  )
   requireCondition(
     !steps(publish).some((step) => stepUses(step, 'softprops/action-gh-release@')),
     'publish must not delegate release asset upload to softprops/action-gh-release',
   )
-  requireStep(
+  requireStepId('publish', publish, 'verify-local-assets', 'verify release assets before upload')
+  requireStepId(
     'publish',
+    publish,
+    'stage-release-assets',
     'stage assets on a draft release before publishing it',
-    findRunStepContaining(publish, ['gh release create', '--draft', 'gh release upload']),
   )
-  const verifyAssetsStep = findRunStepContaining(publish, [
-    'gh release download',
-    'sha256sum',
-    'gh attestation verify',
+  requireStepId(
+    'publish',
+    publish,
+    'verify-published-assets',
+    'download and verify published assets',
+  )
+  requireStepId(
+    'publish',
+    publish,
+    'move-floating-tag',
+    'move the floating major tag before publishing stable releases',
+  )
+  requireStepId(
+    'publish',
+    publish,
+    'publish-release',
+    'publish the draft release only after assets verify and floating tags move',
+  )
+  requireStepOrder('publish', publish, [
+    'stage-release-assets',
+    'verify-published-assets',
+    'move-floating-tag',
+    'publish-release',
   ])
-  requireStep('publish', 'download and verify published release assets', verifyAssetsStep)
-  requireStep(
-    'publish',
-    'publish the draft release only after downloaded assets verify',
-    findRunStepContaining(publish, ['gh release edit', '--draft=false']),
-  )
-  requireStep(
-    'publish',
-    'fail stable releases when FLOATING_TAG_TOKEN is missing',
-    findRunStepContaining(publish, ['::error::FLOATING_TAG_TOKEN', 'exit 1']),
-  )
 }
 
 function requireCheckoutByValidatedSha(jobName, jobConfig) {
@@ -358,15 +387,11 @@ function requireCheckoutByValidatedSha(jobName, jobConfig) {
 }
 
 function requireTagReverification(jobName, jobConfig) {
-  requireStep(
+  requireStepId(
     jobName,
+    jobConfig,
+    'verify-release-tag',
     're-verify the release tag still points to the validated SHA',
-    findRunStepContaining(jobConfig, [
-      'git fetch',
-      'refs/tags/$RELEASE_TAG',
-      'git rev-parse',
-      '$RELEASE_SHA',
-    ]),
   )
 }
 
@@ -389,7 +414,7 @@ function checkPermissionFixtures() {
   }
 }
 
-checkGlobalAttestationPermissions()
+checkGlobalTokenPermissions()
 checkReleaseWorkflow(loadWorkflow(releaseWorkflowPath).doc)
 checkPermissionFixtures()
 

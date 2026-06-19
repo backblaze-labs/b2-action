@@ -6,12 +6,11 @@ name: Release
 #   2. Verifies the `dist/` committed at the tag matches a fresh `pnpm build`.
 #   3. Attests `dist/index.js` in an isolated OIDC-only provenance job.
 #   4. Stages `index.js` plus a SHA-256 checksum on a draft GitHub Release.
-#   5. Downloads the staged assets, verifies their hash and attestation, then
-#      verifies the release can be trusted.
+#   5. Downloads the staged assets and verifies their hash and attestation.
 #   6. Moves the floating major tag for stable releases before publishing the
 #      draft, so users pinning `uses: backblaze-labs/b2-action@v1` track the
 #      latest minor/patch.
-#   7. Publishes the staged GitHub Release after the floating-tag gate succeeds.
+#   7. Publishes the verified draft release.
 #
 # Pre-release tags (`vX.Y.Z-<suffix>`) are published as
 # pre-releases and DO NOT update the floating major tag. The bare floating
@@ -89,6 +88,11 @@ jobs:
           fi
 
           RELEASE_SHA=$(git rev-parse "refs/tags/$REQUESTED_REF^{commit}")
+          git fetch --force origin "+refs/heads/main:refs/remotes/origin/main"
+          if ! git merge-base --is-ancestor "$RELEASE_SHA" refs/remotes/origin/main; then
+            echo "::error::refs/tags/$REQUESTED_REF points at $RELEASE_SHA, which is not reachable from origin/main. Only tag reviewed commits that have landed on main."
+            exit 1
+          fi
           git checkout --detach "$RELEASE_SHA"
           {
             echo "release-tag=$REQUESTED_REF"
@@ -171,6 +175,8 @@ jobs:
           fetch-depth: 0
 
       - name: Verify release tag still points to validated commit
+        id: verify-release-tag
+        # Keep this guard in sync with the publish job's same-id step.
         run: |
           git fetch --force --no-tags origin "refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG"
           CURRENT_SHA=$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")
@@ -185,6 +191,7 @@ jobs:
           subject-path: dist/index.js
 
       - name: Explain attestation failures
+        id: explain-attestation-failures
         if: failure() && steps.provenance.outcome == 'failure'
         run: |
           echo "::error::Provenance attestation failed. This step contacts GitHub Artifact Attestations and Sigstore services; check their status and rerun from refs/tags/$RELEASE_TAG if this was transient."
@@ -209,6 +216,8 @@ jobs:
           fetch-depth: 0
 
       - name: Verify release tag still points to validated commit
+        id: verify-release-tag
+        # Keep this guard in sync with the attest job's same-id step.
         run: |
           git fetch --force --no-tags origin "refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG"
           CURRENT_SHA=$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")
@@ -218,6 +227,7 @@ jobs:
           fi
 
       - name: Generate dist checksum
+        id: generate-checksum
         run: |
           HASH=$(sha256sum dist/index.js | cut -d ' ' -f1)
           # Use the bare asset name: consumers download release assets into a
@@ -226,6 +236,7 @@ jobs:
           echo "dist/index.js sha256=$HASH"
 
       - name: Verify release assets exist
+        id: verify-local-assets
         run: |
           for file in dist/index.js dist/index.js.sha256; do
             if [ ! -s "$file" ]; then
@@ -235,6 +246,7 @@ jobs:
           done
 
       - name: Stage release assets on draft release
+        id: stage-release-assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -266,6 +278,7 @@ jobs:
             dist/index.js dist/index.js.sha256 --clobber
 
       - name: Verify published release assets
+        id: verify-published-assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -349,6 +362,7 @@ jobs:
           fi
 
       - name: Move major-version floating tag (e.g. v1)
+        id: move-floating-tag
         if: env.IS_PRERELEASE == 'false' && (github.event_name != 'workflow_dispatch' || inputs['skip-floating-tag'] == false)
         env:
           # The default GITHUB_TOKEN CANNOT create/move a tag whose commit
@@ -478,6 +492,7 @@ jobs:
       # workflow/tag. The refs API update and GitHub Release operation are
       # idempotent, so reruns safely heal that partial publish state.
       - name: Publish staged GitHub Release
+        id: publish-release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |

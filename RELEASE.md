@@ -7,6 +7,7 @@ The single source of truth for how releases of this Action are cut, automated, a
 - The Action is consumed as `uses: backblaze-labs/b2-action@v1`. There is no npm package and no CLI: `package.json` is `private: true`, `name: "b2"`.
 - Releases are tag-driven. Push an annotated `vX.Y.Z` tag and [`.github/workflows/release.yml`](./.github/workflows/release.yml) runs the full gate, stages and verifies release assets, moves the floating major tag (`v1`, `v2`, ...) for stable releases, and publishes a GitHub Release so consumers pinned to a major continue to track the latest minor/patch.
 - Pre-release tags (`vX.Y.Z-<suffix>`, such as `vX.Y.Z-rc.N`) are published as pre-releases and do **not** move the floating major tag. Bare `v1` / `v2` deliberately do not match the release trigger, so the workflow re-pointing them never re-runs itself.
+- Release tags must be protected by the repo ruleset described below so only trusted release maintainers can create or move `vX.Y.Z` tags, and only to commits that have landed on protected `main`.
 - Versioning is semver. The first public release is `1.0.0`.
 
 ## Runbook: cut a release
@@ -35,7 +36,7 @@ That is:
 4. **`pnpm version`** commits everything and creates the annotated `vX.Y.Z` tag (SSH-signed if `tag.gpgSign` is set; see [Signed tags](#signed-tags)).
 5. **`git push --follow-tags`** pushes the commit plus the new annotated tag. `--follow-tags` pushes only annotated tags, so a stale local `vN` cannot clobber the remote floating tag.
 
-The tag push fires the release workflow described below.
+The tag push fires the release workflow described below. GitHub executes tag-triggered workflows from the tagged commit, so the protected-tag ruleset is part of the release security boundary; do not publish releases until that ruleset is active.
 
 > The initial `1.0.0` could not use `pnpm version` because `package.json` already carried that version. It was tagged directly with `git tag -a v1.0.0 -m v1.0.0 && git push --follow-tags`. Use `pnpm version` from `1.0.1` onward.
 
@@ -50,19 +51,19 @@ gh workflow run release.yml --repo backblaze-labs/b2-action --ref "$TAG" -f tag=
 
 [`.github/workflows/release.yml`](./.github/workflows/release.yml) runs on every three-component `vX.Y.Z` (or `vX.Y.Z-*`) tag push:
 
-1. Resolves the release ref once as an existing semver tag under `refs/tags/`, rejects branch or ambiguous manual inputs, checks out the resolved commit SHA, and exports that SHA for downstream jobs.
+1. Resolves the release ref once as an existing semver tag under `refs/tags/`, rejects branch or ambiguous manual inputs, requires the tagged commit to be reachable from `origin/main`, checks out the resolved commit SHA, and exports that SHA for downstream jobs.
 2. Installs with `--frozen-lockfile`, then runs `lint`, `typecheck`, `test`, `build`.
 3. Verifies `git diff --exit-code -- dist/` is clean: the committed bundle must match a fresh build at the tagged commit.
 4. Verifies the tag equals `package.json` version, that the bundle contains the `b2-github-action/` User-Agent token, and that the bundle inlines the same version string. ncc tree-shakes the JSON import in `src/version.ts` so the token and the version appear separately in the bundle, not as one contiguous literal; checking each independently is the end-to-end "bake" gate.
 5. Runs an isolated attestation job with only `contents: read`, `id-token: write`, and `attestations: write`. That job checks out the validated SHA, fails if `refs/tags/<tag>` moved, and creates a GitHub Artifact Attestation for `dist/index.js`.
-6. Runs a separate publish job without OIDC or attestation permissions. It checks out the same validated SHA, fails if the tag moved, generates a SHA-256 checksum for `dist/index.js`, creates a draft release when needed, uploads both `index.js` and `index.js.sha256`, downloads the staged assets, and verifies their hash and attestation.
+6. Runs a separate publish job without OIDC or attestation write permissions. It keeps `attestations: read` only so `gh attestation verify` can validate the staged asset. The job checks out the same validated SHA, fails if the tag moved, generates a SHA-256 checksum for `dist/index.js`, creates a draft release when needed, uploads both `index.js` and `index.js.sha256`, downloads the staged assets, and verifies their hash and attestation.
 7. Leaves already-published release assets and notes untouched on rerun. GitHub-generated notes are requested only when creating the initial draft release. If existing assets are missing or do not match the validated tag bytes, the rerun fails instead of deleting or replacing them.
 8. For stable tags, verifies the tag is the newest `vX.Y.Z` tag for its major version and moves the floating major tag (e.g. `v1`) to the release commit via the refs API before the draft is published. See [Floating tag automation](#floating-tag-automation) below for the token requirement; missing or unusable credentials fail before publication. Pre-releases skip the floating-tag step.
-9. Publishes the staged GitHub Release after the floating-tag gate succeeds.
+9. Publishes the verified draft release after the floating-tag gate succeeds.
 
 The attestation is a signed statement that the release workflow handled the `dist/index.js` bytes from the validated tag. The reproducible-build guarantee still comes from the validation gate that rebuilds `dist/` from source and fails if the committed bundle differs.
 
-The release asset upload is intentionally fail-fast. If `dist/index.js` or `dist/index.js.sha256` is missing, the job fails before publishing the GitHub Release. If a staged upload or post-upload verification fails, keep the release as a draft, fix the workflow or tag contents, and rerun from the exact tag ref with the `workflow_dispatch` command above.
+The release asset upload is intentionally fail-fast. If `dist/index.js` or `dist/index.js.sha256` is missing, the job fails before publishing the GitHub Release. If a staged upload, post-upload verification, or floating-tag update fails, keep the release as a draft, fix the workflow, token, or tag contents, and rerun from the exact tag ref with the `workflow_dispatch` command above.
 
 ## Verifying release provenance
 
@@ -94,6 +95,15 @@ Use the exact `vX.Y.Z` release tag when verifying. The floating `v1` tag is inte
 This provenance check covers the downloadable `index.js` release asset. It does **not** verify the code executed by `uses: backblaze-labs/b2-action@v1`, because Actions runners execute `dist/index.js` from the git tree at the resolved ref and do not download release assets. Consumers who need integrity for executed workflow code should pin `uses:` to an exact commit SHA, or at least to an immutable `vX.Y.Z` tag, instead of the mutable `v1` tag.
 
 ## One-time setup
+
+### Protected release tags
+
+GitHub runs a tag-triggered workflow from the tagged commit, including that commit's copy of `.github/workflows/release.yml`. Protect the release tag namespace before enabling attestations so an unapproved commit cannot supply its own privileged release workflow:
+
+1. In **Settings → Rules → Rulesets**, create an active repository ruleset targeting tags matching `v*.*.*`.
+2. Restrict create, update, force-push, and delete permissions for those tags to trusted release maintainers or a dedicated release GitHub App.
+3. Require release tags to point at commits that have landed on protected `main`. The workflow also checks this with `git merge-base --is-ancestor`, but the ruleset is the control that prevents an untrusted tag from choosing a different workflow file.
+4. Keep the floating `vN` tags out of this ruleset or allow the `FLOATING_TAG_TOKEN` actor to update them, because the release workflow moves those server-side.
 
 ### Signed tags
 
