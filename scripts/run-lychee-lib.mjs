@@ -40,9 +40,14 @@ const LYCHEE_TAG = `lychee-v${LYCHEE_VERSION}`
 const REPO = join(dirname(fileURLToPath(import.meta.url)), '..')
 const BLOCK_SIZE = 512
 const MAX_DOWNLOAD_BYTES = 64 * 1024 * 1024
+const INSTALL_LOCK_GRACE_MS = 30_000
 const DOWNLOAD_ATTEMPTS = positiveIntegerOrDefault(process.env.LYCHEE_DOWNLOAD_ATTEMPTS, 3)
 const DOWNLOAD_TIMEOUT_MS = positiveIntegerOrDefault(process.env.LYCHEE_DOWNLOAD_TIMEOUT_MS, 60_000)
-const LOCK_TIMEOUT_MS = positiveIntegerOrDefault(process.env.LYCHEE_INSTALL_LOCK_TIMEOUT_MS, 30_000)
+const MIN_LOCK_TIMEOUT_MS = installLockTimeoutMs(DOWNLOAD_ATTEMPTS, DOWNLOAD_TIMEOUT_MS)
+const LOCK_TIMEOUT_MS = Math.max(
+  positiveIntegerOrDefault(process.env.LYCHEE_INSTALL_LOCK_TIMEOUT_MS, MIN_LOCK_TIMEOUT_MS),
+  MIN_LOCK_TIMEOUT_MS,
+)
 const LYCHEE_ENV_KEYS = Object.freeze([
   'CI',
   'CLICOLOR',
@@ -202,7 +207,7 @@ async function installLychee(asset, binaryPath, cacheRoot) {
     installDownloadedAsset(asset, downloadPath, tempBinaryPath)
 
     mkdirSync(dirname(binaryPath), { recursive: true })
-    rmSync(binaryPath, { force: true })
+    rmSync(binaryPath, { force: true, recursive: true })
     renameSync(tempBinaryPath, binaryPath)
   } finally {
     rmSync(tempDir, { force: true, recursive: true })
@@ -314,6 +319,11 @@ function verifyFileSha256(path, expectedSha256, label) {
 export function positiveIntegerOrDefault(value, defaultValue) {
   const parsed = Number(value)
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : defaultValue
+}
+
+export function installLockTimeoutMs(downloadAttempts, downloadTimeoutMs) {
+  const retryDelayMs = (downloadAttempts * (downloadAttempts - 1) * 500) / 2
+  return downloadAttempts * downloadTimeoutMs + retryDelayMs + INSTALL_LOCK_GRACE_MS
 }
 
 function defaultCacheRoot() {
