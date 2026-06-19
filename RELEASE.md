@@ -92,6 +92,8 @@ gh secret set FLOATING_TAG_TOKEN --repo backblaze-labs/b2-action
 
 For stable tags, the workflow moves `vN` before it creates or updates the GitHub Release. If the secret is absent, expired, revoked, or cannot read tag refs, the job fails before the public GitHub Release / Marketplace artifact is published; the immutable `vX.Y.Z` Git tag still exists because it is what triggered the workflow. Treat that failure as a release blocker: configure the secret and rerun the release workflow, or move the floating tag by hand before publishing.
 
+After `vN` moves, the following GitHub Release creation step can still fail because of a transient GitHub API or runner problem. In that state, `@vN` consumers may receive the new commit before the GitHub Release page exists. Rerun the same workflow for the same `vX.Y.Z` tag; the floating-tag update and GitHub Release creation are idempotent, so a rerun is the expected recovery path when `vN` is already advanced.
+
 Manual fallback, replacing `vN` with the major tag such as `v1` and `vX.Y.Z` with the exact release tag:
 
 ```bash
@@ -100,7 +102,7 @@ git tag -f vN vX.Y.Z^{commit}
 git push origin refs/tags/vN --force
 ```
 
-If the credential is temporarily unavailable and the floating tag has been moved manually, rerun the workflow with `workflow_dispatch`, the same `tag`, and `skip-floating-tag: true`. That emergency override publishes the GitHub Release without exercising `FLOATING_TAG_TOKEN` and emits a warning that `@vN` was not moved by automation. Do not use it until the manual tag move is complete or the release manager has explicitly accepted that `@vN` consumers will remain on the previous release until follow-up.
+If the credential is temporarily unavailable and the floating tag has been moved manually, rerun the workflow with `workflow_dispatch`, the same `tag`, `skip-floating-tag: true`, and a short `skip-floating-tag-justification`. That emergency override publishes the GitHub Release without exercising `FLOATING_TAG_TOKEN`, records the justification in the workflow log, and emits a warning that `@vN` was not moved by automation. Do not use it until the manual tag move is complete or the release manager has explicitly accepted that `@vN` consumers will remain on the previous release until follow-up.
 
 ### First Marketplace publish
 
