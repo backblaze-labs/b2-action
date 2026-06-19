@@ -80,7 +80,7 @@ pnpm verify-dist    # build, then `git diff --exit-code dist/` (must be clean)
 pnpm docs           # typedoc (strict): generates docs/ for GitHub Pages
 pnpm docs:watch     # typedoc in watch mode for local authoring
 pnpm docs:lint      # markdownlint-cli2 against **/*.md
-pnpm docs:links     # runs pinned lychee in offline + fragment-aware mode
+pnpm docs:links     # runs pinned lychee in offline + fragment-aware mode, excluding node_modules
 pnpm docs:check-action-yml  # action.yml <> README sync check
 ```
 
@@ -98,7 +98,7 @@ Current managed tool:
 
 Supported local platforms are `darwin-arm64`, `linux-arm64`, `linux-x64`, and `win32-x64`. Lychee `0.23.0` does not publish an Intel macOS (`darwin-x64`) binary; Intel macOS contributors can rely on the CI `link-check` job for this gate.
 
-When bumping lychee, update `LYCHEE_VERSION`, re-check every asset name in `PLATFORM_ASSETS`, and refresh the committed `archiveSha256` and `binarySha256` values. The asset names are part of the pin because lychee has renamed release assets across versions.
+When bumping lychee, update `LYCHEE_VERSION`, re-check every asset name in `PLATFORM_ASSETS`, and refresh the committed `archiveSha256` and `binarySha256` values from the official GitHub release assets. Lychee `0.23.0` does not publish a checksum manifest; if a future release does, verify against it too. The asset names are part of the pin because lychee has renamed release assets across versions. For non-archive assets such as `win32-x64`, `archiveSha256` and `binarySha256` are the same raw file hash.
 
 ## Git hooks
 

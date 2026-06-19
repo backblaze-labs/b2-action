@@ -18,9 +18,11 @@ const runLychee = (await import('../scripts/run-lychee-lib.mjs')) as {
     options?: {
       attempts?: number
       fetchImpl?: typeof fetch
+      maxBytes?: number
       timeoutMs?: number
     },
   ) => Promise<void>
+  environmentForLychee: (sourceEnv?: Record<string, string | undefined>) => Record<string, string>
   extractLycheeArchive: (archivePath: string, destination: string) => void
   installDownloadedAsset: (
     asset: {
@@ -33,6 +35,7 @@ const runLychee = (await import('../scripts/run-lychee-lib.mjs')) as {
     binaryPath: string,
   ) => void
   isEntrypoint: (metaUrl: string, argv1: string | undefined) => boolean
+  lycheeArgsFor: (args?: readonly string[]) => string[]
   positiveIntegerOrDefault: (value: unknown, defaultValue: number) => number
 }
 
@@ -52,7 +55,6 @@ describe('run-lychee helper', () => {
       '--offline',
       '--include-fragments',
       '--no-progress',
-      '--verbose',
       '--exclude-path',
       '(^|[\\\\/])node_modules[\\\\/]',
       '**/*.md',
@@ -66,6 +68,26 @@ describe('run-lychee helper', () => {
     const excludePath = new RegExp(excludePathPattern)
     expect(excludePath.test('docs/node_modules/package/README.md')).toBe(true)
     expect(excludePath.test('docs\\node_modules\\package\\README.md')).toBe(true)
+  })
+
+  it('preserves default lychee args when extra args are supplied', () => {
+    expect(runLychee.lycheeArgsFor(['--', '--exclude', 'CHANGELOG.md'])).toEqual([
+      ...runLychee.DEFAULT_LYCHEE_ARGS,
+      '--exclude',
+      'CHANGELOG.md',
+    ])
+  })
+
+  it('passes a minimal environment to the lychee subprocess', () => {
+    const env = runLychee.environmentForLychee({
+      B2_APPLICATION_KEY: 'secret',
+      B2_APPLICATION_KEY_ID: 'secret-id',
+      GITHUB_TOKEN: 'token',
+      HOME: '/home/contributor',
+      PATH: '/usr/bin',
+    })
+
+    expect(env).toEqual({ HOME: '/home/contributor', PATH: '/usr/bin' })
   })
 
   it('documents the unsupported Intel macOS asset gap in the platform error', () => {
@@ -164,13 +186,13 @@ describe('run-lychee helper', () => {
     await expect(readFile(join(workDir, '..', 'escape'))).rejects.toThrow(/ENOENT/)
   })
 
-  it('retries retryable download failures', async () => {
+  it('retries retryable download failures including GitHub throttling', async () => {
     const destination = join(workDir, 'downloaded')
     let attempts = 0
     const fetchImpl: typeof fetch = async () => {
       attempts += 1
       return attempts === 1
-        ? new Response('temporary', { status: 503 })
+        ? new Response('temporary', { status: 403 })
         : new Response('ok', { status: 200 })
     }
 
@@ -182,6 +204,30 @@ describe('run-lychee helper', () => {
 
     expect(attempts).toBe(2)
     await expect(readFile(destination, 'utf8')).resolves.toBe('ok')
+  })
+
+  it('rejects downloads that exceed the byte limit', async () => {
+    const destination = join(workDir, 'downloaded')
+    const fetchImpl: typeof fetch = async () =>
+      new Response(
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(new Uint8Array(4))
+            controller.enqueue(new Uint8Array(4))
+            controller.close()
+          },
+        }),
+      )
+
+    await expect(
+      runLychee.downloadWithRetries('https://example.test/lychee', destination, {
+        attempts: 1,
+        fetchImpl,
+        maxBytes: 4,
+        timeoutMs: 1_000,
+      }),
+    ).rejects.toThrow(/download limit/)
+    await expect(readFile(destination)).rejects.toThrow(/ENOENT/)
   })
 
   it('sanitizes invalid download retry options', async () => {

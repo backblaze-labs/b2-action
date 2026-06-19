@@ -9,7 +9,10 @@
  *   1. Update LYCHEE_VERSION.
  *   2. Re-check every asset name in PLATFORM_ASSETS against the new release;
  *      lychee has changed asset names across versions.
- *   3. Refresh archiveSha256 and binarySha256 for every supported asset.
+ *   3. Download each listed asset from the official GitHub release and
+ *      refresh archiveSha256 and binarySha256. Lychee 0.23.0 does not publish
+ *      a checksum manifest; if a future release does, verify against it too.
+ *      For archive: false assets, both hashes are the same raw file hash.
  */
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
@@ -36,15 +39,39 @@ export const LYCHEE_VERSION = '0.23.0'
 const LYCHEE_TAG = `lychee-v${LYCHEE_VERSION}`
 const REPO = join(dirname(fileURLToPath(import.meta.url)), '..')
 const BLOCK_SIZE = 512
+const MAX_DOWNLOAD_BYTES = 64 * 1024 * 1024
 const DOWNLOAD_ATTEMPTS = positiveIntegerOrDefault(process.env.LYCHEE_DOWNLOAD_ATTEMPTS, 3)
 const DOWNLOAD_TIMEOUT_MS = positiveIntegerOrDefault(process.env.LYCHEE_DOWNLOAD_TIMEOUT_MS, 60_000)
 const LOCK_TIMEOUT_MS = positiveIntegerOrDefault(process.env.LYCHEE_INSTALL_LOCK_TIMEOUT_MS, 30_000)
+const LYCHEE_ENV_KEYS = Object.freeze([
+  'CI',
+  'CLICOLOR',
+  'CLICOLOR_FORCE',
+  'COLORTERM',
+  'COMSPEC',
+  'FORCE_COLOR',
+  'HOME',
+  'HOMEDRIVE',
+  'HOMEPATH',
+  'LANG',
+  'LC_ALL',
+  'NO_COLOR',
+  'PATH',
+  'PATHEXT',
+  'Path',
+  'SystemRoot',
+  'TEMP',
+  'TERM',
+  'TMP',
+  'TMPDIR',
+  'USERPROFILE',
+  'WINDIR',
+])
 
 export const DEFAULT_LYCHEE_ARGS = Object.freeze([
   '--offline',
   '--include-fragments',
   '--no-progress',
-  '--verbose',
   '--exclude-path',
   '(^|[\\\\/])node_modules[\\\\/]',
   '**/*.md',
@@ -83,9 +110,9 @@ export async function main(args = process.argv.slice(2)) {
   const binaryPath = binaryPathFor(asset, cacheRoot)
   await ensureLychee(asset, binaryPath, cacheRoot)
 
-  const result = spawnSync(binaryPath, args.length === 0 ? DEFAULT_LYCHEE_ARGS : args, {
+  const result = spawnSync(binaryPath, lycheeArgsFor(args), {
     cwd: REPO,
-    env: process.env,
+    env: environmentForLychee(process.env),
     stdio: 'inherit',
   })
 
@@ -94,6 +121,23 @@ export async function main(args = process.argv.slice(2)) {
   }
 
   process.exit(result.status ?? 1)
+}
+
+// Except for isEntrypoint(), exports below are test-only seams that exercise
+// runner behavior without spawning lychee. The CLI contract is main() plus
+// isEntrypoint().
+
+export function lycheeArgsFor(args = []) {
+  const userArgs = args[0] === '--' ? args.slice(1) : args
+  return [...DEFAULT_LYCHEE_ARGS, ...userArgs]
+}
+
+export function environmentForLychee(sourceEnv = process.env) {
+  const env = {}
+  for (const key of LYCHEE_ENV_KEYS) {
+    if (sourceEnv[key] !== undefined) env[key] = sourceEnv[key]
+  }
+  return env
 }
 
 export function assetForPlatform(platform = process.platform, arch = process.arch) {
@@ -125,7 +169,7 @@ export function binaryMatchesHash(path, expectedSha256) {
   }
 }
 
-export async function ensureLychee(asset, binaryPath, cacheRoot) {
+async function ensureLychee(asset, binaryPath, cacheRoot) {
   if (binaryMatchesHash(binaryPath, asset.binarySha256)) return binaryPath
 
   mkdirSync(cacheRoot, { recursive: true })
@@ -141,7 +185,7 @@ export async function ensureLychee(asset, binaryPath, cacheRoot) {
   return binaryPath
 }
 
-export async function installLychee(asset, binaryPath, cacheRoot) {
+async function installLychee(asset, binaryPath, cacheRoot) {
   const tempDir = join(
     cacheRoot,
     '.tmp',
@@ -181,13 +225,14 @@ export function installDownloadedAsset(asset, downloadPath, binaryPath) {
 export async function downloadWithRetries(url, destination, options = {}) {
   const attempts = positiveIntegerOrDefault(options.attempts, DOWNLOAD_ATTEMPTS)
   const timeoutMs = positiveIntegerOrDefault(options.timeoutMs, DOWNLOAD_TIMEOUT_MS)
+  const maxBytes = positiveIntegerOrDefault(options.maxBytes, MAX_DOWNLOAD_BYTES)
   const fetchImpl = options.fetchImpl ?? fetch
   let lastError
 
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     rmSync(destination, { force: true })
     try {
-      await downloadOnce(url, destination, fetchImpl, timeoutMs)
+      await downloadOnce(url, destination, fetchImpl, timeoutMs, maxBytes)
       return
     } catch (err) {
       lastError = err
@@ -248,7 +293,7 @@ export function extractLycheeArchive(archivePath, destination) {
   }
 }
 
-export function validateTarEntryPath(entryPath) {
+function validateTarEntryPath(entryPath) {
   const parts = entryPath.split('/')
   if (
     entryPath.startsWith('/') ||
@@ -259,7 +304,7 @@ export function validateTarEntryPath(entryPath) {
   }
 }
 
-export function verifyFileSha256(path, expectedSha256, label) {
+function verifyFileSha256(path, expectedSha256, label) {
   const actual = sha256File(path)
   if (actual !== expectedSha256) {
     throw new Error(`${label} checksum mismatch: expected ${expectedSha256}, got ${actual}`)
@@ -283,7 +328,7 @@ function binaryNameFor(platformKey) {
   return platformKey.startsWith('win32-') ? 'lychee.exe' : 'lychee'
 }
 
-async function downloadOnce(url, destination, fetchImpl, timeoutMs) {
+async function downloadOnce(url, destination, fetchImpl, timeoutMs, maxBytes) {
   const signal = AbortSignal.timeout(timeoutMs)
   try {
     const response = await fetchImpl(url, {
@@ -296,7 +341,22 @@ async function downloadOnce(url, destination, fetchImpl, timeoutMs) {
         status: response.status,
       })
     }
-    await pipeline(Readable.fromWeb(response.body), createWriteStream(destination), { signal })
+    const contentLength = response.headers.get('content-length')
+    if (contentLength !== null) {
+      const size = Number(contentLength)
+      if (Number.isFinite(size) && size > maxBytes) {
+        throw new DownloadFailure(
+          `asset exceeds ${maxBytes} byte download limit: Content-Length ${contentLength}`,
+          { retryable: false },
+        )
+      }
+    }
+    await pipeline(
+      Readable.fromWeb(response.body),
+      limitDownloadBytes(maxBytes),
+      createWriteStream(destination),
+      { signal },
+    )
   } catch (err) {
     if (signal.aborted) {
       throw new DownloadFailure(`timed out after ${timeoutMs}ms`, { retryable: true })
@@ -315,7 +375,10 @@ async function withInstallLock(lockDir, fn) {
     } catch (err) {
       if (err?.code !== 'EEXIST') throw err
       if (Date.now() - startedAt > LOCK_TIMEOUT_MS) {
-        throw new Error(`Timed out waiting for lychee install lock: ${lockDir}`)
+        throw new Error(
+          `Timed out waiting for lychee install lock: ${lockDir}. ` +
+            'If no docs:links process is running, remove this stale lock directory and retry.',
+        )
       }
       await sleep(100)
     }
@@ -333,7 +396,22 @@ function isRetryableDownloadError(err) {
 }
 
 function isRetryableHttpStatus(status) {
-  return status === 408 || status === 425 || status === 429 || status >= 500
+  return status === 403 || status === 408 || status === 425 || status === 429 || status >= 500
+}
+
+function limitDownloadBytes(maxBytes) {
+  return async function* limit(source) {
+    let written = 0
+    for await (const chunk of source) {
+      written += chunk.byteLength ?? chunk.length ?? Buffer.byteLength(String(chunk))
+      if (written > maxBytes) {
+        throw new DownloadFailure(`asset exceeds ${maxBytes} byte download limit`, {
+          retryable: false,
+        })
+      }
+      yield chunk
+    }
+  }
 }
 
 function sha256File(path) {
