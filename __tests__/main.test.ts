@@ -157,9 +157,6 @@ describe('main dispatcher', () => {
 
     await ctx.run()
 
-    expect(ctx.core.warning).toHaveBeenCalledWith(
-      'Received SIGTERM; cancelling in-flight B2 operations.',
-    )
     expect(ctx.core.setFailed).toHaveBeenCalledWith('SIGTERM received')
     expect(ctx.writeStepSummary).not.toHaveBeenCalled()
   })

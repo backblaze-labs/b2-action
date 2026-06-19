@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto'
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import type { ProgressEvent } from '@backblaze-labs/b2-sdk'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { downloadCommand } from '../../src/commands/download.ts'
 import { uploadCommand } from '../../src/commands/upload.ts'
@@ -296,45 +297,47 @@ describe('upload: multipart abort cleanup', () => {
     await rm(fx.workDir, { recursive: true, force: true })
   })
 
-  it('cancels an unfinished multipart upload when the signal aborts after start', async () => {
+  it('cancels an unfinished multipart upload when the signal aborts after progress', async () => {
     const local = join(fx.workDir, 'abort-large.bin')
     await writeFile(local, randomBytes(256 * 1024))
 
     const controller = new AbortController()
-    const sawStartedLargeFile = abortAfterLargeFileStarts(fx, controller)
+    const sawMultipartProgress = abortOnMultipartProgress(fx, controller)
 
     await expect(
       uploadCommand(
         fx.bucket,
-        {
-          ...baseInputs(),
+        makeInputs('upload', fx, {
           source: local,
           destination: 'abort-large.bin',
-        },
+        }),
         controller.signal,
       ),
-    ).rejects.toThrow('test abort after multipart start')
+    ).rejects.toThrow('test abort after multipart progress')
 
     const unfinished = await fx.bucket.listUnfinishedLargeFiles({
       namePrefix: 'abort-large.bin',
     })
-    expect(sawStartedLargeFile()).toBe(true)
+    expect(sawMultipartProgress()).toBe(true)
     expect(unfinished.files).toHaveLength(0)
   })
 })
 
-function abortAfterLargeFileStarts(fx: TestFixture, controller: AbortController): () => boolean {
-  // Hook the raw start boundary only to make abort timing deterministic; cleanup
-  // is asserted through the public unfinished-large-file listing.
-  const originalStartLargeFile = fx.client.raw.startLargeFile.bind(fx.client.raw)
-  let sawStartedLargeFile = false
-  fx.client.raw.startLargeFile = async (
-    ...args: Parameters<typeof fx.client.raw.startLargeFile>
-  ) => {
-    const response = await originalStartLargeFile(...args)
-    sawStartedLargeFile = true
-    controller.abort(new Error('test abort after multipart start'))
-    return response
+function abortOnMultipartProgress(fx: TestFixture, controller: AbortController): () => boolean {
+  const originalUpload = fx.bucket.upload.bind(fx.bucket)
+  let sawMultipartProgress = false
+  fx.bucket.upload = async (...args: Parameters<typeof fx.bucket.upload>) => {
+    const [options] = args
+    return await originalUpload({
+      ...options,
+      onProgress: (event: ProgressEvent) => {
+        options.onProgress?.(event)
+        if (!sawMultipartProgress && event.totalParts !== null && event.bytesTransferred > 0) {
+          sawMultipartProgress = true
+          controller.abort(new Error('test abort after multipart progress'))
+        }
+      },
+    })
   }
-  return () => sawStartedLargeFile
+  return () => sawMultipartProgress
 }
