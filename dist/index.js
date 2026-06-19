@@ -35255,12 +35255,12 @@ async function getBucket(authorized) {
     return bucket;
 }
 /**
- * Resolve a file only when the latest exact-name version is an upload. If
- * that latest version is a hide marker, this intentionally reports the file
- * as hidden instead of selecting an older upload from version history. Throws
- * when the latest exact-name state does not resolve to an upload (hidden /
- * deleted / never existed). Used by `copy`, `delete`, and `retention` to
- * resolve a file name to a `fileId` before operating on it.
+ * Resolve an exact file name only when its latest version is an upload. If the
+ * latest exact-name version is a hide marker, this intentionally reports the
+ * file as hidden instead of selecting an older upload from version history.
+ * Throws when the latest exact-name state is hidden, deleted, or absent. Used
+ * by `copy`, `delete`, and `retention` to resolve a file name to a `fileId`
+ * before operating on it.
  *
  * Consistency assumption: B2's `listFileNames` is read-after-write consistent
  * for a recently-uploaded file in the same region. The simulator returns
@@ -35279,11 +35279,11 @@ async function findFileByName(bucket, fileName, bucketDisplayName) {
     const exactLatest = page.files.find((f) => f.fileName === fileName);
     if (exactLatest?.action === 'upload')
         return exactLatest;
-    // Production B2 omits hidden files from listFileNames, so a latest hide
-    // marker usually appears only through listFileVersions. listFileNames may
-    // still return a non-exact prefix match, so latestVersionIsHideMarker remains
-    // the production-relevant branch. B2Simulator exposes the hide marker directly
-    // from listFileNames, so both branches are tested.
+    // Production B2 omits hidden files from listFileNames, while B2Simulator can
+    // surface the hide marker directly. listFileNames may still return a non-exact
+    // prefix match, so listFileVersions is the production-relevant fallback for
+    // distinguishing hidden from absent. This second call is intentionally limited
+    // to failed exact-name resolutions; successful upload hits return above.
     if (exactLatest?.action === 'hide' || (await latestVersionIsHideMarker(bucket, fileName))) {
         throw new Error(`File is hidden in bucket "${bucketDisplayName ?? bucket.name}" (latest version is a hide marker): ${fileName}`);
     }
@@ -35297,7 +35297,7 @@ async function latestVersionIsHideMarker(bucket, fileName) {
     }
     catch (error) {
         const detail = error instanceof Error ? error.message : String(error);
-        core_debug(`Could not inspect file versions for hidden-file diagnostics; reporting as not found: ${detail}`);
+        warning(`Could not inspect file versions for hidden-file diagnostics; reporting as not found: ${detail}`);
         return false;
     }
 }

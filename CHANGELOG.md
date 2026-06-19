@@ -21,6 +21,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - `upload`: directory/glob uploads now consistently treat `destination` as a prefix even when the source resolves to a single file; only an explicit single-file source treats a non-trailing-slash `destination` as the exact object key.
 - `copy` / `delete` / `retention`: when a file's latest exact-name version is a hide marker, the action now reports it as hidden (`latest version is a hide marker`) instead of using the previous `File not found` message. Consumers that match workflow logs should update hidden-file expectations. ([#31](https://github.com/backblaze-labs/b2-action/issues/31))
+- `copy` / `delete` / `retention`: if the hidden-file diagnostic probe fails, the action now emits a default-visible warning before falling back to `File not found`. ([#31](https://github.com/backblaze-labs/b2-action/issues/31))
 
 ### Documentation
 

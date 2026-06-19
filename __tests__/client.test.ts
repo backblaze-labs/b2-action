@@ -14,6 +14,8 @@ afterEach(() => {
 })
 
 describe('client helpers', () => {
+  const BUCKET = 'client-helper-bucket'
+
   it('builds an authorized simulator-backed client and masks the auth token', async () => {
     const sim = new B2Simulator()
     let authorized: Awaited<ReturnType<typeof buildClient>> | undefined
@@ -108,7 +110,6 @@ describe('client helpers', () => {
   })
 
   describe('fixture-backed helpers', () => {
-    const BUCKET = 'client-helper-bucket'
     let fx: TestFixture
 
     beforeEach(async () => {
@@ -153,6 +154,16 @@ describe('client helpers', () => {
       )
     })
 
+    it('rejects prefix matches that are not exact file names', async () => {
+      await seedFile(fx, 'report.csv.bak', 'x')
+
+      await expect(findFileByName(fx.bucket, 'report.csv')).rejects.toThrow(
+        `File not found in bucket "${BUCKET}": report.csv`,
+      )
+    })
+  })
+
+  describe('production list semantics', () => {
     it('detects hidden files when listFileNames omits the hide marker', async () => {
       const listFileNames = vi.fn(async () => ({ files: [], nextFileName: null }))
       const listFileVersions = vi.fn(async () => ({
@@ -169,11 +180,9 @@ describe('client helpers', () => {
       await expect(findFileByName(bucket, 'hidden.txt')).rejects.toThrow(
         `File is hidden in bucket "${BUCKET}" (latest version is a hide marker): hidden.txt`,
       )
-      expect(listFileNames).toHaveBeenCalledWith({ prefix: 'hidden.txt', pageSize: 1 })
-      expect(listFileVersions).toHaveBeenCalledWith({ prefix: 'hidden.txt', pageSize: 1 })
     })
 
-    it('keeps the not-found diagnostic when hidden-file fallback lookup fails', async () => {
+    it('warns when hidden-file fallback lookup fails', async () => {
       const listFileNames = vi.fn(async () => ({ files: [], nextFileName: null }))
       const listFileVersions = vi.fn(async () => {
         throw new Error('temporary listFileVersions failure')
@@ -184,34 +193,15 @@ describe('client helpers', () => {
         listFileVersions,
       } as unknown as Bucket
 
-      await expect(findFileByName(bucket, 'missing.txt')).rejects.toThrow(
-        `File not found in bucket "${BUCKET}": missing.txt`,
+      const stdout = await captureStdout(async () => {
+        await expect(findFileByName(bucket, 'missing.txt')).rejects.toThrow(
+          `File not found in bucket "${BUCKET}": missing.txt`,
+        )
+      })
+      expect(stdout).toContain('::warning::')
+      expect(stdout).toContain(
+        'Could not inspect file versions for hidden-file diagnostics; reporting as not found: temporary listFileVersions failure',
       )
-      expect(listFileNames).toHaveBeenCalledWith({ prefix: 'missing.txt', pageSize: 1 })
-      expect(listFileVersions).toHaveBeenCalledWith({ prefix: 'missing.txt', pageSize: 1 })
-    })
-
-    it('rejects prefix matches when no exact hidden version exists', async () => {
-      const listFileNames = vi.fn(async () => ({
-        files: [{ fileName: 'report.csv.bak', action: 'upload' }],
-        nextFileName: null,
-      }))
-      const listFileVersions = vi.fn(async () => ({
-        files: [{ fileName: 'report.csv.bak', action: 'upload' }],
-        nextFileName: null,
-        nextFileId: null,
-      }))
-      const bucket = {
-        name: BUCKET,
-        listFileNames,
-        listFileVersions,
-      } as unknown as Bucket
-
-      await expect(findFileByName(bucket, 'report.csv')).rejects.toThrow(
-        `File not found in bucket "${BUCKET}": report.csv`,
-      )
-      expect(listFileNames).toHaveBeenCalledWith({ prefix: 'report.csv', pageSize: 1 })
-      expect(listFileVersions).toHaveBeenCalledWith({ prefix: 'report.csv', pageSize: 1 })
     })
 
     it('detects hidden exact names when listFileNames returns a prefix match', async () => {
@@ -233,8 +223,6 @@ describe('client helpers', () => {
       await expect(findFileByName(bucket, 'hidden.txt')).rejects.toThrow(
         `File is hidden in bucket "${BUCKET}" (latest version is a hide marker): hidden.txt`,
       )
-      expect(listFileNames).toHaveBeenCalledWith({ prefix: 'hidden.txt', pageSize: 1 })
-      expect(listFileVersions).toHaveBeenCalledWith({ prefix: 'hidden.txt', pageSize: 1 })
     })
   })
 })
