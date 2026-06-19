@@ -7,3 +7,8 @@ allowBuilds:
 # freshly published version does not block `pnpm install --frozen-lockfile`.
 minimumReleaseAgeExclude:
   - '@backblaze-labs/*'
+
+# Keep the scheduled full-lockfile audit green while Vitest still permits the
+# vulnerable Vite 7.3.3 resolution.
+overrides:
+  vite: 7.3.5

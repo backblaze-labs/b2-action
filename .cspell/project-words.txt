@@ -59,6 +59,7 @@ ncconfig
 nvmrc
 
 # Test helpers and bucket fixture names
+vite
 vitest
 vitests
 spyon

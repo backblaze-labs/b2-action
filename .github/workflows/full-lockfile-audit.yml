@@ -1,0 +1,32 @@
+name: Full lockfile audit
+
+on:
+  schedule:
+    # Weekly full-lockfile audit for dev/build tooling supply-chain risk.
+    - cron: '23 4 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  full-lockfile-audit:
+    name: full-lockfile dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@0e279bb959325dab635dd2c09392533439d90093 # v6.0.8
+        with:
+          version: 11
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 24
+      # Unlike PR CI's prod-only audit, this covers dev/build tooling too.
+      # Run directly against the committed lockfile; no install is needed.
+      - run: pnpm audit --audit-level high
