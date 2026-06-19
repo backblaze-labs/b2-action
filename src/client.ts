@@ -86,9 +86,9 @@ export async function getBucket(authorized: AuthorizedClient) {
  * Resolve a file only when the latest exact-name version is an upload. If
  * that latest version is a hide marker, this intentionally reports the file
  * as hidden instead of selecting an older upload from version history. Throws
- * if no exact-name upload version is currently addressable (hidden / deleted
- * / never existed). Used by `copy`, `delete`, and `retention` to resolve a
- * file name to a `fileId` before operating on it.
+ * when the latest exact-name state does not resolve to an upload (hidden /
+ * deleted / never existed). Used by `copy`, `delete`, and `retention` to
+ * resolve a file name to a `fileId` before operating on it.
  *
  * Consistency assumption: B2's `listFileNames` is read-after-write consistent
  * for a recently-uploaded file in the same region. The simulator returns
