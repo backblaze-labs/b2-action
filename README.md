@@ -379,6 +379,8 @@ If you don't need customer-managed keys, **`sse: B2`** (SSE-B2, B2-managed) is t
 | `remote-sha1` | verify | The remote object's whole-file SHA-1, or empty for multipart objects when B2 does not expose one. |
 | `local-sha1` | verify | Local file SHA-1 (when computed from `destination`). |
 | `summary-json` | every command | JSON array with per-file details. |
+| `retryable` | classified SDK failures | `true` / `false` when the failure path can classify whether the SDK error is retryable. |
+| `retry-after` | classified SDK failures | Retry-After delay in seconds when B2 provides one. |
 
 ---
 

@@ -132,6 +132,10 @@ outputs:
     description: 'Local file SHA-1 computed by `verify`.'
   summary-json:
     description: 'JSON array with per-file details (name, fileId, size, sha1).'
+  retryable:
+    description: 'Failure-path signal set when an SDK error is classified as retryable or not retryable.'
+  retry-after:
+    description: 'Retry-After delay in seconds when B2 provides one on a classified SDK failure.'
 
 runs:
   using: 'node24'

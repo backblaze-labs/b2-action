@@ -31141,258 +31141,6 @@ function getIDToken(aud) {
  */
 
 //# sourceMappingURL=core.js.map
-;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.1.0/node_modules/@backblaze-labs/b2-sdk/dist/errors/index.js
-class B2Error extends Error {
-  /** HTTP status code returned by the B2 API. */
-  status;
-  /** B2 error code identifying the error type (e.g. `expired_auth_token`). */
-  code;
-  /** B2 request ID from the `X-Bz-Request-Id` response header, if present. */
-  requestId;
-  /** Retry delay in seconds from the `Retry-After` response header, if present. */
-  retryAfter;
-  /** Whether this error is transient and the request can be retried. */
-  retryable;
-  /**
-   * Creates a new B2Error instance.
-   * @param response - Parsed B2 error response body.
-   * @param options - Optional retry and request metadata from response headers.
-   */
-  constructor(response, options) {
-    super(response.message);
-    this.name = "B2Error";
-    this.status = response.status;
-    this.code = response.code;
-    if (options?.retryAfter !== void 0) this.retryAfter = options.retryAfter;
-    if (options?.requestId !== void 0) this.requestId = options.requestId;
-    this.retryable = isTransient(response.status, response.code);
-  }
-}
-class ExpiredAuthTokenError extends B2Error {
-  /**
-   * Creates a new ExpiredAuthTokenError instance.
-   * @param response - Parsed B2 error response body.
-   * @param options - The error details including HTTP status, error code, message, and optional request ID.
-   */
-  constructor(response, options) {
-    super(response, options);
-    this.name = "ExpiredAuthTokenError";
-  }
-}
-class BadAuthTokenError extends B2Error {
-  /**
-   * Creates a new BadAuthTokenError instance.
-   * @param response - Parsed B2 error response body.
-   * @param options - The error details including HTTP status, error code, message, and optional request ID.
-   */
-  constructor(response, options) {
-    super(response, options);
-    this.name = "BadAuthTokenError";
-  }
-}
-class ServiceUnavailableError extends B2Error {
-  /**
-   * Creates a new ServiceUnavailableError instance.
-   * @param response - Parsed B2 error response body.
-   * @param options - The error details including HTTP status, error code, message, and optional request ID.
-   */
-  constructor(response, options) {
-    super(response, options);
-    this.name = "ServiceUnavailableError";
-  }
-}
-class RequestTimeoutError extends B2Error {
-  /**
-   * Creates a new RequestTimeoutError instance.
-   * @param response - Parsed B2 error response body.
-   * @param options - The error details including HTTP status, error code, message, and optional request ID.
-   */
-  constructor(response, options) {
-    super(response, options);
-    this.name = "RequestTimeoutError";
-  }
-}
-class TooManyRequestsError extends B2Error {
-  /**
-   * Creates a new TooManyRequestsError instance.
-   * @param response - Parsed B2 error response body.
-   * @param options - The error details including HTTP status, error code, message, and optional request ID.
-   */
-  constructor(response, options) {
-    super(response, options);
-    this.name = "TooManyRequestsError";
-  }
-}
-class CapExceededError extends B2Error {
-  /**
-   * Creates a new CapExceededError instance.
-   * @param response - Parsed B2 error response body.
-   * @param options - The error details including HTTP status, error code, message, and optional request ID.
-   */
-  constructor(response, options) {
-    super(response, options);
-    this.name = "CapExceededError";
-  }
-}
-class AccessDeniedError extends B2Error {
-  /**
-   * Creates a new AccessDeniedError instance.
-   * @param response - Parsed B2 error response body.
-   * @param options - The error details including HTTP status, error code, message, and optional request ID.
-   */
-  constructor(response, options) {
-    super(response, options);
-    this.name = "AccessDeniedError";
-  }
-}
-class FileNotPresentError extends B2Error {
-  /**
-   * Creates a new FileNotPresentError instance.
-   * @param response - Parsed B2 error response body.
-   * @param options - The error details including HTTP status, error code, message, and optional request ID.
-   */
-  constructor(response, options) {
-    super(response, options);
-    this.name = "FileNotPresentError";
-  }
-}
-class DuplicateBucketNameError extends B2Error {
-  /**
-   * Creates a new DuplicateBucketNameError instance.
-   * @param response - Parsed B2 error response body.
-   * @param options - The error details including HTTP status, error code, message, and optional request ID.
-   */
-  constructor(response, options) {
-    super(response, options);
-    this.name = "DuplicateBucketNameError";
-  }
-}
-class BadRequestError extends B2Error {
-  /**
-   * Creates a new BadRequestError instance.
-   * @param response - Parsed B2 error response body.
-   * @param options - The error details including HTTP status, error code, message, and optional request ID.
-   */
-  constructor(response, options) {
-    super(response, options);
-    this.name = "BadRequestError";
-  }
-}
-class BadUploadUrlError extends B2Error {
-  /**
-   * Creates a new BadUploadUrlError instance.
-   * @param response - Parsed B2 error response body.
-   * @param options - The error details including HTTP status, error code, message, and optional request ID.
-   */
-  constructor(response, options) {
-    super(response, options);
-    this.name = "BadUploadUrlError";
-  }
-}
-class ChecksumMismatchError extends B2Error {
-  /**
-   * Creates a new ChecksumMismatchError instance.
-   * @param response - Parsed B2 error response body.
-   * @param options - The error details including HTTP status, error code, message, and optional request ID.
-   */
-  constructor(response, options) {
-    super(response, options);
-    this.name = "ChecksumMismatchError";
-  }
-}
-class B2InsufficientCapabilityError extends Error {
-  /** Capabilities that were required for the operation. */
-  required;
-  /** Capabilities that the current key actually has. */
-  available;
-  /** Capabilities present in `required` but not in `available`. */
-  missing;
-  /**
-   * Creates a new B2InsufficientCapabilityError instance.
-   *
-   * @param required - Capabilities the operation requires.
-   * @param available - Capabilities the current key holds.
-   * @param missing - The subset of required that isn't available.
-   */
-  constructor(required, available, missing) {
-    super(`Application key is missing capabilities: ${missing.join(", ")}`);
-    this.name = "B2InsufficientCapabilityError";
-    this.required = required;
-    this.available = available;
-    this.missing = missing;
-  }
-}
-class B2SsrfError extends Error {
-  /**
-   * Creates a new {@link B2SsrfError}.
-   *
-   * @param message - Human-readable description of which URL was rejected and why.
-   * @param url - The full URL that was rejected.
-   */
-  constructor(message, url) {
-    super(message);
-    this.url = url;
-    this.name = "B2SsrfError";
-  }
-  /** Always `false` — this is a security failure, not transient. */
-  retryable = false;
-}
-class NetworkError extends Error {
-  /**
-   * Creates a new NetworkError instance.
-   * @param message - Human-readable description of the network failure.
-   * @param cause - The underlying error that caused this failure, if any.
-   */
-  constructor(message, cause) {
-    super(message);
-    this.cause = cause;
-    this.name = "NetworkError";
-  }
-  /** Always `true` since network errors are transient. */
-  retryable = true;
-}
-function isTransient(status, code) {
-  if (status === 408 || status === 429 || status === 503) return true;
-  if (code === "expired_auth_token") return true;
-  if (code === "service_unavailable" || code === "request_timeout") return true;
-  return false;
-}
-function classifyError(response, options) {
-  switch (response.code) {
-    case "expired_auth_token":
-      return new ExpiredAuthTokenError(response, options);
-    case "bad_auth_token":
-    case "unauthorized":
-      return new BadAuthTokenError(response, options);
-    case "service_unavailable":
-      return new ServiceUnavailableError(response, options);
-    case "request_timeout":
-      return new RequestTimeoutError(response, options);
-    case "cap_exceeded":
-    case "storage_cap_exceeded":
-    case "transaction_cap_exceeded":
-    case "download_cap_exceeded":
-      return new CapExceededError(response, options);
-    case "access_denied":
-      return new AccessDeniedError(response, options);
-    case "file_not_present":
-    case "no_such_file":
-      return new FileNotPresentError(response, options);
-    case "duplicate_bucket_name":
-      return new DuplicateBucketNameError(response, options);
-    case "bad_sha1_checksum":
-      return new ChecksumMismatchError(response, options);
-    case "bad_request":
-      return new BadRequestError(response, options);
-  }
-  if (response.status === 429) return new TooManyRequestsError(response, options);
-  if (response.status === 503) return new ServiceUnavailableError(response, options);
-  if (response.status === 408) return new RequestTimeoutError(response, options);
-  return new B2Error(response, options);
-}
-
-//# sourceMappingURL=index.js.map
-
 ;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.1.0/node_modules/@backblaze-labs/b2-sdk/dist/auth/upload-url-pool.js
 class UploadUrlPool {
   /** Map from key (bucket ID or file ID) to a stack of available entries. */
@@ -33878,6 +33626,258 @@ class Bucket {
 }
 
 //# sourceMappingURL=bucket.js.map
+
+;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.1.0/node_modules/@backblaze-labs/b2-sdk/dist/errors/index.js
+class B2Error extends Error {
+  /** HTTP status code returned by the B2 API. */
+  status;
+  /** B2 error code identifying the error type (e.g. `expired_auth_token`). */
+  code;
+  /** B2 request ID from the `X-Bz-Request-Id` response header, if present. */
+  requestId;
+  /** Retry delay in seconds from the `Retry-After` response header, if present. */
+  retryAfter;
+  /** Whether this error is transient and the request can be retried. */
+  retryable;
+  /**
+   * Creates a new B2Error instance.
+   * @param response - Parsed B2 error response body.
+   * @param options - Optional retry and request metadata from response headers.
+   */
+  constructor(response, options) {
+    super(response.message);
+    this.name = "B2Error";
+    this.status = response.status;
+    this.code = response.code;
+    if (options?.retryAfter !== void 0) this.retryAfter = options.retryAfter;
+    if (options?.requestId !== void 0) this.requestId = options.requestId;
+    this.retryable = isTransient(response.status, response.code);
+  }
+}
+class ExpiredAuthTokenError extends B2Error {
+  /**
+   * Creates a new ExpiredAuthTokenError instance.
+   * @param response - Parsed B2 error response body.
+   * @param options - The error details including HTTP status, error code, message, and optional request ID.
+   */
+  constructor(response, options) {
+    super(response, options);
+    this.name = "ExpiredAuthTokenError";
+  }
+}
+class BadAuthTokenError extends B2Error {
+  /**
+   * Creates a new BadAuthTokenError instance.
+   * @param response - Parsed B2 error response body.
+   * @param options - The error details including HTTP status, error code, message, and optional request ID.
+   */
+  constructor(response, options) {
+    super(response, options);
+    this.name = "BadAuthTokenError";
+  }
+}
+class ServiceUnavailableError extends B2Error {
+  /**
+   * Creates a new ServiceUnavailableError instance.
+   * @param response - Parsed B2 error response body.
+   * @param options - The error details including HTTP status, error code, message, and optional request ID.
+   */
+  constructor(response, options) {
+    super(response, options);
+    this.name = "ServiceUnavailableError";
+  }
+}
+class RequestTimeoutError extends B2Error {
+  /**
+   * Creates a new RequestTimeoutError instance.
+   * @param response - Parsed B2 error response body.
+   * @param options - The error details including HTTP status, error code, message, and optional request ID.
+   */
+  constructor(response, options) {
+    super(response, options);
+    this.name = "RequestTimeoutError";
+  }
+}
+class TooManyRequestsError extends B2Error {
+  /**
+   * Creates a new TooManyRequestsError instance.
+   * @param response - Parsed B2 error response body.
+   * @param options - The error details including HTTP status, error code, message, and optional request ID.
+   */
+  constructor(response, options) {
+    super(response, options);
+    this.name = "TooManyRequestsError";
+  }
+}
+class CapExceededError extends B2Error {
+  /**
+   * Creates a new CapExceededError instance.
+   * @param response - Parsed B2 error response body.
+   * @param options - The error details including HTTP status, error code, message, and optional request ID.
+   */
+  constructor(response, options) {
+    super(response, options);
+    this.name = "CapExceededError";
+  }
+}
+class AccessDeniedError extends B2Error {
+  /**
+   * Creates a new AccessDeniedError instance.
+   * @param response - Parsed B2 error response body.
+   * @param options - The error details including HTTP status, error code, message, and optional request ID.
+   */
+  constructor(response, options) {
+    super(response, options);
+    this.name = "AccessDeniedError";
+  }
+}
+class FileNotPresentError extends B2Error {
+  /**
+   * Creates a new FileNotPresentError instance.
+   * @param response - Parsed B2 error response body.
+   * @param options - The error details including HTTP status, error code, message, and optional request ID.
+   */
+  constructor(response, options) {
+    super(response, options);
+    this.name = "FileNotPresentError";
+  }
+}
+class DuplicateBucketNameError extends B2Error {
+  /**
+   * Creates a new DuplicateBucketNameError instance.
+   * @param response - Parsed B2 error response body.
+   * @param options - The error details including HTTP status, error code, message, and optional request ID.
+   */
+  constructor(response, options) {
+    super(response, options);
+    this.name = "DuplicateBucketNameError";
+  }
+}
+class BadRequestError extends B2Error {
+  /**
+   * Creates a new BadRequestError instance.
+   * @param response - Parsed B2 error response body.
+   * @param options - The error details including HTTP status, error code, message, and optional request ID.
+   */
+  constructor(response, options) {
+    super(response, options);
+    this.name = "BadRequestError";
+  }
+}
+class BadUploadUrlError extends B2Error {
+  /**
+   * Creates a new BadUploadUrlError instance.
+   * @param response - Parsed B2 error response body.
+   * @param options - The error details including HTTP status, error code, message, and optional request ID.
+   */
+  constructor(response, options) {
+    super(response, options);
+    this.name = "BadUploadUrlError";
+  }
+}
+class ChecksumMismatchError extends B2Error {
+  /**
+   * Creates a new ChecksumMismatchError instance.
+   * @param response - Parsed B2 error response body.
+   * @param options - The error details including HTTP status, error code, message, and optional request ID.
+   */
+  constructor(response, options) {
+    super(response, options);
+    this.name = "ChecksumMismatchError";
+  }
+}
+class B2InsufficientCapabilityError extends Error {
+  /** Capabilities that were required for the operation. */
+  required;
+  /** Capabilities that the current key actually has. */
+  available;
+  /** Capabilities present in `required` but not in `available`. */
+  missing;
+  /**
+   * Creates a new B2InsufficientCapabilityError instance.
+   *
+   * @param required - Capabilities the operation requires.
+   * @param available - Capabilities the current key holds.
+   * @param missing - The subset of required that isn't available.
+   */
+  constructor(required, available, missing) {
+    super(`Application key is missing capabilities: ${missing.join(", ")}`);
+    this.name = "B2InsufficientCapabilityError";
+    this.required = required;
+    this.available = available;
+    this.missing = missing;
+  }
+}
+class B2SsrfError extends Error {
+  /**
+   * Creates a new {@link B2SsrfError}.
+   *
+   * @param message - Human-readable description of which URL was rejected and why.
+   * @param url - The full URL that was rejected.
+   */
+  constructor(message, url) {
+    super(message);
+    this.url = url;
+    this.name = "B2SsrfError";
+  }
+  /** Always `false` — this is a security failure, not transient. */
+  retryable = false;
+}
+class NetworkError extends Error {
+  /**
+   * Creates a new NetworkError instance.
+   * @param message - Human-readable description of the network failure.
+   * @param cause - The underlying error that caused this failure, if any.
+   */
+  constructor(message, cause) {
+    super(message);
+    this.cause = cause;
+    this.name = "NetworkError";
+  }
+  /** Always `true` since network errors are transient. */
+  retryable = true;
+}
+function isTransient(status, code) {
+  if (status === 408 || status === 429 || status === 503) return true;
+  if (code === "expired_auth_token") return true;
+  if (code === "service_unavailable" || code === "request_timeout") return true;
+  return false;
+}
+function classifyError(response, options) {
+  switch (response.code) {
+    case "expired_auth_token":
+      return new ExpiredAuthTokenError(response, options);
+    case "bad_auth_token":
+    case "unauthorized":
+      return new BadAuthTokenError(response, options);
+    case "service_unavailable":
+      return new ServiceUnavailableError(response, options);
+    case "request_timeout":
+      return new RequestTimeoutError(response, options);
+    case "cap_exceeded":
+    case "storage_cap_exceeded":
+    case "transaction_cap_exceeded":
+    case "download_cap_exceeded":
+      return new CapExceededError(response, options);
+    case "access_denied":
+      return new AccessDeniedError(response, options);
+    case "file_not_present":
+    case "no_such_file":
+      return new FileNotPresentError(response, options);
+    case "duplicate_bucket_name":
+      return new DuplicateBucketNameError(response, options);
+    case "bad_sha1_checksum":
+      return new ChecksumMismatchError(response, options);
+    case "bad_request":
+      return new BadRequestError(response, options);
+  }
+  if (response.status === 429) return new TooManyRequestsError(response, options);
+  if (response.status === 503) return new ServiceUnavailableError(response, options);
+  if (response.status === 408) return new RequestTimeoutError(response, options);
+  return new B2Error(response, options);
+}
+
+//# sourceMappingURL=index.js.map
 
 ;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.1.0/node_modules/@backblaze-labs/b2-sdk/dist/http/url-guard.js
 
@@ -41079,6 +41079,79 @@ async function sha1OfFile(path) {
     return hasher.digest();
 }
 
+;// CONCATENATED MODULE: ./src/errors.ts
+
+const SAFE_RETRY_HINT = 'safe to retry this workflow.';
+const MUTATING_RETRY_SUFFIX = 'action may have partially committed; inspect B2 state before rerunning to avoid duplicate file versions, orphaned large-file uploads, or unintended deletes.';
+const UNKNOWN_RETRY_HINT = 'retry may be appropriate after checking whether the request had side effects.';
+const READ_ONLY_ACTIONS = new Set(['download', 'list', 'presign', 'verify', 'head']);
+const MAX_LOG_FIELD_LENGTH = 1_000;
+function classifyActionError(err, options = {}) {
+    // Order matters: specific SDK classes first, then retryable B2Error, then
+    // the generic B2Error fallback last so new subclasses are not shadowed.
+    if (err instanceof BadAuthTokenError) {
+        return failure(`B2 authentication failed: check application-key-id and application-key, and confirm the key is active. ${formatB2Details(err, options)}`, false);
+    }
+    if (err instanceof B2InsufficientCapabilityError) {
+        const missing = err.missing.length > 0 ? err.missing.join(', ') : '(unknown)';
+        return failure(`B2 permission denied: application key is missing required capabilities: ${sanitizeLogField(missing, options)}. Update the key capabilities or use a key scoped to this bucket/prefix.`, false);
+    }
+    if (err instanceof AccessDeniedError) {
+        return failure(`B2 permission denied: check application key capabilities, bucket access, and file name prefix restrictions. ${formatB2Details(err, options)}`, false);
+    }
+    if (err instanceof B2SsrfError) {
+        return failure(`B2 endpoint safety check failed: ${sanitizeLogField(err.message, options)}. Check the endpoint input and B2 realm configuration.`, false);
+    }
+    if (err instanceof NetworkError) {
+        return failure(`Transient network error talking to B2: ${retryHint(options.action)} ${sanitizeLogField(err.message, options)}`, true);
+    }
+    if (err instanceof B2Error && err.retryable) {
+        return failure(`Transient B2 error: ${retryHint(options.action)} ${formatB2Details(err, options)}`, true, err.retryAfter);
+    }
+    if (err instanceof B2Error) {
+        return failure(`B2 request failed: ${formatB2Details(err, options)}`, false, err.retryAfter);
+    }
+    const message = err instanceof Error ? err.message : String(err);
+    return failure(sanitizeLogField(message, options), undefined);
+}
+function formatActionError(err, options = {}) {
+    return classifyActionError(err, options).message;
+}
+function failure(message, retryable, retryAfter) {
+    return { message, retryable, retryAfter };
+}
+function formatB2Details(err, options) {
+    const details = [
+        `status ${sanitizeLogField(String(err.status), options)}`,
+        `code ${sanitizeLogField(err.code, options)}`,
+    ];
+    if (err.requestId !== undefined) {
+        details.push(`request ${sanitizeLogField(err.requestId, options)}`);
+    }
+    if (err.retryAfter !== undefined) {
+        details.push(`retry after ${sanitizeLogField(String(err.retryAfter), options)}s`);
+    }
+    return `B2 said: ${sanitizeLogField(err.message, options)} (${details.join(', ')})`;
+}
+function retryHint(action) {
+    if (action !== undefined && READ_ONLY_ACTIONS.has(action))
+        return SAFE_RETRY_HINT;
+    if (action !== undefined)
+        return `the ${action} ${MUTATING_RETRY_SUFFIX}`;
+    return UNKNOWN_RETRY_HINT;
+}
+function sanitizeLogField(value, options) {
+    const secretValues = options.secretValues ?? [];
+    let sanitized = value;
+    for (const secret of secretValues) {
+        if (secret !== '')
+            sanitized = sanitized.split(secret).join('***');
+    }
+    if (sanitized.length <= MAX_LOG_FIELD_LENGTH)
+        return sanitized;
+    return `${sanitized.slice(0, MAX_LOG_FIELD_LENGTH)}... [truncated]`;
+}
+
 ;// CONCATENATED MODULE: ./src/summary.ts
 
 
@@ -41176,14 +41249,21 @@ async function run() {
     process.once('SIGTERM', onSigterm);
     process.once('SIGINT', onSigint);
     const signal = controller.signal;
+    let action;
+    const secretValues = [];
     try {
         const inputs = parseInputs();
+        action = inputs.action;
+        secretValues.push(inputs.applicationKeyId, inputs.applicationKey);
         const authorized = await buildClient({
             applicationKeyId: inputs.applicationKeyId,
             applicationKey: inputs.applicationKey,
             bucket: inputs.bucket,
             ...(inputs.endpoint !== undefined ? { endpoint: inputs.endpoint } : {}),
         });
+        const authToken = authorized.client.accountInfo.getAuthToken();
+        if (authToken)
+            secretValues.push(authToken);
         const bucket = await getBucket(authorized);
         switch (inputs.action) {
             case 'upload': {
@@ -41451,45 +41531,17 @@ async function run() {
         }
     }
     catch (err) {
-        setFailed(formatActionError(err));
+        const failure = classifyActionError(err, { action, secretValues });
+        if (failure.retryable !== undefined)
+            setOutput('retryable', String(failure.retryable));
+        if (failure.retryAfter !== undefined)
+            setOutput('retry-after', String(failure.retryAfter));
+        setFailed(failure.message);
     }
     finally {
         process.off('SIGTERM', onSigterm);
         process.off('SIGINT', onSigint);
     }
-}
-function formatActionError(err) {
-    if (err instanceof BadAuthTokenError) {
-        return `B2 authentication failed: check application-key-id and application-key, and confirm the key is active. ${formatB2Details(err)}`;
-    }
-    if (err instanceof B2InsufficientCapabilityError) {
-        const missing = err.missing.length > 0 ? err.missing.join(', ') : '(unknown)';
-        return `B2 permission denied: application key is missing required capabilities: ${missing}. Update the key capabilities or use a key scoped to this bucket/prefix.`;
-    }
-    if (err instanceof AccessDeniedError) {
-        return `B2 permission denied: check application key capabilities, bucket access, and file name prefix restrictions. ${formatB2Details(err)}`;
-    }
-    if (err instanceof NetworkError) {
-        return `Transient network error talking to B2: safe to retry this workflow. ${err.message}`;
-    }
-    if (err instanceof B2Error && err.retryable) {
-        return `Transient B2 error: safe to retry this workflow. ${formatB2Details(err)}`;
-    }
-    if (err instanceof B2SsrfError) {
-        return `B2 endpoint safety check failed: ${err.message}. Check the endpoint input and B2 realm configuration.`;
-    }
-    if (err instanceof B2Error) {
-        return `B2 request failed: ${formatB2Details(err)}`;
-    }
-    return err instanceof Error ? err.message : String(err);
-}
-function formatB2Details(err) {
-    const details = [`status ${err.status}`, `code ${err.code}`];
-    if (err.requestId !== undefined)
-        details.push(`request ${err.requestId}`);
-    if (err.retryAfter !== undefined)
-        details.push(`retry after ${err.retryAfter}s`);
-    return `B2 said: ${err.message} (${details.join(', ')})`;
 }
 /**
  * Checks whether this module is the process entrypoint.

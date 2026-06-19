@@ -90,7 +90,10 @@ function mockDispatcherPath(action: ActionName) {
     .mockReturnValue(
       makeInputs(action, action === 'purge' ? { dryRun: true, allowBucketPurge: true } : {}),
     )
-  const authorized = { client: { kind: 'client' }, bucketName: 'gh-action-test' }
+  const authorized = {
+    client: { kind: 'client', accountInfo: { getAuthToken: vi.fn(() => 'contract-token') } },
+    bucketName: 'gh-action-test',
+  }
   const bucket = { name: 'gh-action-test' }
   const buildClient = vi.fn().mockResolvedValue(authorized)
   const getBucket = vi.fn().mockResolvedValue(bucket)
