@@ -1,7 +1,7 @@
 name: Release
 
-# Tag-driven release flow. Push a three-component `vX.Y.Z` tag (or any
-# `vX.Y.Z-*` pre-release) and this workflow:
+# Tag-driven release flow. Push a three-component `vX.Y.Z` tag (or a
+# `vX.Y.Z-rc.N` or other SemVer pre-release) and this workflow:
 #   1. Runs the full test + lint + typecheck + build suite as a gate.
 #   2. Verifies the `dist/` committed at the tag matches a fresh `pnpm build`.
 #   3. Attests `dist/index.js` in an isolated OIDC-only provenance job.
@@ -13,7 +13,7 @@ name: Release
 #      latest minor/patch.
 #   7. Publishes the staged GitHub Release after the floating-tag gate succeeds.
 #
-# Pre-release tags (`vX.Y.Z-*`) are published as
+# Pre-release tags (`vX.Y.Z-<suffix>`) are published as
 # pre-releases and DO NOT update the floating major tag. The bare floating
 # tags `v1` / `v2` deliberately do NOT match the trigger below, so this
 # workflow re-pointing them never re-runs itself.
@@ -93,7 +93,7 @@ jobs:
           {
             echo "release-tag=$REQUESTED_REF"
             echo "release-sha=$RELEASE_SHA"
-            if [[ "$REQUESTED_REF" =~ -(alpha|beta|rc)([.-][0-9]+)?$ ]]; then
+            if [[ "$REQUESTED_REF" == *-* ]]; then
               echo "is-prerelease=true"
             else
               echo "is-prerelease=false"

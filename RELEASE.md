@@ -5,8 +5,8 @@ The single source of truth for how releases of this Action are cut, automated, a
 ## Model
 
 - The Action is consumed as `uses: backblaze-labs/b2-action@v1`. There is no npm package and no CLI: `package.json` is `private: true`, `name: "b2"`.
-- Releases are tag-driven. Push an annotated `vX.Y.Z` tag and [`.github/workflows/release.yml`](./.github/workflows/release.yml) runs the full gate, moves the floating major tag (`v1`, `v2`, ...) to the new commit, and cuts a GitHub Release so consumers pinned to a major continue to track the latest minor/patch.
-- Pre-release tags (`vX.Y.Z-*`) are published as pre-releases and do **not** move the floating major tag. Bare `v1` / `v2` deliberately do not match the release trigger, so the workflow re-pointing them never re-runs itself.
+- Releases are tag-driven. Push an annotated `vX.Y.Z` tag and [`.github/workflows/release.yml`](./.github/workflows/release.yml) runs the full gate, stages and verifies release assets, moves the floating major tag (`v1`, `v2`, ...) for stable releases, and publishes a GitHub Release so consumers pinned to a major continue to track the latest minor/patch.
+- Pre-release tags (`vX.Y.Z-<suffix>`, such as `vX.Y.Z-rc.N`) are published as pre-releases and do **not** move the floating major tag. Bare `v1` / `v2` deliberately do not match the release trigger, so the workflow re-pointing them never re-runs itself.
 - Versioning is semver. The first public release is `1.0.0`.
 
 ## Runbook: cut a release
