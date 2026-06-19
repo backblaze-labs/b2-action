@@ -35505,6 +35505,21 @@ const VALID_ACTIONS = [
     'head',
     'purge',
 ];
+const ACTION_EFFECTS = {
+    upload: { kind: 'write', honorsDryRun: false },
+    download: { kind: 'read', honorsDryRun: false },
+    sync: { kind: 'write', honorsDryRun: true },
+    copy: { kind: 'write', honorsDryRun: false },
+    delete: { kind: 'write', honorsDryRun: true },
+    presign: { kind: 'read', honorsDryRun: false },
+    list: { kind: 'read', honorsDryRun: false },
+    hide: { kind: 'write', honorsDryRun: false },
+    unhide: { kind: 'write', honorsDryRun: false },
+    verify: { kind: 'read', honorsDryRun: false },
+    retention: { kind: 'write', honorsDryRun: false },
+    head: { kind: 'read', honorsDryRun: false },
+    purge: { kind: 'write', honorsDryRun: true },
+};
 const VALID_COMPARE = ['modtime', 'size', 'none'];
 const VALID_KEEP = ['no-delete', 'delete', 'keep-days'];
 const VALID_DIRECTION = ['auto', 'up', 'down'];
@@ -41081,21 +41096,21 @@ async function sha1OfFile(path) {
 
 ;// CONCATENATED MODULE: ./src/errors.ts
 
+
 const SAFE_RETRY_HINT = 'safe to retry this workflow.';
 const DRY_RUN_RETRY_HINT = 'safe to retry this dry-run workflow.';
 const MUTATING_RETRY_SUFFIX = 'action may have partially committed; inspect B2 state before rerunning to avoid duplicate file versions, orphaned large-file uploads, or unintended deletes.';
 const UNKNOWN_RETRY_HINT = 'retry may be appropriate after checking whether the request had side effects.';
 const SSRF_FAILURE_MESSAGE = 'B2 endpoint safety check failed: rejected an unsafe B2 endpoint or server-provided URL. Check the endpoint input and B2 realm configuration.';
-// New actions must be assessed here. The fail-safe default for unlisted actions
-// is the mutating-action retry warning and retryable=false structured output.
-const READ_ONLY_ACTIONS = new Set(['download', 'list', 'presign', 'verify', 'head']);
 const MAX_LOG_FIELD_LENGTH = 1_000;
+const MAX_LOG_INPUT_LENGTH = MAX_LOG_FIELD_LENGTH * 2;
 const DEFAULT_NETWORK_RETRY_AFTER_SECONDS = 30;
 const MAX_RETRY_AFTER_SECONDS = 3_600;
+const MAX_CAUSE_DEPTH = 32;
 function classifyActionError(err, options = {}) {
     // Order matters: specific SDK classes first, then retryable B2Error, then
     // the generic B2Error fallback last so new subclasses are not shadowed.
-    if (hasCause(err, B2SsrfError)) {
+    if (hasSsrfCause(err)) {
         return failure(SSRF_FAILURE_MESSAGE, false);
     }
     if (err instanceof BadAuthTokenError && isAuthorizationScopeFailure(err)) {
@@ -41112,18 +41127,22 @@ function classifyActionError(err, options = {}) {
         return failure(`B2 permission denied: check application key capabilities, bucket access, and file name prefix restrictions. ${formatB2Details(err, options)}`, false);
     }
     if (err instanceof NetworkError) {
-        const retryable = isSafeToRetry(options);
-        return failure(`Transient network error talking to B2: ${retryHint(options)} ${sanitizeLogField(err.message, options)}`, retryable, retryable ? DEFAULT_NETWORK_RETRY_AFTER_SECONDS : undefined);
+        const retry = retryPolicy(options);
+        return failure(`Transient network error talking to B2: ${retry.hint} ${sanitizeLogField(err.message, options)}`, retry.safe, retry.safe ? DEFAULT_NETWORK_RETRY_AFTER_SECONDS : undefined);
     }
     if (err instanceof B2Error && err.retryable) {
-        const retryable = isSafeToRetry(options);
-        return failure(`Transient B2 error: ${retryHint(options)} ${formatB2Details(err, options)}`, retryable, retryable ? err.retryAfter : undefined);
+        const retry = retryPolicy(options);
+        return failure(`Transient B2 error: ${retry.hint} ${formatB2Details(err, options)}`, retry.safe, retry.safe ? err.retryAfter : undefined);
     }
     if (err instanceof B2Error) {
-        return failure(`B2 request failed: ${formatB2Details(err, options)}`, false);
+        return failure(`B2 request failed: ${formatGenericB2Guidance(err, options)} ${formatB2Details(err, options)}`, false);
     }
     const message = err instanceof Error ? err.message : String(err);
     return failure(sanitizeLogField(message, options), undefined);
+}
+function formatActionDebugError(err, options = {}) {
+    const message = err instanceof Error ? (err.stack ?? err.message) : String(err);
+    return sanitizeLogField(message, options);
 }
 function failure(message, retryable, retryAfter) {
     return { message, retryable, retryAfter: normalizeRetryAfter(retryAfter) };
@@ -41139,30 +41158,54 @@ function formatB2Details(err, options) {
     }
     return `B2 response details: ${details.join(', ')}`;
 }
-function retryHint(options) {
-    if (options.dryRun === true)
-        return DRY_RUN_RETRY_HINT;
+function formatGenericB2Guidance(err, options) {
+    const message = sanitizeLogField(err.message, options);
+    switch (err.code) {
+        case 'file_not_present':
+        case 'no_such_file':
+            return `File not found; check the bucket and file name. B2 said: ${message}.`;
+        case 'duplicate_bucket_name':
+            return `Bucket name already exists; choose a unique bucket name. B2 said: ${message}.`;
+        case 'cap_exceeded':
+        case 'storage_cap_exceeded':
+        case 'transaction_cap_exceeded':
+        case 'download_cap_exceeded':
+            return `B2 account cap was exceeded; reduce usage or wait before retrying. B2 said: ${message}.`;
+        case 'bad_request':
+            return `Bad request; check the action inputs for invalid values. B2 said: ${message}.`;
+        default:
+            return `B2 said: ${message}.`;
+    }
+}
+function retryPolicy(options) {
     const { action } = options;
     if (action === undefined)
-        return UNKNOWN_RETRY_HINT;
-    return READ_ONLY_ACTIONS.has(action) ? SAFE_RETRY_HINT : `the ${action} ${MUTATING_RETRY_SUFFIX}`;
-}
-function isSafeToRetry(options) {
-    if (options.dryRun === true)
-        return true;
-    const { action } = options;
-    return action !== undefined && READ_ONLY_ACTIONS.has(action);
+        return { safe: false, hint: UNKNOWN_RETRY_HINT };
+    const effect = ACTION_EFFECTS[action];
+    if (options.dryRun === true && effect.honorsDryRun) {
+        return { safe: true, hint: DRY_RUN_RETRY_HINT };
+    }
+    if (effect.kind === 'read')
+        return { safe: true, hint: SAFE_RETRY_HINT };
+    return { safe: false, hint: `the ${action} ${MUTATING_RETRY_SUFFIX}` };
 }
 function isAuthorizationScopeFailure(err) {
     if (err.code !== 'unauthorized')
         return false;
+    // The SDK currently exposes scoped-key `unauthorized` responses as
+    // BadAuthTokenError with only server prose to distinguish capability/scope
+    // misses. Keep this as best-effort until a structured subtype exists.
     return /\b(capability|capabilities|scope|bucket|prefix|permission|not authorized|unauthorized)\b/i.test(err.message);
 }
-function hasCause(err, errorClass) {
+function hasSsrfCause(err) {
+    const seen = new Set();
     let current = err;
-    while (current instanceof Error) {
-        if (current instanceof errorClass)
+    for (let depth = 0; current instanceof Error && depth < MAX_CAUSE_DEPTH; depth += 1) {
+        if (current instanceof B2SsrfError)
             return true;
+        if (seen.has(current))
+            return false;
+        seen.add(current);
         current = current.cause;
     }
     return false;
@@ -41175,19 +41218,35 @@ function normalizeRetryAfter(retryAfter) {
 function sanitizeUntrustedText(value) {
     return value
         .replace(/\bhttps?:\/\/\S+/gi, '[redacted-url]')
-        .replace(/\bBearer\s+[A-Za-z0-9._~+/=-]+/gi, 'Bearer ***')
-        .replace(/\b[A-Za-z0-9_-]{32,}\b/g, '[redacted-token]');
+        .replace(/\bBearer\s+[A-Za-z0-9._~+/=-]+/gi, 'Bearer ***');
 }
 function sanitizeLogField(value, options) {
     const secretValues = options.secretValues ?? [];
-    let sanitized = sanitizeUntrustedText(value);
+    const bounded = value.length > MAX_LOG_INPUT_LENGTH ? value.slice(0, MAX_LOG_INPUT_LENGTH) : value;
+    let sanitized = sanitizeUntrustedText(bounded);
     for (const secret of secretValues) {
-        if (secret !== '')
-            sanitized = sanitized.split(secret).join('***');
+        for (const variant of secretVariants(secret)) {
+            sanitized = sanitized.split(variant).join('***');
+        }
     }
     if (sanitized.length <= MAX_LOG_FIELD_LENGTH)
         return sanitized;
     return `${sanitized.slice(0, MAX_LOG_FIELD_LENGTH)}... [truncated]`;
+}
+function secretVariants(secret) {
+    if (secret === '')
+        return [];
+    const variants = new Set([secret]);
+    if (secret.length >= 4) {
+        const base64 = Buffer.from(secret, 'utf8').toString('base64');
+        const base64Url = base64.replaceAll('+', '-').replaceAll('/', '_');
+        variants.add(encodeURIComponent(secret));
+        variants.add(base64);
+        variants.add(base64Url);
+        variants.add(base64Url.replace(/=+$/u, ''));
+        variants.add(Buffer.from(secret, 'utf8').toString('hex'));
+    }
+    return [...variants].sort((a, b) => b.length - a.length);
 }
 
 ;// CONCATENATED MODULE: ./src/summary.ts
@@ -41580,6 +41639,7 @@ async function run() {
             ...(dryRun !== undefined ? { dryRun } : {}),
             secretValues,
         });
+        core_debug(formatActionDebugError(err, { secretValues }));
         if (failure.retryable !== undefined)
             setOutput('retryable', String(failure.retryable));
         if (failure.retryAfter !== undefined)

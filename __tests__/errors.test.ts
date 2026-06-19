@@ -85,6 +85,20 @@ describe('classifyActionError', () => {
     })
   })
 
+  it('does not treat unsupported dry-run inputs as automatically retryable', () => {
+    const result = classifyActionError(new NetworkError('fetch failed'), {
+      action: 'upload',
+      dryRun: true,
+    })
+
+    expect(result).toEqual({
+      message:
+        'Transient network error talking to B2: the upload action may have partially committed; inspect B2 state before rerunning to avoid duplicate file versions, orphaned large-file uploads, or unintended deletes. fetch failed',
+      retryable: false,
+      retryAfter: undefined,
+    })
+  })
+
   it('uses conservative retry guidance and retryable=false for mutating actions', () => {
     const result = classifyActionError(new NetworkError('fetch failed'), { action: 'upload' })
 
@@ -202,15 +216,48 @@ describe('classifyActionError', () => {
 
   it('classifies non-retryable B2 errors as generic request failures', () => {
     const result = classifyActionError(
-      new B2Error({ status: 400, code: 'bad_request', message: 'bad request' }, { retryAfter: 60 }),
+      new B2Error(
+        { status: 400, code: 'bad_request', message: 'bad request: file name is required' },
+        { retryAfter: 60 },
+      ),
     )
 
     expect(result).toEqual({
       message:
-        'B2 request failed: B2 response details: status 400, code bad_request, retry after 60s',
+        'B2 request failed: Bad request; check the action inputs for invalid values. B2 said: bad request: file name is required. B2 response details: status 400, code bad_request, retry after 60s',
       retryable: false,
       retryAfter: undefined,
     })
+  })
+
+  it.each([
+    [
+      { status: 404, code: 'file_not_present', message: 'file docs/missing.txt not present' },
+      'File not found',
+      'docs/missing.txt',
+    ],
+    [
+      { status: 400, code: 'duplicate_bucket_name', message: 'bucket already exists: docs-prod' },
+      'Bucket name already exists',
+      'docs-prod',
+    ],
+    [
+      { status: 403, code: 'cap_exceeded', message: 'storage cap exceeded for account' },
+      'B2 account cap was exceeded',
+      'storage cap exceeded',
+    ],
+    [
+      { status: 400, code: 'bad_request', message: 'invalid retention mode: forever' },
+      'Bad request',
+      'invalid retention mode',
+    ],
+  ] as const)('includes actionable detail for generic B2 code %s', (response, prefix, detail) => {
+    const result = message(new B2Error(response))
+
+    expect(result).toContain(prefix)
+    expect(result).toContain(detail)
+    expect(result).toContain(`status ${response.status}`)
+    expect(result).toContain(`code ${response.code}`)
   })
 
   it('does not reflect signed URLs or bearer tokens from server error messages', () => {
@@ -231,23 +278,45 @@ describe('classifyActionError', () => {
     expect(result).not.toContain(bearer)
   })
 
-  it('does not reflect request IDs containing transformed credentials', () => {
-    const applicationKey = 'app-key-secret'
-    const encoded = Buffer.from(`key-id:${applicationKey}`).toString('base64')
+  it('redacts transformed secret values from reflected error messages', () => {
+    const applicationKey = 'app/key+secret=42'
+    const base64 = Buffer.from(applicationKey).toString('base64')
+    const base64Url = base64.replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/u, '')
+    const hex = Buffer.from(applicationKey).toString('hex')
+    const urlEncoded = encodeURIComponent(applicationKey)
     const result = message(
-      new AccessDeniedError(
-        {
-          status: 403,
-          code: 'access_denied',
-          message: 'denied',
-        },
-        { requestId: encoded },
-      ),
-      { secretValues: [applicationKey] },
+      new NetworkError(`leaked ${applicationKey} ${base64} ${base64Url} ${hex} ${urlEncoded}`),
+      { action: 'list', secretValues: [applicationKey] },
     )
 
-    expect(result).not.toContain(encoded)
     expect(result).not.toContain(applicationKey)
+    expect(result).not.toContain(base64)
+    expect(result).not.toContain(base64Url)
+    expect(result).not.toContain(hex)
+    expect(result).not.toContain(urlEncoded)
+  })
+
+  it('does not redact non-secret B2 file IDs or SHA-1 hashes', () => {
+    const fileId =
+      '4_z0000000000000000000000001_f200ec353a2187_d20250101_m000001_c001_v0001000_t0001'
+    const sha1 = '0123456789abcdef0123456789abcdef01234567'
+    const result = message(new NetworkError(`file ${fileId} sha1 ${sha1} failed`), {
+      action: 'list',
+    })
+
+    expect(result).toContain(fileId)
+    expect(result).toContain(sha1)
+  })
+
+  it('terminates on cyclic error causes', () => {
+    const error = new Error('cyclic failure') as Error & { cause?: unknown }
+    error.cause = error
+
+    expect(classifyActionError(error)).toEqual({
+      message: 'cyclic failure',
+      retryable: undefined,
+      retryAfter: undefined,
+    })
   })
 
   it('bounds reflected SDK error message length', () => {

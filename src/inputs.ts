@@ -5,8 +5,9 @@ import { parseSse } from './sse.ts'
 /**
  * Discriminator the action's dispatcher switches on. Matches the values
  * accepted by the `action:` input in `action.yml`. Adding a new verb
- * requires updating this union, the runtime `VALID_ACTIONS` list, the
- * dispatcher in `src/main.ts`, and the documentation surfaces.
+ * requires updating this union, the runtime `VALID_ACTIONS` list,
+ * `ACTION_EFFECTS`, the dispatcher in `src/main.ts`, and the documentation
+ * surfaces.
  */
 export type ActionName =
   | 'upload'
@@ -38,6 +39,27 @@ const VALID_ACTIONS: readonly ActionName[] = [
   'head',
   'purge',
 ]
+
+type ActionEffect = {
+  readonly kind: 'read' | 'write'
+  readonly honorsDryRun: boolean
+}
+
+export const ACTION_EFFECTS = {
+  upload: { kind: 'write', honorsDryRun: false },
+  download: { kind: 'read', honorsDryRun: false },
+  sync: { kind: 'write', honorsDryRun: true },
+  copy: { kind: 'write', honorsDryRun: false },
+  delete: { kind: 'write', honorsDryRun: true },
+  presign: { kind: 'read', honorsDryRun: false },
+  list: { kind: 'read', honorsDryRun: false },
+  hide: { kind: 'write', honorsDryRun: false },
+  unhide: { kind: 'write', honorsDryRun: false },
+  verify: { kind: 'read', honorsDryRun: false },
+  retention: { kind: 'write', honorsDryRun: false },
+  head: { kind: 'read', honorsDryRun: false },
+  purge: { kind: 'write', honorsDryRun: true },
+} as const satisfies Record<ActionName, ActionEffect>
 
 /** How `sync` decides whether two files match. Drives the SDK's `synchronize()`. */
 export type CompareMode = 'modtime' | 'size' | 'none'

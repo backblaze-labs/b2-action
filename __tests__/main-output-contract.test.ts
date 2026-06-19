@@ -82,6 +82,7 @@ function mockDispatcherPath(action: ActionName) {
   const core = {
     setOutput: vi.fn(),
     setFailed: vi.fn(),
+    debug: vi.fn(),
     info: vi.fn(),
     warning: vi.fn(),
   }
@@ -103,7 +104,10 @@ function mockDispatcherPath(action: ActionName) {
   applyCommandResult(commands, action)
 
   vi.doMock('@actions/core', () => core)
-  vi.doMock('../src/inputs.ts', () => ({ parseInputs }))
+  vi.doMock('../src/inputs.ts', async () => ({
+    ...(await vi.importActual<typeof import('../src/inputs.ts')>('../src/inputs.ts')),
+    parseInputs,
+  }))
   vi.doMock('../src/client.ts', () => ({ buildClient, getBucket }))
   vi.doMock('../src/summary.ts', () => ({ writeStepSummary }))
   vi.doMock('../src/commands/upload.ts', () => ({ uploadCommand: commands.uploadCommand }))

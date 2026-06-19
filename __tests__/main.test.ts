@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import {
   AccessDeniedError,
+  B2Error,
   B2SsrfError,
   BadAuthTokenError,
   NetworkError,
@@ -692,6 +693,30 @@ describe('main dispatcher', () => {
     expect(outputs(ctx)).not.toHaveProperty('retry-after')
   })
 
+  it('reports generic B2 failures with actionable detail and debug cause', async () => {
+    const ctx = await loadMain()
+    ctx.parseInputs.mockReturnValue(inputs('download'))
+    ctx.commands.downloadCommand.mockRejectedValue(
+      new B2Error({
+        status: 400,
+        code: 'bad_request',
+        message: 'invalid file name: reports//daily.csv',
+      }),
+    )
+
+    await ctx.run()
+
+    const failure = ctx.core.setFailed.mock.calls[0]?.[0]
+    expect(failure).toContain('B2 request failed')
+    expect(failure).toContain('Bad request')
+    expect(failure).toContain('invalid file name: reports//daily.csv')
+    expect(failure).toContain('status 400')
+    expect(failure).toContain('code bad_request')
+    expect(ctx.core.debug).toHaveBeenCalledWith(
+      expect.stringContaining('invalid file name: reports//daily.csv'),
+    )
+  })
+
   it('reports sync aggregate errors with a sample', async () => {
     const ctx = await loadMain()
     ctx.parseInputs.mockReturnValue(inputs('sync'))
@@ -838,6 +863,7 @@ async function loadMain() {
   const core = {
     setOutput: vi.fn(),
     setFailed: vi.fn(),
+    debug: vi.fn(),
     info: vi.fn(),
     warning: vi.fn(),
   }
@@ -871,7 +897,10 @@ async function loadMain() {
   }
 
   vi.doMock('@actions/core', () => core)
-  vi.doMock('../src/inputs.ts', () => ({ parseInputs }))
+  vi.doMock('../src/inputs.ts', async () => ({
+    ...(await vi.importActual<typeof import('../src/inputs.ts')>('../src/inputs.ts')),
+    parseInputs,
+  }))
   vi.doMock('../src/client.ts', () => ({ buildClient, getBucket }))
   vi.doMock('../src/summary.ts', () => ({ writeStepSummary }))
   vi.doMock('../src/commands/upload.ts', () => ({ uploadCommand: commands.uploadCommand }))

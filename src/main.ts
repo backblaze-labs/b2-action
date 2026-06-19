@@ -16,7 +16,7 @@ import { summarizeSyncErrors, syncCommand } from './commands/sync.ts'
 import { unhideCommand } from './commands/unhide.ts'
 import { uploadCommand } from './commands/upload.ts'
 import { verifyCommand } from './commands/verify.ts'
-import { classifyActionError } from './errors.ts'
+import { classifyActionError, formatActionDebugError } from './errors.ts'
 import { type ParsedInputs, parseInputs } from './inputs.ts'
 import { writeStepSummary } from './summary.ts'
 
@@ -337,6 +337,7 @@ export async function run(): Promise<void> {
       ...(dryRun !== undefined ? { dryRun } : {}),
       secretValues,
     })
+    core.debug(formatActionDebugError(err, { secretValues }))
     if (failure.retryable !== undefined) core.setOutput('retryable', String(failure.retryable))
     if (failure.retryAfter !== undefined) core.setOutput('retry-after', String(failure.retryAfter))
     core.setFailed(failure.message)
