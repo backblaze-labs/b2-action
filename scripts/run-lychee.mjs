@@ -36,9 +36,9 @@ export const LYCHEE_VERSION = '0.23.0'
 const LYCHEE_TAG = `lychee-v${LYCHEE_VERSION}`
 const REPO = join(dirname(fileURLToPath(import.meta.url)), '..')
 const BLOCK_SIZE = 512
-const DOWNLOAD_ATTEMPTS = Number(process.env.LYCHEE_DOWNLOAD_ATTEMPTS ?? 3)
-const DOWNLOAD_TIMEOUT_MS = Number(process.env.LYCHEE_DOWNLOAD_TIMEOUT_MS ?? 60_000)
-const LOCK_TIMEOUT_MS = Number(process.env.LYCHEE_INSTALL_LOCK_TIMEOUT_MS ?? 30_000)
+const DOWNLOAD_ATTEMPTS = positiveIntegerOrDefault(process.env.LYCHEE_DOWNLOAD_ATTEMPTS, 3)
+const DOWNLOAD_TIMEOUT_MS = positiveIntegerOrDefault(process.env.LYCHEE_DOWNLOAD_TIMEOUT_MS, 60_000)
+const LOCK_TIMEOUT_MS = positiveIntegerOrDefault(process.env.LYCHEE_INSTALL_LOCK_TIMEOUT_MS, 30_000)
 
 export const DEFAULT_LYCHEE_ARGS = Object.freeze([
   '--offline',
@@ -179,8 +179,8 @@ export function installDownloadedAsset(asset, downloadPath, binaryPath) {
 }
 
 export async function downloadWithRetries(url, destination, options = {}) {
-  const attempts = options.attempts ?? DOWNLOAD_ATTEMPTS
-  const timeoutMs = options.timeoutMs ?? DOWNLOAD_TIMEOUT_MS
+  const attempts = positiveIntegerOrDefault(options.attempts, DOWNLOAD_ATTEMPTS)
+  const timeoutMs = positiveIntegerOrDefault(options.timeoutMs, DOWNLOAD_TIMEOUT_MS)
   const fetchImpl = options.fetchImpl ?? fetch
   let lastError
 
@@ -264,6 +264,11 @@ export function verifyFileSha256(path, expectedSha256, label) {
   if (actual !== expectedSha256) {
     throw new Error(`${label} checksum mismatch: expected ${expectedSha256}, got ${actual}`)
   }
+}
+
+export function positiveIntegerOrDefault(value, defaultValue) {
+  const parsed = Number(value)
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : defaultValue
 }
 
 function defaultCacheRoot() {

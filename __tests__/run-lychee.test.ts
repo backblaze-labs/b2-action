@@ -32,6 +32,7 @@ const runLychee = (await import(pathToFileURL(scriptPath).href)) as {
     binaryPath: string,
   ) => void
   isEntrypoint: (metaUrl: string, argv1: string | undefined) => boolean
+  positiveIntegerOrDefault: (value: unknown, defaultValue: number) => number
 }
 
 describe('run-lychee helper', () => {
@@ -74,6 +75,13 @@ describe('run-lychee helper', () => {
     expect(
       runLychee.isEntrypoint(pathToFileURL(scriptPath).href, relative(process.cwd(), scriptPath)),
     ).toBe(true)
+  })
+
+  it('falls back for invalid positive integer settings', () => {
+    expect(runLychee.positiveIntegerOrDefault('4', 3)).toBe(4)
+    expect(runLychee.positiveIntegerOrDefault('not-a-number', 3)).toBe(3)
+    expect(runLychee.positiveIntegerOrDefault(0, 3)).toBe(3)
+    expect(runLychee.positiveIntegerOrDefault(Number.NaN, 3)).toBe(3)
   })
 
   it('does not trust a cached binary that only prints the expected version', async () => {
@@ -172,6 +180,24 @@ describe('run-lychee helper', () => {
     })
 
     expect(attempts).toBe(2)
+    await expect(readFile(destination, 'utf8')).resolves.toBe('ok')
+  })
+
+  it('sanitizes invalid download retry options', async () => {
+    const destination = join(workDir, 'downloaded')
+    let attempts = 0
+    const fetchImpl: typeof fetch = async () => {
+      attempts += 1
+      return new Response('ok', { status: 200 })
+    }
+
+    await runLychee.downloadWithRetries('https://example.test/lychee', destination, {
+      attempts: 0,
+      fetchImpl,
+      timeoutMs: Number.NaN,
+    })
+
+    expect(attempts).toBe(1)
     await expect(readFile(destination, 'utf8')).resolves.toBe('ok')
   })
 
