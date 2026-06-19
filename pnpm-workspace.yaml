@@ -8,8 +8,8 @@ allowBuilds:
 minimumReleaseAgeExclude:
   - '@backblaze-labs/*'
 
-# Keep dependency audits from resolving vulnerable dev/build tooling versions
-# while still allowing future compatible security patches.
+# Keep lockfile/install resolution on patched dev/build tooling versions while
+# still allowing future compatible security patches.
 overrides:
   # markdownlint-cli2 pulls js-yaml; keep it above the <=4.1.1 parser DoS range.
   # Drop when markdownlint-cli2 resolves js-yaml >=4.2.0 without an override.
