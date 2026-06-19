@@ -2,6 +2,13 @@ import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import {
+  AccessDeniedError,
+  B2InsufficientCapabilityError,
+  BadAuthTokenError,
+  NetworkError,
+  ServiceUnavailableError,
+} from '@backblaze-labs/b2-sdk/errors'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { DownloadedFile } from '../src/commands/download.ts'
 import type { ListedFile } from '../src/commands/list.ts'
@@ -549,6 +556,83 @@ describe('main dispatcher', () => {
 
     expect(ctx.core.setFailed).toHaveBeenCalledWith('plain string')
     expect(ctx.buildClient).not.toHaveBeenCalled()
+  })
+
+  it('classifies B2 authentication failures with credential guidance', async () => {
+    const ctx = await loadMain()
+    ctx.parseInputs.mockReturnValue(inputs('list'))
+    ctx.buildClient.mockRejectedValue(
+      new BadAuthTokenError(
+        { status: 401, code: 'bad_auth_token', message: 'bad auth token' },
+        { requestId: 'auth-request' },
+      ),
+    )
+
+    await ctx.run()
+
+    expect(ctx.core.setFailed).toHaveBeenCalledWith(
+      'B2 authentication failed: check application-key-id and application-key, and confirm the key is active. B2 said: bad auth token (status 401, code bad_auth_token, request auth-request)',
+    )
+  })
+
+  it('classifies missing capabilities as permission failures', async () => {
+    const ctx = await loadMain()
+    ctx.parseInputs.mockReturnValue(inputs('list'))
+    ctx.commands.listCommand.mockRejectedValue(
+      new B2InsufficientCapabilityError(['listFiles', 'writeFiles'], ['listFiles'], ['writeFiles']),
+    )
+
+    await ctx.run()
+
+    expect(ctx.core.setFailed).toHaveBeenCalledWith(
+      'B2 permission denied: application key is missing required capabilities: writeFiles. Update the key capabilities or use a key scoped to this bucket/prefix.',
+    )
+  })
+
+  it('classifies B2 access denied errors as permission failures', async () => {
+    const ctx = await loadMain()
+    ctx.parseInputs.mockReturnValue(inputs('list'))
+    ctx.commands.listCommand.mockRejectedValue(
+      new AccessDeniedError(
+        { status: 403, code: 'access_denied', message: 'prefix is not allowed' },
+        { requestId: 'access-request' },
+      ),
+    )
+
+    await ctx.run()
+
+    expect(ctx.core.setFailed).toHaveBeenCalledWith(
+      'B2 permission denied: check application key capabilities, bucket access, and file name prefix restrictions. B2 said: prefix is not allowed (status 403, code access_denied, request access-request)',
+    )
+  })
+
+  it('classifies SDK network errors as transient retryable failures', async () => {
+    const ctx = await loadMain()
+    ctx.parseInputs.mockReturnValue(inputs('upload'))
+    ctx.commands.uploadCommand.mockRejectedValue(new NetworkError('fetch failed'))
+
+    await ctx.run()
+
+    expect(ctx.core.setFailed).toHaveBeenCalledWith(
+      'Transient network error talking to B2: safe to retry this workflow. fetch failed',
+    )
+  })
+
+  it('classifies retryable B2 API errors as transient failures', async () => {
+    const ctx = await loadMain()
+    ctx.parseInputs.mockReturnValue(inputs('list'))
+    ctx.commands.listCommand.mockRejectedValue(
+      new ServiceUnavailableError(
+        { status: 503, code: 'service_unavailable', message: 'try again later' },
+        { retryAfter: 30, requestId: 'retry-request' },
+      ),
+    )
+
+    await ctx.run()
+
+    expect(ctx.core.setFailed).toHaveBeenCalledWith(
+      'Transient B2 error: safe to retry this workflow. B2 said: try again later (status 503, code service_unavailable, request retry-request, retry after 30s)',
+    )
   })
 
   it('reports sync aggregate errors with a sample', async () => {

@@ -2,6 +2,14 @@ import { realpathSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import * as core from '@actions/core'
+import {
+  AccessDeniedError,
+  B2Error,
+  B2InsufficientCapabilityError,
+  B2SsrfError,
+  BadAuthTokenError,
+  NetworkError,
+} from '@backblaze-labs/b2-sdk/errors'
 import { buildClient, getBucket } from './client.ts'
 import { copyCommand } from './commands/copy.ts'
 import { deleteCommand } from './commands/delete.ts'
@@ -319,11 +327,44 @@ export async function run(): Promise<void> {
       }
     }
   } catch (err) {
-    core.setFailed(err instanceof Error ? err.message : String(err))
+    core.setFailed(formatActionError(err))
   } finally {
     process.off('SIGTERM', onSigterm)
     process.off('SIGINT', onSigint)
   }
+}
+
+function formatActionError(err: unknown): string {
+  if (err instanceof BadAuthTokenError) {
+    return `B2 authentication failed: check application-key-id and application-key, and confirm the key is active. ${formatB2Details(err)}`
+  }
+  if (err instanceof B2InsufficientCapabilityError) {
+    const missing = err.missing.length > 0 ? err.missing.join(', ') : '(unknown)'
+    return `B2 permission denied: application key is missing required capabilities: ${missing}. Update the key capabilities or use a key scoped to this bucket/prefix.`
+  }
+  if (err instanceof AccessDeniedError) {
+    return `B2 permission denied: check application key capabilities, bucket access, and file name prefix restrictions. ${formatB2Details(err)}`
+  }
+  if (err instanceof NetworkError) {
+    return `Transient network error talking to B2: safe to retry this workflow. ${err.message}`
+  }
+  if (err instanceof B2Error && err.retryable) {
+    return `Transient B2 error: safe to retry this workflow. ${formatB2Details(err)}`
+  }
+  if (err instanceof B2SsrfError) {
+    return `B2 endpoint safety check failed: ${err.message}. Check the endpoint input and B2 realm configuration.`
+  }
+  if (err instanceof B2Error) {
+    return `B2 request failed: ${formatB2Details(err)}`
+  }
+  return err instanceof Error ? err.message : String(err)
+}
+
+function formatB2Details(err: B2Error): string {
+  const details = [`status ${err.status}`, `code ${err.code}`]
+  if (err.requestId !== undefined) details.push(`request ${err.requestId}`)
+  if (err.retryAfter !== undefined) details.push(`retry after ${err.retryAfter}s`)
+  return `B2 said: ${err.message} (${details.join(', ')})`
 }
 
 /**
