@@ -69,9 +69,6 @@ export function classifyActionError(
       false,
     )
   }
-  if (err instanceof B2SsrfError) {
-    return failure(SSRF_FAILURE_MESSAGE, false)
-  }
   if (err instanceof NetworkError) {
     const retryable = isSafeToRetry(options)
     return failure(

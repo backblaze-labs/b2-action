@@ -41111,9 +41111,6 @@ function classifyActionError(err, options = {}) {
     if (err instanceof AccessDeniedError) {
         return failure(`B2 permission denied: check application key capabilities, bucket access, and file name prefix restrictions. ${formatB2Details(err, options)}`, false);
     }
-    if (err instanceof B2SsrfError) {
-        return failure(SSRF_FAILURE_MESSAGE, false);
-    }
     if (err instanceof NetworkError) {
         const retryable = isSafeToRetry(options);
         return failure(`Transient network error talking to B2: ${retryHint(options)} ${sanitizeLogField(err.message, options)}`, retryable, retryable ? DEFAULT_NETWORK_RETRY_AFTER_SECONDS : undefined);
