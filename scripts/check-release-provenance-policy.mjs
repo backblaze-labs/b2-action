@@ -1,6 +1,9 @@
 import { readFileSync } from 'node:fs'
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
-const workflow = readFileSync('.github/workflows/release.yml', 'utf8')
+const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+const workflow = readFileSync(resolve(repoRoot, '.github/workflows/release.yml'), 'utf8')
 const jobsStart = workflow.indexOf('\njobs:\n')
 const jobsText = jobsStart === -1 ? '' : workflow.slice(jobsStart + 1)
 
@@ -62,6 +65,11 @@ requireIn('attest', attest, 'id-token: write')
 requireIn('attest', attest, 'attestations: write')
 requireIn('attest', attest, `ref: \${{ env.RELEASE_SHA }}`)
 requireIn('attest', attest, 'Verify release tag still points to validated commit')
+requireIn(
+  'attest',
+  attest,
+  'git fetch --force --no-tags origin "refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG"',
+)
 requireIn('attest', attest, 'uses: actions/attest-build-provenance@')
 rejectIn('attest', attest, /FLOATING_TAG_TOKEN/, 'reference FLOATING_TAG_TOKEN')
 rejectIn('attest', attest, /softprops\/action-gh-release/, 'run the release publishing action')
@@ -70,6 +78,11 @@ requireIn('publish', publish, 'needs: [validate, attest]')
 requireIn('publish', publish, 'contents: write')
 requireIn('publish', publish, `ref: \${{ env.RELEASE_SHA }}`)
 requireIn('publish', publish, 'Verify release tag still points to validated commit')
+requireIn(
+  'publish',
+  publish,
+  'git fetch --force --no-tags origin "refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG"',
+)
 requireIn('publish', publish, 'Verify release assets exist')
 requireIn('publish', publish, `GH_TOKEN: \${{ secrets.FLOATING_TAG_TOKEN }}`)
 rejectIn(

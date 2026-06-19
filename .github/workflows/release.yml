@@ -168,6 +168,7 @@ jobs:
 
       - name: Verify release tag still points to validated commit
         run: |
+          git fetch --force --no-tags origin "refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG"
           CURRENT_SHA=$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")
           if [ "$CURRENT_SHA" != "$RELEASE_SHA" ]; then
             echo "::error::refs/tags/$RELEASE_TAG moved: expected $RELEASE_SHA, got $CURRENT_SHA."
@@ -197,6 +198,7 @@ jobs:
 
       - name: Verify release tag still points to validated commit
         run: |
+          git fetch --force --no-tags origin "refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG"
           CURRENT_SHA=$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")
           if [ "$CURRENT_SHA" != "$RELEASE_SHA" ]; then
             echo "::error::refs/tags/$RELEASE_TAG moved: expected $RELEASE_SHA, got $CURRENT_SHA."
