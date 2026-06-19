@@ -53,6 +53,32 @@ describe('full-lockfile audit script', () => {
       await rm(tempDir, { recursive: true, force: true })
     }
   })
+
+  it('falls back to safe numeric defaults for invalid env values', async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), 'b2-audit-env-'))
+    try {
+      const fixture = join(tempDir, 'network.mjs')
+      const counter = join(tempDir, 'count.txt')
+      const output = join(tempDir, 'audit-output.txt')
+      const githubOutput = join(tempDir, 'github-output.txt')
+      await writeFixture(fixture, counter, {
+        exitStatus: 1,
+        stdout: 'ERR_PNPM_FETCH_FAIL request to npm failed\n',
+      })
+
+      const result = runAuditFixture(fixture, output, githubOutput, {
+        AUDIT_ATTEMPTS: 'not-a-number',
+        AUDIT_ATTEMPT_TIMEOUT_SECONDS: '-1',
+      })
+
+      expect(result.status).toBe(1)
+      expect(await readFile(counter, 'utf8')).toBe('3')
+      expect(await readFile(githubOutput, 'utf8')).toContain('attempts=3')
+      expect(await readFile(githubOutput, 'utf8')).toContain('failure_kind=infrastructure')
+    } finally {
+      await rm(tempDir, { recursive: true, force: true })
+    }
+  })
 })
 
 describe('full-lockfile audit heartbeat script', () => {
@@ -112,7 +138,12 @@ describe('full-lockfile audit heartbeat script', () => {
   })
 })
 
-function runAuditFixture(fixture: string, output: string, githubOutput: string) {
+function runAuditFixture(
+  fixture: string,
+  output: string,
+  githubOutput: string,
+  env: Record<string, string> = {},
+) {
   return spawnSync(process.execPath, [SCRIPT_PATH], {
     encoding: 'utf8',
     env: {
@@ -124,6 +155,7 @@ function runAuditFixture(fixture: string, output: string, githubOutput: string) 
       GITHUB_OUTPUT: githubOutput,
       PNPM_AUDIT_ARGS: JSON.stringify([fixture]),
       PNPM_AUDIT_COMMAND: process.execPath,
+      ...env,
     },
   })
 }

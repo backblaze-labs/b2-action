@@ -7,6 +7,10 @@ import { fileURLToPath } from 'node:url'
 const retryablePattern =
   /\b(?:ERR_PNPM_(?:FETCH|META_FETCH)_FAIL|EAI_AGAIN|ECONNRESET|ETIMEDOUT|ENOTFOUND|ECONNREFUSED)\b|fetch failed|network timeout|socket hang up/i
 
+function defaultPnpmCommand() {
+  return process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm'
+}
+
 export function isEntrypoint(importMetaUrl, argvPath) {
   return argvPath !== undefined && fileURLToPath(importMetaUrl) === resolve(argvPath)
 }
@@ -73,6 +77,21 @@ function parseJsonArrayEnv(name, fallback) {
   return parsed
 }
 
+function parseNumericEnv(name, fallback, { integer = false, min = 0 } = {}) {
+  const value = process.env[name]
+  if (!value) {
+    return fallback
+  }
+
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed)) {
+    return fallback
+  }
+
+  const normalized = integer ? Math.floor(parsed) : parsed
+  return normalized >= min ? normalized : fallback
+}
+
 async function writeGitHubOutput(values) {
   const outputPath = process.env.GITHUB_OUTPUT
   if (!outputPath) {
@@ -88,11 +107,13 @@ async function writeGitHubOutput(values) {
 }
 
 export async function runAudit({
-  attemptTimeoutMs = Number(process.env.AUDIT_ATTEMPT_TIMEOUT_SECONDS ?? 120) * 1_000,
-  attempts = Number(process.env.AUDIT_ATTEMPTS ?? 3),
+  attemptTimeoutMs = parseNumericEnv('AUDIT_ATTEMPT_TIMEOUT_SECONDS', 120, {
+    min: 1,
+  }) * 1_000,
+  attempts = parseNumericEnv('AUDIT_ATTEMPTS', 3, { integer: true, min: 1 }),
   auditLevel = process.env.AUDIT_LEVEL ?? 'high',
-  backoffSeconds = Number(process.env.AUDIT_RETRY_BACKOFF_SECONDS ?? 15),
-  command = process.env.PNPM_AUDIT_COMMAND ?? 'pnpm',
+  backoffSeconds = parseNumericEnv('AUDIT_RETRY_BACKOFF_SECONDS', 15),
+  command = process.env.PNPM_AUDIT_COMMAND ?? defaultPnpmCommand(),
   args = parseJsonArrayEnv('PNPM_AUDIT_ARGS', ['audit', '--audit-level', auditLevel]),
   outputPath = process.env.AUDIT_OUTPUT ?? 'audit-output.txt',
 } = {}) {
