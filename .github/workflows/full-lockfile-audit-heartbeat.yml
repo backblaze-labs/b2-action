@@ -6,11 +6,6 @@ on:
     - cron: '41 5 * * *'
   workflow_dispatch:
 
-permissions:
-  actions: read
-  contents: read
-  issues: write
-
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
@@ -21,6 +16,9 @@ jobs:
     if: github.repository == 'backblaze-labs/b2-action'
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      actions: read # inspect scheduled full-lockfile audit runs
+      issues: write # open or update the heartbeat tracking issue
     steps:
       - name: Check latest scheduled audit
         env:
