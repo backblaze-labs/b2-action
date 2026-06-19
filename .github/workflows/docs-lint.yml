@@ -70,8 +70,6 @@ jobs:
     name: Markdown link check
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    env:
-      LYCHEE_CACHE_DIR: ${{ runner.temp }}/lychee-cache
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -90,6 +88,8 @@ jobs:
       # The offline, fragment-aware, node_modules-excluding flags live in the
       # lychee runner.
       - run: pnpm docs:links
+        env:
+          LYCHEE_CACHE_DIR: ${{ runner.temp }}/lychee-cache
 
   spellcheck:
     name: cspell
