@@ -20,7 +20,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Changed
 
 - `upload`: directory/glob uploads now consistently treat `destination` as a prefix even when the source resolves to a single file; only an explicit single-file source treats a non-trailing-slash `destination` as the exact object key.
-- Stable releases now fail when `FLOATING_TAG_TOKEN` is absent or expired, preventing the consumer-facing floating major tag (`v1`, `v2`, ...) from silently lagging behind the newly published release. ([#28](https://github.com/backblaze-labs/b2-action/issues/28))
+- Stable releases now move the floating major tag (`v1`, `v2`, ...) before publishing the GitHub Release, fail early when `FLOATING_TAG_TOKEN` is absent or unusable, and document the manual `workflow_dispatch` override for emergency releases. ([#28](https://github.com/backblaze-labs/b2-action/issues/28))
 
 ### Documentation
 

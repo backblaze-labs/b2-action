@@ -5,7 +5,7 @@ The single source of truth for how releases of this Action are cut, automated, a
 ## Model
 
 - The Action is consumed as `uses: backblaze-labs/b2-action@v1`. There is no npm package and no CLI: `package.json` is `private: true`, `name: "b2"`.
-- Releases are tag-driven. Push an annotated `vX.Y.Z` tag and [`.github/workflows/release.yml`](./.github/workflows/release.yml) runs the full gate, cuts a GitHub Release, and moves the floating major tag (`v1`, `v2`, ...) to the new commit so consumers pinned to a major continue to track the latest minor/patch.
+- Releases are tag-driven. Push an annotated `vX.Y.Z` tag and [`.github/workflows/release.yml`](./.github/workflows/release.yml) runs the full gate, moves the floating major tag (`v1`, `v2`, ...) to the new commit, and cuts a GitHub Release so consumers pinned to a major continue to track the latest minor/patch.
 - Pre-release tags (`vX.Y.Z-alpha`, `-beta`, `-rc.N`) are published as pre-releases and do **not** move the floating major tag. Bare `v1` / `v2` deliberately do not match the release trigger, so the workflow re-pointing them never re-runs itself.
 - Versioning is semver. The first public release is `1.0.0`.
 
@@ -50,8 +50,8 @@ To re-run a release for an existing tag, use the `workflow_dispatch` input on `r
 3. Verifies `git diff --exit-code -- dist/` is clean: the committed bundle must match a fresh build at the tagged commit.
 4. Verifies the tag equals `package.json` version, that the bundle contains the `b2-github-action/` User-Agent token, and that the bundle inlines the same version string. ncc tree-shakes the JSON import in `src/version.ts` so the token and the version appear separately in the bundle, not as one contiguous literal; checking each independently is the end-to-end "bake" gate.
 5. Detects pre-release suffixes (`-alpha`, `-beta`, `-rc...`). Pre-releases skip the floating-tag step.
-6. Creates the GitHub Release via `softprops/action-gh-release@v3` with `generate_release_notes: true`.
-7. Moves the floating major tag (e.g. `v1`) to the release commit via the refs API. See [Floating tag automation](#floating-tag-automation) below for the token requirement; missing or expired credentials fail stable releases so the consumer-facing alias cannot lag silently.
+6. Moves the floating major tag (e.g. `v1`) to the release commit via the refs API. See [Floating tag automation](#floating-tag-automation) below for the token requirement; missing or unusable credentials fail before a stable GitHub Release is created or updated.
+7. Creates the GitHub Release via `softprops/action-gh-release@v3` with `generate_release_notes: true`.
 
 ## One-time setup
 
@@ -76,11 +76,11 @@ git push origin vX.Y.Z --force
 
 ### Floating tag automation
 
-The default `GITHUB_TOKEN` **cannot** create or move a tag whose commit contains workflow files (anything under `.github/workflows/`). Both `git push` and the refs API reject it, and the required `workflows` permission cannot be granted to `GITHUB_TOKEN`. Stable releases therefore require a `FLOATING_TAG_TOKEN` secret for the floating-tag step:
+The default `GITHUB_TOKEN` **cannot** create or move a tag whose commit contains workflow files (anything under `.github/workflows/`). Both `git push` and the refs API reject it, and the required `workflows` permission cannot be granted to `GITHUB_TOKEN`. Stable releases therefore require a `FLOATING_TAG_TOKEN` secret before the GitHub Release is published:
 
-- **Fine-grained PAT** (recommended): repo `backblaze-labs/b2-action`, permissions **Contents: Read and write** + **Workflows: Read and write**. An org may require admin approval.
-- **Classic PAT** with `repo` + `workflow` scopes.
-- **GitHub App** token via `actions/create-github-app-token` (no long-lived secret).
+- **Fine-grained PAT** (accepted control): repo `backblaze-labs/b2-action`, permissions **Contents: Read and write** + **Workflows: Read and write**. Rotate it at least every 90 days, after maintainer access changes, and after any suspected exposure.
+- **GitHub App** token via `actions/create-github-app-token` is preferred once available because it avoids a long-lived secret.
+- **Classic PAT** is not part of the normal release posture; use one only as a temporary emergency bridge and rotate it immediately afterward.
 
 Store it as a repo secret:
 
@@ -88,7 +88,7 @@ Store it as a repo secret:
 gh secret set FLOATING_TAG_TOKEN --repo backblaze-labs/b2-action
 ```
 
-If the secret is absent or expired on a non-prerelease tag, the workflow fails rather than letting the GitHub Release publish while `@vN` consumers stay on the previous release. Treat that failure as a release blocker: either configure the secret and rerun the release workflow, or move the floating tag by hand.
+For stable tags, the workflow moves `vN` before it creates or updates the GitHub Release. If the secret is absent, expired, revoked, or cannot read tag refs, the job fails before the public GitHub Release / Marketplace artifact is published; the immutable `vX.Y.Z` Git tag still exists because it is what triggered the workflow. Treat that failure as a release blocker: configure the secret and rerun the release workflow, or move the floating tag by hand before publishing.
 
 Manual fallback, replacing `vN` with the major tag such as `v1` and `vX.Y.Z` with the exact release tag:
 
@@ -97,6 +97,8 @@ git fetch origin --tags
 git tag -f vN vX.Y.Z^{commit}
 git push origin refs/tags/vN --force
 ```
+
+If the credential is temporarily unavailable and the floating tag has been moved manually, rerun the workflow with `workflow_dispatch`, the same `tag`, and `skip-floating-tag: true`. That emergency override publishes the GitHub Release without exercising `FLOATING_TAG_TOKEN` and emits a warning that `@vN` was not moved by automation. Do not use it until the manual tag move is complete or the release manager has explicitly accepted that `@vN` consumers will remain on the previous release until follow-up.
 
 ### First Marketplace publish
 
