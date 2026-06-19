@@ -4,8 +4,8 @@ import { fileURLToPath } from 'node:url'
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const workflow = readFileSync(resolve(repoRoot, '.github/workflows/release.yml'), 'utf8')
-const jobsStart = workflow.indexOf('\njobs:\n')
-const jobsText = jobsStart === -1 ? '' : workflow.slice(jobsStart + 1)
+const jobsMatch = /(^|\r?\n)jobs:\r?\n/.exec(workflow)
+const jobsText = jobsMatch ? workflow.slice(jobsMatch.index + jobsMatch[1].length) : ''
 
 const failures = []
 
