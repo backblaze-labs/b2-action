@@ -335,7 +335,7 @@ jobs:
             fi
           fi
 
-          SHA=$(git rev-parse "${RELEASE_TAG}^{commit}")
+          SHA="$RELEASE_SHA"
           echo "Pointing floating tag $MAJOR at $RELEASE_TAG ($SHA)"
           # Update the tag if it already exists, otherwise create it.
           if [ "$REF_EXISTS" = "true" ]; then

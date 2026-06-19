@@ -85,6 +85,7 @@ requireIn(
 )
 requireIn('publish', publish, 'Verify release assets exist')
 requireIn('publish', publish, `GH_TOKEN: \${{ secrets.FLOATING_TAG_TOKEN }}`)
+requireIn('publish', publish, 'SHA="$RELEASE_SHA"')
 rejectIn(
   'publish',
   publish,
@@ -92,6 +93,12 @@ rejectIn(
   'request OIDC/attestation permissions',
 )
 rejectIn('publish', publish, /uses: actions\/attest-build-provenance@/, 'run attestation')
+rejectIn(
+  'publish',
+  publish,
+  /git rev-parse "\$\{RELEASE_TAG\}\^\{commit\}"/,
+  're-resolve the release tag after validation',
+)
 
 if (failures.length > 0) {
   console.error('Release provenance policy failed:')
