@@ -66,6 +66,7 @@ requireIn('validate', validate, `release-tag: \${{ steps.release-ref.outputs.rel
 requireIn('validate', validate, 'git show-ref --verify --quiet "refs/tags/$REQUESTED_REF"')
 requireIn('validate', validate, `RUN_REF: \${{ github.ref }}`)
 requireIn('validate', validate, 'git checkout --detach "$RELEASE_SHA"')
+requireIn('validate', validate, 'package-manager-cache: false')
 
 requireIn('attest', attest, 'needs: validate')
 requireIn('attest', attest, 'contents: read')

@@ -154,8 +154,8 @@ jobs:
     timeout-minutes: 20
     permissions:
       contents: read
-      id-token: write
-      attestations: write
+      id-token: write # mint OIDC token only in this isolated provenance job
+      attestations: write # publish the GitHub Artifact Attestation for dist/index.js
     env:
       RELEASE_SHA: ${{ needs.validate.outputs.release-sha }}
       RELEASE_TAG: ${{ needs.validate.outputs.release-tag }}
