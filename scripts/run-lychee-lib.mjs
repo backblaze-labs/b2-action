@@ -5,14 +5,9 @@
  * without `pnpm install`, so keep it dependency-free and limited to Node
  * built-ins.
  *
- * To bump lychee:
- *   1. Update LYCHEE_VERSION.
- *   2. Re-check every asset name in PLATFORM_ASSETS against the new release;
- *      lychee has changed asset names across versions.
- *   3. Download each listed asset from the official GitHub release and
- *      refresh archiveSha256 and binarySha256. Lychee 0.23.0 does not publish
- *      a checksum manifest; if a future release does, verify against it too.
- *      For archive: false assets, both hashes are the same raw file hash.
+ * Supported platform, cache, and lychee-bump instructions live in
+ * DEVELOPMENT.md's "Managed lychee binary" section; keep that section
+ * authoritative so the maintenance runbook has one source of truth.
  */
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
@@ -35,6 +30,7 @@ import { setTimeout as sleep } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { gunzipSync } from 'node:zlib'
 
+/** @internal Test seam for the managed lychee version pin. */
 export const LYCHEE_VERSION = '0.23.0'
 const LYCHEE_TAG = `lychee-v${LYCHEE_VERSION}`
 const REPO = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -73,6 +69,7 @@ const LYCHEE_ENV_KEYS = Object.freeze([
   'WINDIR',
 ])
 
+/** @internal Test seam for the shell-neutral default lychee invocation. */
 export const DEFAULT_LYCHEE_ARGS = Object.freeze([
   '--offline',
   '--include-fragments',
@@ -82,6 +79,7 @@ export const DEFAULT_LYCHEE_ARGS = Object.freeze([
   '**/*.md',
 ])
 
+/** @internal Test seam for pinned release assets and their expected hashes. */
 export const PLATFORM_ASSETS = Object.freeze({
   'darwin-arm64': {
     archive: true,
@@ -132,11 +130,13 @@ export async function main(args = process.argv.slice(2)) {
 // runner behavior without spawning lychee. The CLI contract is main() plus
 // isEntrypoint().
 
+/** @internal Test seam for default/user lychee argument assembly. */
 export function lycheeArgsFor(args = []) {
   const userArgs = args[0] === '--' ? args.slice(1) : args
   return [...DEFAULT_LYCHEE_ARGS, ...userArgs]
 }
 
+/** @internal Test seam for the minimal subprocess environment allowlist. */
 export function environmentForLychee(sourceEnv = process.env) {
   const env = {}
   for (const key of LYCHEE_ENV_KEYS) {
@@ -145,6 +145,7 @@ export function environmentForLychee(sourceEnv = process.env) {
   return env
 }
 
+/** @internal Test seam for supported-platform resolution and diagnostics. */
 export function assetForPlatform(platform = process.platform, arch = process.arch) {
   const key = `${platform}-${arch}`
   const asset = PLATFORM_ASSETS[key]
@@ -165,6 +166,7 @@ export function assetForPlatform(platform = process.platform, arch = process.arc
   )
 }
 
+/** @internal Test seam for cached-binary hash verification. */
 export function binaryMatchesHash(path, expectedSha256) {
   if (!existsSync(path)) return false
   try {
@@ -214,6 +216,7 @@ async function installLychee(asset, binaryPath, cacheRoot) {
   }
 }
 
+/** @internal Test seam for checksum-gated archive/binary installation. */
 export function installDownloadedAsset(asset, downloadPath, binaryPath) {
   verifyFileSha256(downloadPath, asset.archiveSha256, asset.name)
 
@@ -227,6 +230,7 @@ export function installDownloadedAsset(asset, downloadPath, binaryPath) {
   chmodSync(binaryPath, 0o755)
 }
 
+/** @internal Test seam for bounded download retry behavior. */
 export async function downloadWithRetries(url, destination, options = {}) {
   const attempts = positiveIntegerOrDefault(options.attempts, DOWNLOAD_ATTEMPTS)
   const timeoutMs = positiveIntegerOrDefault(options.timeoutMs, DOWNLOAD_TIMEOUT_MS)
@@ -258,6 +262,7 @@ export async function downloadWithRetries(url, destination, options = {}) {
   )
 }
 
+/** @internal Test seam for safe lychee archive extraction. */
 export function extractLycheeArchive(archivePath, destination) {
   const archive = gunzipSync(readFileSync(archivePath))
   let foundLychee = false
@@ -316,11 +321,13 @@ function verifyFileSha256(path, expectedSha256, label) {
   }
 }
 
+/** @internal Test seam for numeric environment option parsing. */
 export function positiveIntegerOrDefault(value, defaultValue) {
   const parsed = Number(value)
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : defaultValue
 }
 
+/** @internal Test seam for install-lock wait derivation. */
 export function installLockTimeoutMs(downloadAttempts, downloadTimeoutMs) {
   const retryDelayMs = (downloadAttempts * (downloadAttempts - 1) * 500) / 2
   return downloadAttempts * downloadTimeoutMs + retryDelayMs + INSTALL_LOCK_GRACE_MS

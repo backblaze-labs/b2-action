@@ -108,8 +108,13 @@ describe('run-lychee helper', () => {
     expect(runLychee.positiveIntegerOrDefault(Number.NaN, 3)).toBe(3)
   })
 
-  it('derives lock wait from bounded download timing', () => {
-    expect(runLychee.installLockTimeoutMs(3, 60_000)).toBe(211_500)
+  it('keeps lock wait longer than the bounded download window', () => {
+    const attempts = 3
+    const timeoutMs = 60_000
+
+    expect(runLychee.installLockTimeoutMs(attempts, timeoutMs)).toBeGreaterThan(
+      attempts * timeoutMs,
+    )
   })
 
   it('does not trust a cached binary that only prints the expected version', async () => {

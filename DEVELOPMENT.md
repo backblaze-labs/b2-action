@@ -94,11 +94,20 @@ Current managed tool:
 
 | Tool | Version | Source | License | Cache |
 | --- | --- | --- | --- | --- |
-| lychee | `0.23.0` | [`lychee-v0.23.0`](https://github.com/lycheeverse/lychee/releases/tag/lychee-v0.23.0) | Apache-2.0 OR MIT | `node_modules/.cache/lychee` |
+| lychee | `0.23.0` | [`lychee-v0.23.0`](https://github.com/lycheeverse/lychee/releases/tag/lychee-v0.23.0) | Apache-2.0 OR MIT | local: `node_modules/.cache/lychee`; CI: `${{ runner.temp }}/lychee-cache` |
 
 Supported local platforms are `darwin-arm64`, `linux-arm64`, `linux-x64`, and `win32-x64`. Lychee `0.23.0` does not publish an Intel macOS (`darwin-x64`) binary; Intel macOS contributors can rely on the CI `link-check` job for this gate.
 
-When bumping lychee, update `LYCHEE_VERSION`, re-check every asset name in `PLATFORM_ASSETS`, and refresh the committed `archiveSha256` and `binarySha256` values from the official GitHub release assets. Lychee `0.23.0` does not publish a checksum manifest; if a future release does, verify against it too. The asset names are part of the pin because lychee has renamed release assets across versions. For non-archive assets such as `win32-x64`, `archiveSha256` and `binarySha256` are the same raw file hash.
+Authoritative lychee bump process:
+
+1. Update `LYCHEE_VERSION` in [`scripts/run-lychee-lib.mjs`](./scripts/run-lychee-lib.mjs).
+2. Re-check every asset name in `PLATFORM_ASSETS` against the new release. The asset names are part of the pin because lychee has renamed release assets across versions.
+3. Download each listed asset from the official GitHub release and refresh the committed `archiveSha256` and `binarySha256` values. For non-archive assets such as `win32-x64`, `archiveSha256` and `binarySha256` are the same raw file hash.
+4. Before merge, a second reviewer must independently download the same official release assets, recompute every changed hash, and confirm the PR values. Prefer a separate machine or network for this check when practical. Lychee `0.23.0` does not publish a checksum manifest; if a future release does, verify against it too.
+
+On every cold cache (new version, fresh runner, or cache eviction), `pnpm docs:links` downloads lychee from the official GitHub release endpoint. The docs link gate intentionally fails hard if that endpoint remains unavailable after the wrapper's bounded retries and timeout; this keeps tool acquisition failures visible instead of silently skipping link checks.
+
+Interrupted local installs can leave a cache lock directory behind. The next run waits for the derived install-lock timeout before printing the lock path to remove. That long wait is intentional so a concurrent live install is not deleted; remove the named lock only after confirming no `docs:links` process is running.
 
 ## Git hooks
 
