@@ -51,12 +51,18 @@ describe('run-lychee helper', () => {
       '--no-progress',
       '--verbose',
       '--exclude-path',
-      '(^|/)node_modules/',
+      '(^|[\\\\/])node_modules[\\\\/]',
       '**/*.md',
     ])
     expect(
       runLychee.DEFAULT_LYCHEE_ARGS.some((arg) => arg.includes("'") || arg.includes('"')),
     ).toBe(false)
+    const excludePathPattern =
+      runLychee.DEFAULT_LYCHEE_ARGS[runLychee.DEFAULT_LYCHEE_ARGS.indexOf('--exclude-path') + 1]
+    if (excludePathPattern === undefined) throw new Error('missing --exclude-path pattern')
+    const excludePath = new RegExp(excludePathPattern)
+    expect(excludePath.test('docs/node_modules/package/README.md')).toBe(true)
+    expect(excludePath.test('docs\\node_modules\\package\\README.md')).toBe(true)
   })
 
   it('documents the unsupported Intel macOS asset gap in the platform error', () => {
