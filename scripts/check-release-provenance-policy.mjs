@@ -39,7 +39,14 @@ function asArray(value) {
 }
 
 function loadWorkflow(filePath) {
-  const source = readFileSync(filePath, 'utf8')
+  let source = ''
+  try {
+    source = readFileSync(filePath, 'utf8')
+  } catch (error) {
+    fail(`${filePath} must be readable: ${error.message}`)
+    return { doc: {}, source }
+  }
+
   try {
     return {
       doc: asMapping(parse(source, { prettyErrors: false })),
