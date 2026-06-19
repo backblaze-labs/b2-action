@@ -1,10 +1,11 @@
 name: Docs lint
 
-# Four integrity checks for the documentation + prose surface:
+# Five integrity checks for the documentation + prose surface:
 #   1. `action.yml` <> README.md sync (every input/output appears in both).
-#   2. markdownlint-cli2 for prose style consistency.
-#   3. lychee for broken markdown links (offline + fragment-aware).
-#   4. cspell for spelling across source, markdown, and workflow YAML.
+#   2. release provenance policy checks for OIDC/attestation isolation.
+#   3. markdownlint-cli2 for prose style consistency.
+#   4. lychee for broken markdown links (offline + fragment-aware).
+#   5. cspell for spelling across source, markdown, and workflow YAML.
 #
 # Cheap and fast. Runs on every PR + every push to main.
 
@@ -22,10 +23,12 @@ on:
       - 'cspell.json'
       - '.cspell/**'
       - 'scripts/check-action-yml-vs-readme.mjs'
+      - 'scripts/check-release-provenance-policy.mjs'
       - 'scripts/run-lychee-lib.mjs'
       - 'scripts/run-lychee.mjs'
       - '.markdownlint-cli2.jsonc'
       - '.github/workflows/docs-lint.yml'
+      - '.github/workflows/release.yml'
   workflow_dispatch:
 
 permissions:
@@ -47,6 +50,18 @@ jobs:
         with:
           node-version: 24
       - run: node scripts/check-action-yml-vs-readme.mjs
+
+  release-provenance-policy:
+    name: release provenance policy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 24
+      - run: node scripts/check-release-provenance-policy.mjs
 
   markdownlint:
     name: markdownlint

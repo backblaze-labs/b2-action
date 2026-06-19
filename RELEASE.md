@@ -39,28 +39,36 @@ The tag push fires the release workflow described below.
 
 > The initial `1.0.0` could not use `pnpm version` because `package.json` already carried that version. It was tagged directly with `git tag -a v1.0.0 -m v1.0.0 && git push --follow-tags`. Use `pnpm version` from `1.0.1` onward.
 
-To re-run a release for an existing tag, use the `workflow_dispatch` input on `release.yml`.
+To re-run a release for an existing tag, dispatch `release.yml` from the tag ref itself so any attestation remains anchored to `refs/tags/<tag>`:
+
+```bash
+TAG=vX.Y.Z
+gh workflow run release.yml --repo backblaze-labs/b2-action --ref "$TAG" -f tag="$TAG"
+```
 
 ## What the release workflow does
 
 [`.github/workflows/release.yml`](./.github/workflows/release.yml) runs on every three-component `vX.Y.Z` (or `vX.Y.Z-*`) tag push:
 
-1. Checks out the tag with `fetch-depth: 0`. Sets `HUSKY=0` so hooks never run in CI.
+1. Resolves the release ref once as an existing semver tag under `refs/tags/`, rejects branch or ambiguous manual inputs, checks out the resolved commit SHA, and exports that SHA for downstream jobs.
 2. Installs with `--frozen-lockfile`, then runs `lint`, `typecheck`, `test`, `build`.
 3. Verifies `git diff --exit-code -- dist/` is clean: the committed bundle must match a fresh build at the tagged commit.
 4. Verifies the tag equals `package.json` version, that the bundle contains the `b2-github-action/` User-Agent token, and that the bundle inlines the same version string. ncc tree-shakes the JSON import in `src/version.ts` so the token and the version appear separately in the bundle, not as one contiguous literal; checking each independently is the end-to-end "bake" gate.
-5. Detects any pre-release suffix (`vX.Y.Z-*`). Pre-releases skip the floating-tag step.
-6. Verifies a stable tag is the newest `vX.Y.Z` tag for its major version before any publish-side effects.
-7. Moves the floating major tag (e.g. `v1`) to the release commit via the refs API. See [Floating tag automation](#floating-tag-automation) below for the token requirement; missing or unusable credentials fail before a stable GitHub Release is created or updated.
-8. Generates a SHA-256 checksum for `dist/index.js` and creates a GitHub Artifact Attestation for that exact bundle.
-9. Creates the GitHub Release via `softprops/action-gh-release@v3` with `generate_release_notes: true`, uploading both `index.js` and `index.js.sha256` as release assets.
+5. Runs an isolated attestation job with only `contents: read`, `id-token: write`, and `attestations: write`. That job checks out the validated SHA, fails if `refs/tags/<tag>` moved, and creates a GitHub Artifact Attestation for `dist/index.js`.
+6. Runs a separate publish job without OIDC or attestation permissions. It checks out the same validated SHA, fails if the tag moved, generates a SHA-256 checksum for `dist/index.js`, and verifies both release assets exist before publishing.
+7. For stable tags, verifies the tag is the newest `vX.Y.Z` tag for its major version and moves the floating major tag (e.g. `v1`) to the release commit before any public GitHub Release is created or updated. See [Floating tag automation](#floating-tag-automation) below for the token requirement; missing or unusable credentials fail before publication. Pre-releases skip the floating-tag step.
+8. Creates the GitHub Release via `softprops/action-gh-release@v3` with `generate_release_notes: true`, uploading both `index.js` and `index.js.sha256` as release assets.
+
+The attestation is a signed statement that the release workflow handled the `dist/index.js` bytes from the validated tag. The reproducible-build guarantee still comes from the validation gate that rebuilds `dist/` from source and fails if the committed bundle differs.
+
+The release asset upload is intentionally fail-fast. If `dist/index.js` or `dist/index.js.sha256` is missing, the job fails before publishing the GitHub Release. After fixing the workflow or tag contents, rerun from the exact tag ref with the `workflow_dispatch` command above.
 
 ## Verifying release provenance
 
-Every release includes an `index.js` asset that is byte-for-byte the committed `dist/index.js` bundle at the release tag, plus a GitHub Artifact Attestation signed by the release workflow. Verify both the checksum and provenance before auditing the bundle:
+Every release created after this change includes an `index.js` asset that is byte-for-byte the committed `dist/index.js` bundle at the release tag, plus a GitHub Artifact Attestation signed by the release workflow. The attestation is the authoritative tamper/provenance check:
 
 ```bash
-TAG=v1.0.1
+TAG=vX.Y.Z
 DIR=/tmp/b2-action-release
 rm -rf "$DIR"
 mkdir -p "$DIR"
@@ -70,13 +78,13 @@ gh release download "$TAG" \
   --pattern 'index.js*' \
   --dir "$DIR"
 
-(cd "$DIR" && sha256sum -c index.js.sha256)
-
 gh attestation verify "$DIR/index.js" \
   --repo backblaze-labs/b2-action \
   --signer-workflow backblaze-labs/b2-action/.github/workflows/release.yml \
   --source-ref "refs/tags/$TAG"
 ```
+
+The adjacent checksum is for download corruption diagnostics only; anyone who can maliciously edit release assets can replace both the bundle and checksum. To check it on Linux, run `(cd "$DIR" && sha256sum -c index.js.sha256)`. On macOS, run `(cd "$DIR" && shasum -a 256 -c index.js.sha256)`.
 
 Use the exact `vX.Y.Z` release tag when verifying. The floating `v1` tag is intentionally mutable and should not be used as the verification ref.
 

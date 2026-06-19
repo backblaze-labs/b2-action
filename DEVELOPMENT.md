@@ -82,6 +82,7 @@ pnpm docs:watch     # typedoc in watch mode for local authoring
 pnpm docs:lint      # markdownlint-cli2 against **/*.md
 pnpm docs:links     # runs pinned lychee in offline + fragment-aware mode, excluding node_modules
 pnpm docs:check-action-yml  # action.yml <> README sync check
+pnpm docs:check-release-provenance  # release.yml provenance isolation policy
 ```
 
 The full-lockfile audit uses the pnpm builtin directly, not a package script:
@@ -119,7 +120,7 @@ Interrupted local installs can leave a cache lock directory behind. The next run
 
 | Hook | What it runs | Triggers on |
 | --- | --- | --- |
-| `pre-commit` | `pnpm lint` + `pnpm typecheck` + `pnpm test` + `pnpm build` + `dist/` freshness check + `pnpm spellcheck`. Every local code/doc check, every commit, no path-gating. | Every `git commit` |
+| `pre-commit` | `pnpm lint` + release-provenance policy check + `pnpm typecheck` + `pnpm test` + `pnpm build` + `dist/` freshness check + `pnpm spellcheck`. Every local code/doc check, every commit, no path-gating. | Every `git commit` |
 | `pre-push` | `pnpm test:coverage` (subsumes plain `test`, so we don't double-run). | Every `git push` |
 
 Pre-commit runs every repo-local code/doc check so a small change cannot skip an important local gate. On a clean repo this takes ~5 s. Skip either hook with `--no-verify` if you need to; the same checks run in CI.
