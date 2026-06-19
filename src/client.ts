@@ -39,15 +39,10 @@ function maskAccountAuthToken(token: string | null | undefined): void {
   if (token) core.setSecret(token)
 }
 
-function getStoredAccountAuthToken(accountInfo: {
-  getAuthToken?: () => string | null | undefined
-}): string | null | undefined {
-  return typeof accountInfo.getAuthToken === 'function'
-    ? accountInfo.getAuthToken.call(accountInfo)
-    : undefined
-}
-
 class SecretMaskingAccountInfo extends InMemoryAccountInfo {
+  // The SDK routes authorize() and transparent reauthorize() through the
+  // supplied AccountInfo.setAuth. The reauth masking test is the CI guard for
+  // this SDK coupling when the dependency is bumped.
   override setAuth(auth: AuthorizeAccountResponse): void {
     maskAccountAuthToken(auth.authorizationToken)
     super.setAuth(auth)
@@ -88,7 +83,10 @@ export async function buildClient(options: BuildClientOptions): Promise<Authoriz
   })
 
   await client.authorize()
-  maskAccountAuthToken(getStoredAccountAuthToken(client.accountInfo))
+  // Deliberately overlaps with setAuth for initial auth. If a future SDK
+  // changes authorize() storage, the public AccountInfo getter still masks the
+  // stored account token before command code can log.
+  maskAccountAuthToken(client.accountInfo.getAuthToken())
 
   return { client, bucketName: options.bucket }
 }

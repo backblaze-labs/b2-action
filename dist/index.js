@@ -35213,12 +35213,10 @@ function maskAccountAuthToken(token) {
     if (token)
         core_setSecret(token);
 }
-function getStoredAccountAuthToken(accountInfo) {
-    return typeof accountInfo.getAuthToken === 'function'
-        ? accountInfo.getAuthToken.call(accountInfo)
-        : undefined;
-}
 class SecretMaskingAccountInfo extends InMemoryAccountInfo {
+    // The SDK routes authorize() and transparent reauthorize() through the
+    // supplied AccountInfo.setAuth. The reauth masking test is the CI guard for
+    // this SDK coupling when the dependency is bumped.
     setAuth(auth) {
         maskAccountAuthToken(auth.authorizationToken);
         super.setAuth(auth);
@@ -35256,7 +35254,10 @@ async function buildClient(options) {
         ...(options.endpoint !== undefined ? { realm: options.endpoint } : {}),
     });
     await client.authorize();
-    maskAccountAuthToken(getStoredAccountAuthToken(client.accountInfo));
+    // Deliberately overlaps with setAuth for initial auth. If a future SDK
+    // changes authorize() storage, the public AccountInfo getter still masks the
+    // stored account token before command code can log.
+    maskAccountAuthToken(client.accountInfo.getAuthToken());
     return { client, bucketName: options.bucket };
 }
 /**

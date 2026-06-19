@@ -1,9 +1,12 @@
-import { rm } from 'node:fs/promises'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import type { HttpTransport } from '@backblaze-labs/b2-sdk'
 import { B2Simulator } from '@backblaze-labs/b2-sdk/simulator'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { buildClient, getBucket } from '../src/client.ts'
 import { listCommand } from '../src/commands/list.ts'
-import { captureStdout, makeFixture, makeInputs, seedFile, type TestFixture } from './_helpers.ts'
+import { captureStdout, makeInputs, seedFile, type TestFixture } from './_helpers.ts'
 import { TEST_APPLICATION_KEY, TEST_APPLICATION_KEY_ID } from './_parsed-inputs.ts'
 
 const SHORT_AUTH_TOKEN_TTL_MS = 1000
@@ -62,9 +65,12 @@ describe('action-layer B2 failure modes', () => {
 
   describe('representative command retry behavior', () => {
     let fx: TestFixture
+    let getListAttempts: () => number
 
     beforeEach(async () => {
-      fx = await makeFixture('failure-mode-retry')
+      const retryFixture = await makeRetryFixture('failure-mode-retry')
+      fx = retryFixture.fx
+      getListAttempts = retryFixture.getListAttempts
     })
 
     afterEach(async () => {
@@ -102,7 +108,6 @@ describe('action-layer B2 failure modes', () => {
 
     it('surfaces sustained 429 rate limiting after the retry budget is exhausted', async () => {
       await seedFile(fx, 'limited/stuck.txt', 'stuck')
-      const listAttempts = countSimulatorFaultChecks(fx.sim, 'b2_list_file_names')
       fx.sim.injectFailure({
         on: 'b2_list_file_names',
         status: 429,
@@ -123,7 +128,7 @@ describe('action-layer B2 failure modes', () => {
 
       await drainPendingRetryTimersUntilSettled(settlement)
       await rejection
-      expect(listAttempts()).toBeGreaterThan(1)
+      expect(getListAttempts()).toBeGreaterThan(1)
     })
   })
 })
@@ -134,6 +139,36 @@ function currentSdkAuthToken(authorized: Awaited<ReturnType<typeof buildClient>>
   const token = authorized.client.accountInfo.getAuthToken()
   expect(token).toBeTruthy()
   return token
+}
+
+async function makeRetryFixture(bucketName: string): Promise<{
+  fx: TestFixture
+  getListAttempts: () => number
+}> {
+  const sim = new B2Simulator()
+  const baseTransport = sim.transport()
+  let listAttempts = 0
+  const transport: HttpTransport = {
+    async send(request) {
+      // Count at the public transport boundary instead of simulator internals.
+      if (request.url.includes('b2_list_file_names')) listAttempts += 1
+      return baseTransport.send(request)
+    },
+  }
+
+  const authorized = await buildClient({
+    applicationKeyId: TEST_APPLICATION_KEY_ID,
+    applicationKey: TEST_APPLICATION_KEY,
+    bucket: bucketName,
+    transport,
+  })
+  const bucket = await authorized.client.createBucket({ bucketName, bucketType: 'allPrivate' })
+  const workDir = await mkdtemp(join(tmpdir(), 'b2-test-'))
+
+  return {
+    fx: { workDir, bucket, client: authorized.client, sim },
+    getListAttempts: () => listAttempts,
+  }
 }
 
 interface PromiseSettlement {
@@ -170,23 +205,4 @@ async function drainPendingRetryTimersUntilSettled(settlement: PromiseSettlement
   }
 
   expect(settlement.isSettled()).toBe(true)
-}
-
-function countSimulatorFaultChecks(sim: B2Simulator, endpoint: string): () => number {
-  type FaultCheckingSimulator = B2Simulator & {
-    consumeMatchingFault(url: string): unknown
-  }
-
-  // Simulator faults are consumed before endpoint handling, so this observes
-  // transport-level retry attempts without depending on retry delay durations.
-  const patchedSim = sim as FaultCheckingSimulator
-  const originalConsumeMatchingFault = patchedSim.consumeMatchingFault.bind(sim)
-  let count = 0
-
-  patchedSim.consumeMatchingFault = (url: string) => {
-    if (url.includes(endpoint)) count += 1
-    return originalConsumeMatchingFault(url)
-  }
-
-  return () => count
 }

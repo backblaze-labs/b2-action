@@ -76,6 +76,7 @@ describe('client helpers', () => {
     const constructedOptions: unknown[] = []
     type FakeAccountInfoLike = {
       setAuth(auth: { authorizationToken: string }): void
+      getAuthToken(): string
     }
     class FakeB2Client {
       accountInfo: FakeAccountInfoLike
@@ -90,8 +91,14 @@ describe('client helpers', () => {
       }
     }
     class FakeAccountInfo {
-      setAuth(_auth: { authorizationToken: string }) {
-        // The mocked SDK stores nothing; this only lets the wrapper delegate.
+      private authToken = ''
+
+      setAuth(auth: { authorizationToken: string }) {
+        this.authToken = auth.authorizationToken
+      }
+
+      getAuthToken() {
+        return this.authToken
       }
     }
 
