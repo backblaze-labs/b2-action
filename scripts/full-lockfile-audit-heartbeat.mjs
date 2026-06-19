@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 import { appendFile, readFile } from 'node:fs/promises'
+import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const countedEvents = new Set(['push', 'schedule', 'workflow_dispatch'])
 
 export function isEntrypoint(importMetaUrl, argvPath) {
-  return argvPath !== undefined && fileURLToPath(importMetaUrl) === argvPath
+  return argvPath !== undefined && fileURLToPath(importMetaUrl) === resolve(argvPath)
 }
 
 export function classifyHeartbeat(runs, { now = new Date(), windowDays = 10 } = {}) {

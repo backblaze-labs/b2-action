@@ -1,13 +1,14 @@
 #!/usr/bin/env node
 import { spawn } from 'node:child_process'
 import { appendFile, writeFile } from 'node:fs/promises'
+import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const retryablePattern =
   /\b(?:ERR_PNPM_(?:FETCH|META_FETCH)_FAIL|EAI_AGAIN|ECONNRESET|ETIMEDOUT|ENOTFOUND|ECONNREFUSED)\b|fetch failed|network timeout|socket hang up/i
 
 export function isEntrypoint(importMetaUrl, argvPath) {
-  return argvPath !== undefined && fileURLToPath(importMetaUrl) === argvPath
+  return argvPath !== undefined && fileURLToPath(importMetaUrl) === resolve(argvPath)
 }
 
 export function isRetryableAuditFailure(status, output) {
@@ -47,7 +48,10 @@ async function runCommand(command, args, timeoutMs) {
   })
 
   const status = await new Promise((resolve, reject) => {
-    child.on('error', reject)
+    child.on('error', (error) => {
+      clearTimeout(timer)
+      reject(error)
+    })
     child.on('close', (code) => {
       clearTimeout(timer)
       resolve(timedOut ? 124 : (code ?? 1))

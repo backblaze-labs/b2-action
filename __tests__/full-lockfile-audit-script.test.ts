@@ -4,8 +4,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
-const SCRIPT_PATH = join(process.cwd(), 'scripts/full-lockfile-audit.mjs')
-const HEARTBEAT_SCRIPT_PATH = join(process.cwd(), 'scripts/full-lockfile-audit-heartbeat.mjs')
+const SCRIPT_PATH = 'scripts/full-lockfile-audit.mjs'
+const HEARTBEAT_SCRIPT_PATH = 'scripts/full-lockfile-audit-heartbeat.mjs'
 
 describe('full-lockfile audit script', () => {
   it('fails fast on a deterministic advisory finding', async () => {
