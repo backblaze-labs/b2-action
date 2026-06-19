@@ -35,6 +35,25 @@ export interface BuildClientOptions {
   transport?: HttpTransport | undefined
 }
 
+function maskAccountAuthToken(token: string | null | undefined): void {
+  if (token) core.setSecret(token)
+}
+
+function getStoredAccountAuthToken(accountInfo: {
+  getAuthToken?: () => string | null | undefined
+}): string | null | undefined {
+  return typeof accountInfo.getAuthToken === 'function'
+    ? accountInfo.getAuthToken.call(accountInfo)
+    : undefined
+}
+
+class SecretMaskingAccountInfo extends InMemoryAccountInfo {
+  override setAuth(auth: AuthorizeAccountResponse): void {
+    maskAccountAuthToken(auth.authorizationToken)
+    super.setAuth(auth)
+  }
+}
+
 /**
  * Build an authorized B2Client.
  *
@@ -47,8 +66,10 @@ export interface BuildClientOptions {
  *      Actions runs finish well inside that window. If a long-running job
  *      outlives the token, the SDK transparently re-authorizes on the next
  *      401, so the action layer does not need its own refresh loop.
- *   3. Use an AccountInfo wrapper that masks every authorization token as it
- *      is stored, including SDK-driven reauthorization after token expiry.
+ *   3. Use an AccountInfo wrapper that masks each account authorization token
+ *      as it is stored, including SDK-driven reauthorization after token
+ *      expiry. The post-authorize mask is kept as a fallback in case a future
+ *      SDK version bypasses the wrapper for initial authorization.
  *
  * The `transport` parameter is only used by tests (the SDK's B2Simulator
  * provides one). Production callers leave it undefined to use the SDK's
@@ -67,15 +88,9 @@ export async function buildClient(options: BuildClientOptions): Promise<Authoriz
   })
 
   await client.authorize()
+  maskAccountAuthToken(getStoredAccountAuthToken(client.accountInfo))
 
   return { client, bucketName: options.bucket }
-}
-
-class SecretMaskingAccountInfo extends InMemoryAccountInfo {
-  override setAuth(auth: AuthorizeAccountResponse): void {
-    if (auth.authorizationToken) core.setSecret(auth.authorizationToken)
-    super.setAuth(auth)
-  }
 }
 
 /**

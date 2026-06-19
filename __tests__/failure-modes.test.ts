@@ -8,12 +8,9 @@ import { TEST_APPLICATION_KEY, TEST_APPLICATION_KEY_ID } from './_parsed-inputs.
 
 const SHORT_AUTH_TOKEN_TTL_MS = 1000
 const EXPIRED_TOKEN_ADVANCE_MS = SHORT_AUTH_TOKEN_TTL_MS + 1
-// The SDK's first retry delay is about 1s plus jitter; this clears one retry
-// without letting the test wait on wall-clock backoff.
-const SINGLE_RETRY_TIMER_FLUSH_MS = 5000
-// The SDK's default retry budget is 5 attempts with exponential backoff. This
-// window is intentionally above that full schedule so the final 429 surfaces.
-const RETRY_BUDGET_EXHAUSTION_FLUSH_MS = 120_000
+// Safety cap for draining SDK retry timers; the tests do not assert the
+// SDK's exact retry schedule, only that command promises settle under it.
+const MAX_RETRY_TIMER_DRAIN_STEPS = 20
 
 describe('action-layer B2 failure modes', () => {
   it('surfaces simulator authorization failures with the B2 error message', async () => {
@@ -94,7 +91,8 @@ describe('action-layer B2 failure modes', () => {
         fx.bucket,
         makeInputs('list', fx, { source: 'retry/', maxResults: 10 }),
       )
-      await vi.advanceTimersByTimeAsync(SINGLE_RETRY_TIMER_FLUSH_MS)
+      const settlement = trackSettlement(resultPromise)
+      await drainPendingRetryTimersUntilSettled(settlement)
       const result = await resultPromise
 
       expect(result.files).toHaveLength(1)
@@ -104,6 +102,7 @@ describe('action-layer B2 failure modes', () => {
 
     it('surfaces sustained 429 rate limiting after the retry budget is exhausted', async () => {
       await seedFile(fx, 'limited/stuck.txt', 'stuck')
+      const listAttempts = countSimulatorFaultChecks(fx.sim, 'b2_list_file_names')
       fx.sim.injectFailure({
         on: 'b2_list_file_names',
         status: 429,
@@ -116,13 +115,15 @@ describe('action-layer B2 failure modes', () => {
         fx.bucket,
         makeInputs('list', fx, { source: 'limited/', maxResults: 10 }),
       )
-      await expectPendingBeforeRetryBackoff(resultPromise)
+      const settlement = trackSettlement(resultPromise)
+      await expectPendingBeforeRetryBackoff(settlement)
       // Register the rejection handler before advancing timers so the final
       // retry rejection is caught instead of becoming an unhandled rejection.
       const rejection = expect(resultPromise).rejects.toThrow('rate limit still active')
 
-      await vi.advanceTimersByTimeAsync(RETRY_BUDGET_EXHAUSTION_FLUSH_MS)
+      await drainPendingRetryTimersUntilSettled(settlement)
       await rejection
+      expect(listAttempts()).toBeGreaterThan(1)
     })
   })
 })
@@ -135,7 +136,11 @@ function currentSdkAuthToken(authorized: Awaited<ReturnType<typeof buildClient>>
   return token
 }
 
-async function expectPendingBeforeRetryBackoff<T>(promise: Promise<T>): Promise<void> {
+interface PromiseSettlement {
+  isSettled(): boolean
+}
+
+function trackSettlement<T>(promise: Promise<T>): PromiseSettlement {
   let settled = false
   void promise.then(
     () => {
@@ -146,8 +151,42 @@ async function expectPendingBeforeRetryBackoff<T>(promise: Promise<T>): Promise<
     },
   )
 
+  return {
+    isSettled: () => settled,
+  }
+}
+
+async function expectPendingBeforeRetryBackoff(settlement: PromiseSettlement): Promise<void> {
   // Flush immediate promise work only; retry backoff timers must still be pending.
   await vi.advanceTimersByTimeAsync(0)
 
-  expect(settled).toBe(false)
+  expect(settlement.isSettled()).toBe(false)
+}
+
+async function drainPendingRetryTimersUntilSettled(settlement: PromiseSettlement): Promise<void> {
+  for (let step = 0; step < MAX_RETRY_TIMER_DRAIN_STEPS && !settlement.isSettled(); step += 1) {
+    await vi.runOnlyPendingTimersAsync()
+    await Promise.resolve()
+  }
+
+  expect(settlement.isSettled()).toBe(true)
+}
+
+function countSimulatorFaultChecks(sim: B2Simulator, endpoint: string): () => number {
+  type FaultCheckingSimulator = B2Simulator & {
+    consumeMatchingFault(url: string): unknown
+  }
+
+  // Simulator faults are consumed before endpoint handling, so this observes
+  // transport-level retry attempts without depending on retry delay durations.
+  const patchedSim = sim as FaultCheckingSimulator
+  const originalConsumeMatchingFault = patchedSim.consumeMatchingFault.bind(sim)
+  let count = 0
+
+  patchedSim.consumeMatchingFault = (url: string) => {
+    if (url.includes(endpoint)) count += 1
+    return originalConsumeMatchingFault(url)
+  }
+
+  return () => count
 }
