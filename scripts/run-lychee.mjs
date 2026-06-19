@@ -20,11 +20,12 @@ import {
   existsSync,
   mkdirSync,
   readFileSync,
+  realpathSync,
   renameSync,
   rmSync,
   writeFileSync,
 } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { setTimeout as sleep } from 'node:timers/promises'
@@ -384,8 +385,13 @@ class DownloadFailure extends Error {
   }
 }
 
-function isEntrypoint(metaUrl, argv1) {
-  return argv1 !== undefined && fileURLToPath(metaUrl) === argv1
+export function isEntrypoint(metaUrl, argv1) {
+  if (argv1 === undefined) return false
+  try {
+    return realpathSync(fileURLToPath(metaUrl)) === realpathSync(resolve(argv1))
+  } catch {
+    return false
+  }
 }
 
 if (isEntrypoint(import.meta.url, process.argv[1])) {

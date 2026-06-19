@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { dirname, join, relative } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { gzipSync } from 'node:zlib'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -31,6 +31,7 @@ const runLychee = (await import(pathToFileURL(scriptPath).href)) as {
     downloadPath: string,
     binaryPath: string,
   ) => void
+  isEntrypoint: (metaUrl: string, argv1: string | undefined) => boolean
 }
 
 describe('run-lychee helper', () => {
@@ -67,6 +68,12 @@ describe('run-lychee helper', () => {
 
   it('documents the unsupported Intel macOS asset gap in the platform error', () => {
     expect(() => runLychee.assetForPlatform('darwin', 'x64')).toThrow(/Intel macOS/)
+  })
+
+  it('normalizes relative entrypoint paths before comparing', () => {
+    expect(
+      runLychee.isEntrypoint(pathToFileURL(scriptPath).href, relative(process.cwd(), scriptPath)),
+    ).toBe(true)
   })
 
   it('does not trust a cached binary that only prints the expected version', async () => {
