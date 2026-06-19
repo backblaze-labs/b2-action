@@ -240,9 +240,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          release_json="$(mktemp)"
-          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft > "$release_json"; then
-            is_draft="$(node -e "console.log(JSON.parse(require('fs').readFileSync(process.argv[1], 'utf8')).isDraft)" "$release_json")"
+          if is_draft="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft -q .isDraft)"; then
             if [ "$is_draft" != "true" ]; then
               echo "Release $RELEASE_TAG is already published; leaving existing assets untouched."
               exit 0
