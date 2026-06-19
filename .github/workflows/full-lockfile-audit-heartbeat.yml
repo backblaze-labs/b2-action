@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read # default read-only access; heartbeat job escalates below
+  contents: read # check out the shared tracking-issue composite action
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -21,82 +21,72 @@ jobs:
     timeout-minutes: 10
     permissions:
       actions: read # inspect scheduled full-lockfile audit runs
-      issues: write # open or update the heartbeat tracking issue
+      contents: read # check out the shared tracking-issue composite action
+      issues: write # open or update the default-branch heartbeat tracking issue
     steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 24
       - name: Check latest scheduled audit
+        id: check
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
-
-          title="Full-lockfile audit heartbeat missing"
-          tracking_label="full-lockfile-audit-heartbeat"
-          threshold_epoch="$(date -u -d '10 days ago' +%s)"
-          latest_run="$(gh run list \
+          runs="$(mktemp)"
+          gh run list \
             --repo "$REPO" \
             --workflow full-lockfile-audit.yml \
             --branch main \
-            --limit 20 \
+            --limit 50 \
             --json createdAt,event,status,conclusion,url \
-            --jq 'map(select(.event == "schedule" or .event == "workflow_dispatch")) | sort_by(.createdAt) | reverse | if length > 0 then [.[0].createdAt, (.[0].event // ""), (.[0].status // ""), (.[0].conclusion // ""), (.[0].url // "")] | @tsv else "" end')"
-          latest_created=""
-          latest_event=""
-          latest_status=""
-          latest_conclusion=""
-          latest_url=""
-          if [ -n "$latest_run" ]; then
-            IFS=$'\t' read -r latest_created latest_event latest_status latest_conclusion latest_url <<< "$latest_run"
-          fi
-
-          if [ -n "$latest_created" ]; then
-            latest_epoch="$(date -u -d "$latest_created" +%s)"
-            if [ "$latest_epoch" -ge "$threshold_epoch" ]; then
-              echo "Latest audit fired by $latest_event at $latest_created ($latest_status/$latest_conclusion): $latest_url"
-              issue_number="$(TITLE="$title" gh api \
-                --method GET "repos/$REPO/issues" \
-                -f state=open \
-                -f labels="$tracking_label" \
-                -f creator='github-actions[bot]' \
-                --jq 'map(select(.title == env.TITLE and (.pull_request | not))) | .[0].number // ""')"
-              if [ -n "$issue_number" ]; then
-                gh issue comment "$issue_number" --repo "$REPO" \
-                  --body "Full-lockfile audit heartbeat recovered: $latest_url"
-                gh api --method PATCH "repos/$REPO/issues/$issue_number" \
-                  -f state=closed \
-                  -f state_reason=completed \
-                  >/dev/null
-              fi
-              exit 0
-            fi
-          fi
-
-          gh label create "$tracking_label" \
-            --repo "$REPO" \
-            --description "Workflow-owned full-lockfile audit heartbeat tracking" \
-            --color D93F0B \
-            2>/dev/null || true
-          issue_number="$(TITLE="$title" gh api \
-            --method GET "repos/$REPO/issues" \
-            -f state=open \
-            -f labels="$tracking_label" \
-            -f creator='github-actions[bot]' \
-            --jq 'map(select(.title == env.TITLE and (.pull_request | not))) | .[0].number // ""')"
+            > "$runs"
+          node scripts/full-lockfile-audit-heartbeat.mjs "$runs"
+      - name: Close heartbeat issue on recovery
+        if: steps.check.outputs.heartbeat_status == 'healthy' && github.ref_name == github.event.repository.default_branch
+        uses: ./.github/actions/tracking-issue
+        with:
+          mode: close
+          title: Full-lockfile audit heartbeat missing
+          label: full-lockfile-audit-heartbeat
+          recovery-message: 'Full-lockfile audit heartbeat recovered: ${{ steps.check.outputs.latest_url }}'
+          repo: ${{ github.repository }}
+          github-token: ${{ github.token }}
+      - name: Prepare heartbeat tracking issue
+        id: heartbeat_issue
+        if: failure() && steps.check.outputs.heartbeat_status == 'stale' && github.ref_name == github.event.repository.default_branch
+        env:
+          HEARTBEAT_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          LATEST_CONCLUSION: ${{ steps.check.outputs.latest_conclusion }}
+          LATEST_CREATED: ${{ steps.check.outputs.latest_created }}
+          LATEST_EVENT: ${{ steps.check.outputs.latest_event }}
+          LATEST_STATUS: ${{ steps.check.outputs.latest_status }}
+          LATEST_URL: ${{ steps.check.outputs.latest_url }}
+        run: |
+          set -euo pipefail
           body="$(mktemp)"
           {
             echo "<!-- full-lockfile-audit-heartbeat -->"
-            echo "No scheduled or manual full-lockfile audit run has been observed in the last 10 days."
+            echo "No scheduled, manual, or main-push full-lockfile audit run has been observed in the last 10 days."
             echo ""
-            echo "Heartbeat run: $RUN_URL"
-            if [ -n "$latest_created" ]; then
-              echo ""
-              echo "Latest audit run: $latest_created ($latest_event/$latest_status/$latest_conclusion): $latest_url"
-            fi
+            echo "Heartbeat run: $HEARTBEAT_RUN_URL"
+            echo ""
+            echo "Latest audit run: $LATEST_CREATED ($LATEST_EVENT/$LATEST_STATUS/$LATEST_CONCLUSION): $LATEST_URL"
           } > "$body"
-          if [ -n "$issue_number" ]; then
-            gh issue edit "$issue_number" --repo "$REPO" --body-file "$body"
-          else
-            gh issue create --title "$title" --repo "$REPO" --label "$tracking_label" --body-file "$body"
-          fi
-          exit 1
+          echo "body_file=$body" >> "$GITHUB_OUTPUT"
+      - name: Open or update heartbeat issue
+        if: failure() && steps.check.outputs.heartbeat_status == 'stale' && github.ref_name == github.event.repository.default_branch
+        uses: ./.github/actions/tracking-issue
+        with:
+          mode: open-or-update
+          title: Full-lockfile audit heartbeat missing
+          label: full-lockfile-audit-heartbeat
+          label-color: D93F0B
+          label-description: Workflow-owned full-lockfile audit heartbeat tracking
+          body-file: ${{ steps.heartbeat_issue.outputs.body_file }}
+          repo: ${{ github.repository }}
+          github-token: ${{ github.token }}

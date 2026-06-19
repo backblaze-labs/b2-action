@@ -85,8 +85,8 @@ pnpm docs:check-action-yml  # action.yml <> README sync check
 ```
 
 The full-lockfile audit uses the pnpm builtin directly, not a package script:
-`pnpm audit --audit-level high`. This mirrors the scheduled/manual workflow and
-keeps dev/build-tooling advisories off the PR critical path.
+`pnpm audit --audit-level high`. This mirrors the per-change and
+scheduled/manual workflow that covers dev/build tooling.
 
 Requirements: Node 24+, pnpm 11+. The Action runs on Node 24 in the GitHub Actions runtime; CI tests Node 24 across Ubuntu / macOS / Windows.
 
@@ -158,8 +158,8 @@ listed in the same table and called out explicitly.
 | `self-smoke` | runs `node dist/index.js` with no inputs, expects the missing-input error |
 | `analyze` ([codeql.yml](./.github/workflows/codeql.yml)) | CodeQL (SAST) over the TypeScript source (`build-mode: none`, no compile needed). Runs on PRs to `main`, push to `main`, and weekly; findings surface in the repo Security tab. |
 | `audit` | `pnpm audit --prod --audit-level high`: fails on a high/critical advisory in a **production** dependency. Scoped to prod (not devDeps) so a dev-tool advisory can't block an unrelated PR; devDep updates are handled by Dependabot. CI calls the builtin `pnpm audit` directly (resolves against the lockfile, no install); `pnpm run audit` is the local-convenience equivalent. |
-| `full-lockfile-audit` ([full-lockfile-audit.yml](./.github/workflows/full-lockfile-audit.yml)) | `pnpm audit --audit-level high` across the full lockfile, including dev/build tooling used to produce committed `dist/`. Runs weekly and manually, not on PRs, so dev/build-tooling advisories do not block unrelated feature work. Failures open or update one labeled tracking issue; a later passing run closes it. |
-| `heartbeat` ([full-lockfile-audit-heartbeat.yml](./.github/workflows/full-lockfile-audit-heartbeat.yml)) | Daily check that a scheduled or manual full-lockfile audit has fired in the last 10 days; opens or updates one labeled tracking issue when a transient cron drop leaves the audit stale, and closes it once the audit recovers. Because it is also scheduled, this heartbeat does not protect against GitHub's 60-day inactivity auto-disable for scheduled workflows. |
+| `full-lockfile-audit` ([full-lockfile-audit.yml](./.github/workflows/full-lockfile-audit.yml)) | `pnpm audit --audit-level high` across the full lockfile, including dev/build tooling used to produce committed `dist/`. Runs on PRs and pushes that touch dependency/audit policy files, plus weekly and manually. PR findings are informational (`continue-on-error`) so unrelated feature work is not blocked; push/scheduled/manual default-branch failures open or update one labeled tracking issue, with infrastructure failures separated from dependency advisories. A later passing default-branch run closes open tracking issues. |
+| `heartbeat` ([full-lockfile-audit-heartbeat.yml](./.github/workflows/full-lockfile-audit-heartbeat.yml)) | Daily check that a scheduled, manual, or main-push full-lockfile audit has fired in the last 10 days; opens or updates one labeled tracking issue when a transient cron drop leaves the audit stale, and closes it once the audit recovers. It stays silent before the first audit run has ever been observed. Because it is also scheduled, this heartbeat does not protect against GitHub's 60-day inactivity auto-disable or a broader GitHub Actions scheduling outage; after long repository inactivity, maintainers should verify scheduled workflows in the Actions UI or manually dispatch `full-lockfile-audit.yml` on `main`. |
 | `sync-check` ([docs-lint.yml](./.github/workflows/docs-lint.yml)) | every input/output in `action.yml` also appears in the README reference tables. Drift fails CI. |
 | `markdownlint` ([docs-lint.yml](./.github/workflows/docs-lint.yml)) | prose-style consistency across `**/*.md`. Config in [`.markdownlint-cli2.jsonc`](./.markdownlint-cli2.jsonc). |
 | `link-check` ([docs-lint.yml](./.github/workflows/docs-lint.yml)) | `pnpm docs:links` runs pinned lychee in `--offline` mode against `**/*.md`; catches broken relative paths and anchor fragments. External URLs are not pinged. |
