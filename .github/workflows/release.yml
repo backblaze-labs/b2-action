@@ -196,6 +196,7 @@ jobs:
     timeout-minutes: 20
     permissions:
       contents: write # creates GitHub Releases/assets and moves floating major-version tags
+      attestations: read # verifies staged release assets without minting new attestations
     env:
       IS_PRERELEASE: ${{ needs.validate.outputs.is-prerelease }}
       RELEASE_SHA: ${{ needs.validate.outputs.release-sha }}

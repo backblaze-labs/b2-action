@@ -298,8 +298,12 @@ function checkReleaseWorkflow(doc) {
     'publish must request contents: write',
   )
   requireCondition(
+    asMapping(publish.permissions).attestations === 'read',
+    'publish must request attestations: read',
+  )
+  requireCondition(
     !canMintAttestation(asMapping(publish.permissions)),
-    'publish must not request OIDC or attestation permissions',
+    'publish must not request OIDC or attestation write permissions',
   )
   requireCheckoutByValidatedSha('publish', publish)
   requireTagReverification('publish', publish)
