@@ -55,17 +55,20 @@ gh workflow run release.yml --repo backblaze-labs/b2-action --ref "$TAG" -f tag=
 3. Verifies `git diff --exit-code -- dist/` is clean: the committed bundle must match a fresh build at the tagged commit.
 4. Verifies the tag equals `package.json` version, that the bundle contains the `b2-github-action/` User-Agent token, and that the bundle inlines the same version string. ncc tree-shakes the JSON import in `src/version.ts` so the token and the version appear separately in the bundle, not as one contiguous literal; checking each independently is the end-to-end "bake" gate.
 5. Runs an isolated attestation job with only `contents: read`, `id-token: write`, and `attestations: write`. That job checks out the validated SHA, fails if `refs/tags/<tag>` moved, and creates a GitHub Artifact Attestation for `dist/index.js`.
-6. Runs a separate publish job without OIDC or attestation permissions. It checks out the same validated SHA, fails if the tag moved, generates a SHA-256 checksum for `dist/index.js`, and verifies both release assets exist before publishing.
-7. For stable tags, verifies the tag is the newest `vX.Y.Z` tag for its major version and moves the floating major tag (e.g. `v1`) to the release commit before any public GitHub Release is created or updated. See [Floating tag automation](#floating-tag-automation) below for the token requirement; missing or unusable credentials fail before publication. Pre-releases skip the floating-tag step.
-8. Creates the GitHub Release via `softprops/action-gh-release@v3` with `generate_release_notes: true`, uploading both `index.js` and `index.js.sha256` as release assets.
+6. Runs a separate publish job without OIDC or attestation permissions. It checks out the same validated SHA, fails if the tag moved, generates a SHA-256 checksum for `dist/index.js`, creates a draft release when needed, uploads both `index.js` and `index.js.sha256`, downloads the staged assets, and verifies their hash and attestation.
+7. Leaves already-published release assets and notes untouched on rerun. GitHub-generated notes are requested only when creating the initial draft release. If existing assets are missing or do not match the validated tag bytes, the rerun fails instead of deleting or replacing them.
+8. For stable tags, verifies the tag is the newest `vX.Y.Z` tag for its major version and moves the floating major tag (e.g. `v1`) to the release commit via the refs API before the draft is published. See [Floating tag automation](#floating-tag-automation) below for the token requirement; missing or unusable credentials fail before publication. Pre-releases skip the floating-tag step.
+9. Publishes the staged GitHub Release after the floating-tag gate succeeds.
 
 The attestation is a signed statement that the release workflow handled the `dist/index.js` bytes from the validated tag. The reproducible-build guarantee still comes from the validation gate that rebuilds `dist/` from source and fails if the committed bundle differs.
 
-The release asset upload is intentionally fail-fast. If `dist/index.js` or `dist/index.js.sha256` is missing, the job fails before publishing the GitHub Release. After fixing the workflow or tag contents, rerun from the exact tag ref with the `workflow_dispatch` command above.
+The release asset upload is intentionally fail-fast. If `dist/index.js` or `dist/index.js.sha256` is missing, the job fails before publishing the GitHub Release. If a staged upload or post-upload verification fails, keep the release as a draft, fix the workflow or tag contents, and rerun from the exact tag ref with the `workflow_dispatch` command above.
 
 ## Verifying release provenance
 
 Every release created after this change includes an `index.js` asset that is byte-for-byte the committed `dist/index.js` bundle at the release tag, plus a GitHub Artifact Attestation signed by the release workflow. The attestation is the authoritative tamper/provenance check:
+
+Prerequisites: authenticate with `gh auth login`, and use a recent GitHub CLI whose `gh attestation verify --help` output includes both `--signer-workflow` and `--source-ref` (the workflow is tested with GitHub CLI 2.91.0).
 
 ```bash
 TAG=vX.Y.Z
@@ -87,6 +90,8 @@ gh attestation verify "$DIR/index.js" \
 The adjacent checksum is for download corruption diagnostics only; anyone who can maliciously edit release assets can replace both the bundle and checksum. To check it on Linux, run `(cd "$DIR" && sha256sum -c index.js.sha256)`. On macOS, run `(cd "$DIR" && shasum -a 256 -c index.js.sha256)`.
 
 Use the exact `vX.Y.Z` release tag when verifying. The floating `v1` tag is intentionally mutable and should not be used as the verification ref.
+
+This provenance check covers the downloadable `index.js` release asset. It does **not** verify the code executed by `uses: backblaze-labs/b2-action@v1`, because Actions runners execute `dist/index.js` from the git tree at the resolved ref and do not download release assets. Consumers who need integrity for executed workflow code should pin `uses:` to an exact commit SHA, or at least to an immutable `vX.Y.Z` tag, instead of the mutable `v1` tag.
 
 ## One-time setup
 
@@ -125,9 +130,9 @@ Store it as a repo secret:
 gh secret set FLOATING_TAG_TOKEN --repo backblaze-labs/b2-action
 ```
 
-For stable tags, the workflow first confirms the tag is the newest stable `vX.Y.Z` for that major version, then moves `vN` before it creates or updates the GitHub Release. A `workflow_dispatch` run for an older stable tag is rejected so the floating tag cannot be forced backward without a reviewed manual rollback process. If the secret is absent, expired, revoked, or cannot read tag refs, the job fails before the public GitHub Release / Marketplace artifact is published; the immutable `vX.Y.Z` Git tag still exists because it is what triggered the workflow. Treat that failure as a release blocker: configure the secret and rerun the release workflow, or move the floating tag by hand before publishing.
+For stable tags, the workflow first confirms the tag is the newest stable `vX.Y.Z` for that major version, stages and verifies release assets on a draft release, then moves `vN` before it publishes the GitHub Release. A `workflow_dispatch` run for an older stable tag is rejected so the floating tag cannot be forced backward without a reviewed manual rollback process. If the secret is absent, expired, revoked, or cannot read tag refs, the job fails before the public GitHub Release / Marketplace artifact is published; the immutable `vX.Y.Z` Git tag still exists because it is what triggered the workflow, and a draft release may exist with verified assets. Treat that failure as a release blocker: configure the secret and rerun the release workflow, or move the floating tag by hand before publishing.
 
-After `vN` moves, the following GitHub Release creation step can still fail because of a transient GitHub API or runner problem. In that state, `@vN` consumers may receive the new commit before the GitHub Release page exists. Rerun the same workflow for the same `vX.Y.Z` tag; the floating-tag update and GitHub Release creation are idempotent, so a rerun is the expected recovery path when `vN` is already advanced.
+After `vN` moves, the final publish step can still fail because of a transient GitHub API or runner problem. In that state, `@vN` consumers may receive the new commit before the GitHub Release page exists. Rerun the same workflow for the same `vX.Y.Z` tag; the floating-tag update and GitHub Release publish are idempotent, so a rerun is the expected recovery path when `vN` is already advanced.
 
 Manual fallback, replacing `vN` with the major tag such as `v1` and `vX.Y.Z` with the exact release tag:
 

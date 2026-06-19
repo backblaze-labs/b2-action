@@ -5,10 +5,13 @@ name: Release
 #   1. Runs the full test + lint + typecheck + build suite as a gate.
 #   2. Verifies the `dist/` committed at the tag matches a fresh `pnpm build`.
 #   3. Attests `dist/index.js` in an isolated OIDC-only provenance job.
-#   4. Moves the floating major tag (e.g. `v1`) to the tagged commit so users
-#      pinning `uses: backblaze-labs/b2-action@v1` track the latest minor/patch.
-#   5. Uploads `index.js` plus a SHA-256 checksum as release assets.
-#   6. Cuts a GitHub Release with a generated body.
+#   4. Stages `index.js` plus a SHA-256 checksum on a draft GitHub Release.
+#   5. Downloads the staged assets, verifies their hash and attestation, then
+#      verifies the release can be trusted.
+#   6. Moves the floating major tag for stable releases before publishing the
+#      draft, so users pinning `uses: backblaze-labs/b2-action@v1` track the
+#      latest minor/patch.
+#   7. Publishes the staged GitHub Release after the floating-tag gate succeeds.
 #
 # Pre-release tags (`vX.Y.Z-*`) are published as
 # pre-releases and DO NOT update the floating major tag. The bare floating
@@ -51,6 +54,7 @@ jobs:
   validate:
     name: validate release
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     outputs:
       is-prerelease: ${{ steps.release-ref.outputs.is-prerelease }}
       release-sha: ${{ steps.release-ref.outputs.release-sha }}
@@ -151,7 +155,7 @@ jobs:
     name: attest release bundle
     needs: validate
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 10
     permissions:
       contents: read
       id-token: write # mint OIDC token only in this isolated provenance job
@@ -175,14 +179,21 @@ jobs:
             exit 1
           fi
       - name: Attest dist/index.js provenance
+        id: provenance
         uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
         with:
           subject-path: dist/index.js
+
+      - name: Explain attestation failures
+        if: failure() && steps.provenance.outcome == 'failure'
+        run: |
+          echo "::error::Provenance attestation failed. This step contacts GitHub Artifact Attestations and Sigstore services; check their status and rerun from refs/tags/$RELEASE_TAG if this was transient."
 
   publish:
     name: publish release
     needs: [validate, attest]
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: write # creates GitHub Releases/assets and moves floating major-version tags
     env:
@@ -222,13 +233,93 @@ jobs:
             fi
           done
 
+      - name: Stage release assets on draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          release_json="$(mktemp)"
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft > "$release_json"; then
+            is_draft="$(node -e "console.log(JSON.parse(require('fs').readFileSync(process.argv[1], 'utf8')).isDraft)" "$release_json")"
+            if [ "$is_draft" != "true" ]; then
+              echo "Release $RELEASE_TAG is already published; leaving existing assets untouched."
+              exit 0
+            fi
+            echo "Updating existing draft release $RELEASE_TAG."
+          else
+            args=(
+              gh release create "$RELEASE_TAG"
+              --repo "$GITHUB_REPOSITORY"
+              --target "$RELEASE_SHA"
+              --title "$RELEASE_TAG"
+              --draft
+              --verify-tag
+              --generate-notes
+            )
+            if [ "$IS_PRERELEASE" = "true" ]; then
+              args+=(--prerelease)
+            fi
+            "${args[@]}"
+          fi
+
+          gh release upload "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+            dist/index.js dist/index.js.sha256 --clobber
+
+      - name: Verify published release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          verify_dir="$(mktemp -d)"
+          trap 'rm -rf "$verify_dir"' EXIT
+
+          if ! gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+            --dir "$verify_dir" \
+            --pattern index.js \
+            --pattern index.js.sha256 \
+            --clobber; then
+            echo "::error::Could not download both release assets for verification. Keep the release draft or repair the published assets before rerunning from refs/tags/$RELEASE_TAG."
+            exit 1
+          fi
+
+          for file in index.js index.js.sha256; do
+            if [ ! -s "$verify_dir/$file" ]; then
+              echo "::error::Release asset $file is missing after upload. Keep the release draft until both assets verify, then rerun from refs/tags/$RELEASE_TAG."
+              exit 1
+            fi
+          done
+
+          expected_hash="$(sha256sum dist/index.js | cut -d ' ' -f1)"
+          actual_hash="$(sha256sum "$verify_dir/index.js" | cut -d ' ' -f1)"
+          if [ "$actual_hash" != "$expected_hash" ]; then
+            echo "::error::Downloaded index.js sha256 mismatch: expected $expected_hash, got $actual_hash."
+            exit 1
+          fi
+          (cd "$verify_dir" && sha256sum -c index.js.sha256)
+
+          for attempt in 1 2 3; do
+            if gh attestation verify "$verify_dir/index.js" \
+              --repo "$GITHUB_REPOSITORY" \
+              --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml" \
+              --source-ref "refs/tags/$RELEASE_TAG"; then
+              exit 0
+            fi
+            echo "::warning::Attestation verification attempt $attempt failed; retrying in 10 seconds."
+            sleep 10
+          done
+
+          echo "::error::Downloaded index.js matches the validated commit but its release attestation could not be verified. Check GitHub Artifact Attestations and Sigstore status before rerunning from refs/tags/$RELEASE_TAG."
+          exit 1
+
       - name: Derive major-version floating tag
         id: major
         if: env.IS_PRERELEASE == 'false'
         run: |
           MAJOR=$(echo "$RELEASE_TAG" | sed -nE 's/^(v[0-9]+).*/\1/p')
           if [ -z "$MAJOR" ]; then
-            echo "::error::Could not derive major-version tag from '$RELEASE_TAG'; refusing to publish an ambiguous stable release. The GitHub Release has not been created yet."
+            echo "::error::Could not derive major-version tag from '$RELEASE_TAG'; refusing to publish an ambiguous stable release. The GitHub Release has not been published yet."
             exit 1
           fi
           echo "major=$MAJOR" >> "$GITHUB_OUTPUT"
@@ -239,7 +330,7 @@ jobs:
           MAJOR: ${{ steps.major.outputs.major }}
         run: |
           if [ -z "${MAJOR:-}" ]; then
-            echo "::error::Major-version tag output is missing; refusing to publish an ambiguous stable release. The GitHub Release has not been created yet."
+            echo "::error::Major-version tag output is missing; refusing to publish an ambiguous stable release. The GitHub Release has not been published yet."
             exit 1
           fi
 
@@ -250,11 +341,11 @@ jobs:
               tail -n 1
           )
           if [ -z "$LATEST_STABLE" ]; then
-            echo "::error::Could not find any stable tags for $MAJOR; refusing to publish. The GitHub Release has not been created yet."
+            echo "::error::Could not find any stable tags for $MAJOR; refusing to publish. The GitHub Release has not been published yet."
             exit 1
           fi
           if [ "$RELEASE_TAG" != "$LATEST_STABLE" ]; then
-            echo "::error::Requested stable tag is not the latest for $MAJOR (latest is $LATEST_STABLE); refusing to move $MAJOR. Use a reviewed manual rollback process instead. The GitHub Release has not been created yet."
+            echo "::error::Requested stable tag is not the latest for $MAJOR (latest is $LATEST_STABLE); refusing to move $MAJOR. Use a reviewed manual rollback process instead. The GitHub Release has not been published yet."
             exit 1
           fi
 
@@ -272,7 +363,9 @@ jobs:
           GH_TOKEN: ${{ secrets.FLOATING_TAG_TOKEN }}
           MAJOR: ${{ steps.major.outputs.major }}
         run: |
-          RELEASE_PENDING='The GitHub Release has not been created yet.'
+          set -euo pipefail
+
+          RELEASE_PENDING='The GitHub Release has not been published yet.'
           RETRY_SECONDS=${GITHUB_API_RETRY_SECONDS:-5}
 
           http_status_from() {
@@ -385,16 +478,15 @@ jobs:
       # If this step fails after the floating tag moved, rerun this same
       # workflow/tag. The refs API update and GitHub Release operation are
       # idempotent, so reruns safely heal that partial publish state.
-      - name: Create / update GitHub Release
-        uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3.0.0
-        with:
-          tag_name: ${{ env.RELEASE_TAG }}
-          name: ${{ env.RELEASE_TAG }}
-          generate_release_notes: true
-          prerelease: ${{ env.IS_PRERELEASE == 'true' }}
-          files: |
-            dist/index.js
-            dist/index.js.sha256
-          fail_on_unmatched_files: true
+      - name: Publish staged GitHub Release
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          is_draft="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft -q .isDraft)"
+          if [ "$is_draft" = "true" ]; then
+            gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false
+          else
+            echo "Release $RELEASE_TAG is already published."
+          fi

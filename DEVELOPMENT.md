@@ -75,14 +75,14 @@ pnpm test:coverage  # same + the 95/85/100/95 coverage gate
 pnpm build          # ncc build src/main.ts -o dist
 pnpm run audit      # pnpm audit --prod --audit-level high (CI gate; needs network)
 pnpm spellcheck     # cspell across src/, __tests__/, *.md, *.yml, action.yml
-pnpm all            # lint + typecheck + test + build + spellcheck
+pnpm all            # lint + release policy + typecheck + test + build + spellcheck
 pnpm verify-dist    # build, then `git diff --exit-code dist/` (must be clean)
 pnpm docs           # typedoc (strict): generates docs/ for GitHub Pages
 pnpm docs:watch     # typedoc in watch mode for local authoring
 pnpm docs:lint      # markdownlint-cli2 against **/*.md
 pnpm docs:links     # runs pinned lychee in offline + fragment-aware mode, excluding node_modules
 pnpm docs:check-action-yml  # action.yml <> README sync check
-pnpm docs:check-release-provenance  # release.yml provenance isolation policy
+pnpm check:release-provenance  # release.yml provenance isolation policy
 ```
 
 The full-lockfile audit uses the pnpm builtin directly, not a package script:
@@ -155,6 +155,7 @@ listed in the same table and called out explicitly.
 | `lint` | biome `--error-on-warnings` |
 | `coverage` | vitest with v8 coverage, threshold 95 % statements / 85 % branches / 100 % functions / 95 % lines |
 | `build-and-check-dist` | ncc build, then `git diff --exit-code dist/`. **Drift fails CI**: rebuild with `pnpm build` and commit `dist/`. Bundle size is gated hard at 4 MiB. |
+| `release-provenance-policy` ([security.yml](./.github/workflows/security.yml)) | parses release workflow YAML and enforces OIDC/attestation isolation, validated-SHA checkouts, tag re-verification, staged release asset upload, and post-upload verification. |
 | `github-actions` ([security.yml](./.github/workflows/security.yml)) | runs the shared GitHub Actions security composite action against every workflow, including actionlint, third-party action pin checks, and zizmor audits (see [Pinning third-party actions](#pinning-third-party-actions)) |
 | `self-smoke` | runs `node dist/index.js` with no inputs, expects the missing-input error |
 | `analyze` ([codeql.yml](./.github/workflows/codeql.yml)) | CodeQL (SAST) over the TypeScript source (`build-mode: none`, no compile needed). Runs on PRs to `main`, push to `main`, and weekly; findings surface in the repo Security tab. |

@@ -13,7 +13,7 @@ echo "▸ biome lint"
 pnpm --silent lint
 
 echo "▸ release provenance policy"
-pnpm --silent docs:check-release-provenance
+pnpm --silent check:release-provenance
 
 echo "▸ tsc typecheck"
 pnpm --silent typecheck

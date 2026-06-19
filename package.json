@@ -15,7 +15,7 @@
     "lint": "biome check --error-on-warnings .",
     "lint:fix": "biome check --write .",
     "typecheck": "tsc --noEmit",
-    "all": "pnpm lint && pnpm docs:check-release-provenance && pnpm typecheck && pnpm test && pnpm build && pnpm spellcheck",
+    "all": "pnpm lint && pnpm check:release-provenance && pnpm typecheck && pnpm test && pnpm build && pnpm spellcheck",
     "verify-dist": "pnpm build && git diff --exit-code dist",
     "preversion": "pnpm lint && pnpm typecheck && pnpm test",
     "version": "node scripts/cut-changelog.mjs && pnpm build && git add CHANGELOG.md dist",
@@ -23,7 +23,7 @@
     "docs": "typedoc",
     "docs:watch": "typedoc --watch",
     "docs:check-action-yml": "node scripts/check-action-yml-vs-readme.mjs",
-    "docs:check-release-provenance": "node scripts/check-release-provenance-policy.mjs",
+    "check:release-provenance": "node scripts/check-release-provenance-policy.mjs",
     "docs:lint": "markdownlint-cli2",
     "docs:links": "node scripts/run-lychee.mjs",
     "spellcheck": "cspell --no-progress --no-must-find-files",
@@ -44,7 +44,8 @@
     "markdownlint-cli2": "^0.22.0",
     "typedoc": "^0.28.0",
     "typescript": "^6.0.3",
-    "vitest": "^4.1.8"
+    "vitest": "^4.1.8",
+    "yaml": "^2.9.0"
   },
   "keywords": [
     "backblaze",

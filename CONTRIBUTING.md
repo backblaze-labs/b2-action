@@ -6,7 +6,7 @@ Thanks for your interest. The Action is intentionally small and built on the off
 
 ```bash
 pnpm install
-pnpm all        # lint + typecheck + test + build + spellcheck
+pnpm all        # lint + release policy + typecheck + test + build + spellcheck
 ```
 
 Requirements: Node 24+, pnpm 10+. The action runs on Node 24 in the GitHub Actions runtime; we test against Node 24 on Linux, macOS, and Windows.
