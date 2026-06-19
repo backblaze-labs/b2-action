@@ -22,6 +22,7 @@ on:
       - 'cspell.json'
       - '.cspell/**'
       - 'scripts/check-action-yml-vs-readme.mjs'
+      - 'scripts/run-lychee-lib.mjs'
       - 'scripts/run-lychee.mjs'
       - '.markdownlint-cli2.jsonc'
       - '.github/workflows/docs-lint.yml'
@@ -80,7 +81,7 @@ jobs:
         with:
           node-version: 24
       # Same dependency-free pinned-lychee command contributors run locally.
-      # The offline + fragment-aware flags live in scripts/run-lychee.mjs.
+      # The offline + fragment-aware flags live in the lychee runner.
       - run: pnpm docs:links
 
   spellcheck:
