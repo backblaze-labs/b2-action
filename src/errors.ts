@@ -13,6 +13,8 @@ const MUTATING_RETRY_SUFFIX =
   'action may have partially committed; inspect B2 state before rerunning to avoid duplicate file versions, orphaned large-file uploads, or unintended deletes.'
 const UNKNOWN_RETRY_HINT =
   'retry may be appropriate after checking whether the request had side effects.'
+const SSRF_FAILURE_MESSAGE =
+  'B2 endpoint safety check failed: rejected an unsafe B2 endpoint or server-provided URL. Check the endpoint input and B2 realm configuration.'
 const READ_ONLY_ACTIONS = new Set<ActionName>(['download', 'list', 'presign', 'verify', 'head'])
 const MAX_LOG_FIELD_LENGTH = 1_000
 
@@ -53,10 +55,7 @@ export function classifyActionError(
     )
   }
   if (err instanceof B2SsrfError) {
-    return failure(
-      `B2 endpoint safety check failed: ${sanitizeLogField(err.message, options)}. Check the endpoint input and B2 realm configuration.`,
-      false,
-    )
+    return failure(SSRF_FAILURE_MESSAGE, false)
   }
   if (err instanceof NetworkError) {
     return failure(

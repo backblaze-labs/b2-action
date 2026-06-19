@@ -2,7 +2,11 @@ import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { AccessDeniedError, ServiceUnavailableError } from '@backblaze-labs/b2-sdk/errors'
+import {
+  AccessDeniedError,
+  B2SsrfError,
+  ServiceUnavailableError,
+} from '@backblaze-labs/b2-sdk/errors'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { DownloadedFile } from '../src/commands/download.ts'
 import type { ListedFile } from '../src/commands/list.ts'
@@ -591,6 +595,26 @@ describe('main dispatcher', () => {
     expect(failure).toContain('***')
     expect(failure).not.toContain(TEST_APPLICATION_KEY)
     expect(failure).not.toContain(TEST_AUTH_TOKEN)
+  })
+
+  it('reports endpoint safety errors without echoing raw URLs', async () => {
+    const ctx = await loadMain()
+    const rawUrl = 'http://user:password@169.254.169.254/latest/meta-data?token=secret'
+    ctx.parseInputs.mockReturnValue(inputs('list'))
+    ctx.commands.listCommand.mockRejectedValue(
+      new B2SsrfError(`malformed URL from B2 response: ${rawUrl}`, rawUrl),
+    )
+
+    await ctx.run()
+
+    const failure = ctx.core.setFailed.mock.calls[0]?.[0]
+    expect(failure).toBe(
+      'B2 endpoint safety check failed: rejected an unsafe B2 endpoint or server-provided URL. Check the endpoint input and B2 realm configuration.',
+    )
+    expect(failure).not.toContain(rawUrl)
+    expect(failure).not.toContain('password')
+    expect(failure).not.toContain('token=secret')
+    expect(outputs(ctx)).toMatchObject({ retryable: 'false' })
   })
 
   it('reports sync aggregate errors with a sample', async () => {

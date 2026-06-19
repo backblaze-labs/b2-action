@@ -41084,6 +41084,7 @@ async function sha1OfFile(path) {
 const SAFE_RETRY_HINT = 'safe to retry this workflow.';
 const MUTATING_RETRY_SUFFIX = 'action may have partially committed; inspect B2 state before rerunning to avoid duplicate file versions, orphaned large-file uploads, or unintended deletes.';
 const UNKNOWN_RETRY_HINT = 'retry may be appropriate after checking whether the request had side effects.';
+const SSRF_FAILURE_MESSAGE = 'B2 endpoint safety check failed: rejected an unsafe B2 endpoint or server-provided URL. Check the endpoint input and B2 realm configuration.';
 const READ_ONLY_ACTIONS = new Set(['download', 'list', 'presign', 'verify', 'head']);
 const MAX_LOG_FIELD_LENGTH = 1_000;
 function classifyActionError(err, options = {}) {
@@ -41100,7 +41101,7 @@ function classifyActionError(err, options = {}) {
         return failure(`B2 permission denied: check application key capabilities, bucket access, and file name prefix restrictions. ${formatB2Details(err, options)}`, false);
     }
     if (err instanceof B2SsrfError) {
-        return failure(`B2 endpoint safety check failed: ${sanitizeLogField(err.message, options)}. Check the endpoint input and B2 realm configuration.`, false);
+        return failure(SSRF_FAILURE_MESSAGE, false);
     }
     if (err instanceof NetworkError) {
         return failure(`Transient network error talking to B2: ${retryHint(options.action)} ${sanitizeLogField(err.message, options)}`, true);

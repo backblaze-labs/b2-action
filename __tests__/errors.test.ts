@@ -94,17 +94,18 @@ describe('formatActionError', () => {
     )
   })
 
-  it('classifies endpoint safety failures before retryable B2 errors', () => {
+  it('classifies endpoint safety failures without echoing raw URLs', () => {
+    const rawUrl = 'http://user:password@169.254.169.254/latest/meta-data?token=secret'
     const message = formatActionError(
-      new B2SsrfError(
-        'rejected upload URL http://169.254.169.254/latest',
-        'http://169.254.169.254',
-      ),
+      new B2SsrfError(`malformed URL from B2 response: ${rawUrl}`, rawUrl),
     )
 
     expect(message).toBe(
-      'B2 endpoint safety check failed: rejected upload URL http://169.254.169.254/latest. Check the endpoint input and B2 realm configuration.',
+      'B2 endpoint safety check failed: rejected an unsafe B2 endpoint or server-provided URL. Check the endpoint input and B2 realm configuration.',
     )
+    expect(message).not.toContain(rawUrl)
+    expect(message).not.toContain('password')
+    expect(message).not.toContain('token=secret')
   })
 
   it('classifies non-retryable B2 errors as generic request failures', () => {
