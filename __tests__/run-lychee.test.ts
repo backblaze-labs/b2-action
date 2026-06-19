@@ -7,7 +7,8 @@ import { gzipSync } from 'node:zlib'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 const scriptPath = join(dirname(fileURLToPath(import.meta.url)), '..', 'scripts/run-lychee.mjs')
-const runLychee = (await import(pathToFileURL(scriptPath).href)) as {
+// @ts-expect-error scripts are dependency-free JavaScript, not typed modules.
+const runLychee = (await import('../scripts/run-lychee.mjs')) as {
   DEFAULT_LYCHEE_ARGS: readonly string[]
   assetForPlatform: (platform?: string, arch?: string) => { key: string }
   binaryMatchesHash: (path: string, expectedSha256: string) => boolean
