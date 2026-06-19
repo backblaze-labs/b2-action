@@ -150,6 +150,8 @@ describe('main dispatcher', () => {
     const ctx = await loadMain()
     ctx.parseInputs.mockReturnValue(inputs('upload'))
     ctx.commands.uploadCommand.mockImplementation(async (_bucket, _inputs, commandSignal) => {
+      // The handler is registered inside run() before dispatch, so this
+      // synchronous emit is contained by the run() finally cleanup.
       process.emit('SIGTERM')
       commandSignal?.throwIfAborted()
       throw new Error('SIGTERM handler did not abort the command signal')

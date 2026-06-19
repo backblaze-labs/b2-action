@@ -12,6 +12,8 @@ function baseInputs(): ParsedInputs {
   return makeInputs('upload')
 }
 
+const MULTIPART_ABORT_REASON = 'test abort after multipart progress'
+
 describe('upload + download commands (B2Simulator)', () => {
   let fx: TestFixture
 
@@ -313,7 +315,7 @@ describe('upload: multipart abort cleanup', () => {
         }),
         controller.signal,
       ),
-    ).rejects.toThrow('test abort after multipart progress')
+    ).rejects.toThrow(MULTIPART_ABORT_REASON)
 
     const unfinished = await fx.bucket.listUnfinishedLargeFiles({
       namePrefix: 'abort-large.bin',
@@ -326,6 +328,8 @@ describe('upload: multipart abort cleanup', () => {
 function abortOnMultipartProgress(fx: TestFixture, controller: AbortController): () => boolean {
   const originalUpload = fx.bucket.upload.bind(fx.bucket)
   let sawMultipartProgress = false
+  // Permanently replaces this test's bucket.upload. This is safe because
+  // makeMultipartFixture() creates a fresh bucket for each beforeEach.
   fx.bucket.upload = async (...args: Parameters<typeof fx.bucket.upload>) => {
     const [options] = args
     return await originalUpload({
@@ -334,7 +338,7 @@ function abortOnMultipartProgress(fx: TestFixture, controller: AbortController):
         options.onProgress?.(event)
         if (!sawMultipartProgress && event.totalParts !== null && event.bytesTransferred > 0) {
           sawMultipartProgress = true
-          controller.abort(new Error('test abort after multipart progress'))
+          controller.abort(new Error(MULTIPART_ABORT_REASON))
         }
       },
     })
