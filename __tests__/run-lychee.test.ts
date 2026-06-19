@@ -246,7 +246,8 @@ function tarHeader(name: string, size: number, type: string): Buffer {
   writeTarOctal(header, 0, 136, 12)
   header.fill(' ', 148, 156)
   header.write(type, 156, 1, 'ascii')
-  header.write(`us${'tar'}\0`, 257, 6, 'ascii')
+  header.write(['us', 'tar'].join(''), 257, 5, 'ascii')
+  header[262] = 0
   header.write('00', 263, 2, 'ascii')
 
   let checksum = 0
@@ -261,5 +262,6 @@ function writeTarString(header: Buffer, value: string, offset: number, length: n
 
 function writeTarOctal(header: Buffer, value: number, offset: number, length: number): void {
   const raw = value.toString(8).padStart(length - 1, '0')
-  header.write(`${raw}\0`, offset, length, 'ascii')
+  header.write(raw, offset, length - 1, 'ascii')
+  header[offset + length - 1] = 0
 }
