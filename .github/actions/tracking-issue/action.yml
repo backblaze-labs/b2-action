@@ -71,8 +71,7 @@ runs:
           --method GET "repos/$REPO/issues" \
           -f state=open \
           -f labels="$LABEL" \
-          -f creator='github-actions[bot]' \
-          --jq 'map(select(.title == env.TITLE and (.pull_request | not))) | .[0].number // ""')"
+          --jq 'map(select(.title == env.TITLE and .user.login == "github-actions[bot]" and (.pull_request | not))) | .[0].number // ""')"
         echo "number=$issue_number" >> "$GITHUB_OUTPUT"
 
     - name: Ensure tracking label

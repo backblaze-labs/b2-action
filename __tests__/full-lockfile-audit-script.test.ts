@@ -136,6 +136,42 @@ describe('full-lockfile audit heartbeat script', () => {
       await rm(tempDir, { recursive: true, force: true })
     }
   })
+
+  it('falls back to a safe heartbeat window for invalid env values', async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), 'b2-audit-heartbeat-env-'))
+    try {
+      const runs = join(tempDir, 'runs.json')
+      const githubOutput = join(tempDir, 'github-output.txt')
+      await writeFile(
+        runs,
+        JSON.stringify([
+          {
+            conclusion: 'success',
+            createdAt: '2026-06-12T00:00:00Z',
+            event: 'schedule',
+            status: 'completed',
+            url: 'https://github.com/backblaze-labs/b2-action/actions/runs/2',
+          },
+        ]),
+      )
+
+      const result = spawnSync(process.execPath, [HEARTBEAT_SCRIPT_PATH, runs], {
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          GITHUB_OUTPUT: githubOutput,
+          HEARTBEAT_NOW: '2026-06-19T00:00:00Z',
+          HEARTBEAT_WINDOW_DAYS: 'not-a-number',
+        },
+      })
+
+      expect(result.status).toBe(0)
+      expect(result.stdout).toContain('Latest audit is recent')
+      expect(await readFile(githubOutput, 'utf8')).toContain('heartbeat_status=healthy')
+    } finally {
+      await rm(tempDir, { recursive: true, force: true })
+    }
+  })
 })
 
 function runAuditFixture(

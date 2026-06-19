@@ -9,7 +9,13 @@ export function isEntrypoint(importMetaUrl, argvPath) {
   return argvPath !== undefined && fileURLToPath(importMetaUrl) === resolve(argvPath)
 }
 
+function positiveNumber(value, fallback) {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
+}
+
 export function classifyHeartbeat(runs, { now = new Date(), windowDays = 10 } = {}) {
+  const checkedWindowDays = positiveNumber(windowDays, 10)
   const candidates = runs
     .filter((run) => countedEvents.has(run.event))
     .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt))
@@ -19,7 +25,7 @@ export function classifyHeartbeat(runs, { now = new Date(), windowDays = 10 } = 
     return { latest: undefined, status: 'cold-start' }
   }
 
-  const threshold = now.getTime() - windowDays * 24 * 60 * 60 * 1_000
+  const threshold = now.getTime() - checkedWindowDays * 24 * 60 * 60 * 1_000
   const latestTime = Date.parse(latest.createdAt)
   return {
     latest,
@@ -58,7 +64,7 @@ async function runHeartbeatCli() {
   }
 
   const runs = JSON.parse(await readFile(runsPath, 'utf8')).map(normalizeRun)
-  const windowDays = Number(process.env.HEARTBEAT_WINDOW_DAYS ?? 10)
+  const windowDays = positiveNumber(process.env.HEARTBEAT_WINDOW_DAYS, 10)
   const now = process.env.HEARTBEAT_NOW ? new Date(process.env.HEARTBEAT_NOW) : new Date()
   const result = classifyHeartbeat(runs, { now, windowDays })
   const latest = result.latest
