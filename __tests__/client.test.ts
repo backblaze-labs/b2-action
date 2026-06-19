@@ -83,9 +83,13 @@ describe('client helpers', () => {
 
       async authorize() {}
     }
+    class FakeAccountInfo {}
 
     vi.doMock('@actions/core', () => core)
-    vi.doMock('@backblaze-labs/b2-sdk', () => ({ B2Client: FakeB2Client }))
+    vi.doMock('@backblaze-labs/b2-sdk', () => ({
+      B2Client: FakeB2Client,
+      InMemoryAccountInfo: FakeAccountInfo,
+    }))
 
     const { buildClient: buildMockedClient } = await import('../src/client.ts')
     const result = await buildMockedClient({
