@@ -6,6 +6,9 @@ on:
     - cron: '41 5 * * *'
   workflow_dispatch:
 
+permissions:
+  contents: read # default read-only access; heartbeat job escalates below
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
