@@ -379,8 +379,27 @@ If you don't need customer-managed keys, **`sse: B2`** (SSE-B2, B2-managed) is t
 | `remote-sha1` | verify | The remote object's whole-file SHA-1, or empty for multipart objects when B2 does not expose one. |
 | `local-sha1` | verify | Local file SHA-1 (when computed from `destination`). |
 | `summary-json` | every command | JSON array with per-file details. |
-| `retryable` | classified SDK failures | `true` / `false` when the failure path can classify whether the SDK error is retryable. |
-| `retry-after` | classified SDK failures | Retry-After delay in seconds when B2 provides one. |
+| `retryable` | classified SDK failures | `true` only when the failed action is safe to re-run automatically. Mutating actions with ambiguous transient failures emit `false` so callers inspect B2 state first. |
+| `retry-after` | classified SDK failures | Retry delay in seconds, clamped to 3600. Emitted only with `retryable=true`; network failures use a default backoff. |
+
+`retryable` and `retry-after` are emitted only on the failure path, immediately before the Action calls `core.setFailed`. To consume them, set `continue-on-error: true` on the B2 step and guard the follow-up step explicitly:
+
+```yaml
+- id: b2
+  uses: backblaze-labs/b2-action@v1
+  continue-on-error: true
+  with:
+    action: list
+    bucket: ${{ vars.B2_BUCKET }}
+
+- name: Retry after a safe transient failure
+  if: steps.b2.outputs.retryable == 'true'
+  run: |
+    sleep "${{ steps.b2.outputs['retry-after'] || '30' }}"
+    echo "retry the read-only operation here"
+```
+
+Treat `retry-after` as server-influenced input even though this Action clamps it; do not pass it to unbounded sleeps or shell code without your own policy.
 
 ---
 

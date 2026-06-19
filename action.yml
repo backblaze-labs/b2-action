@@ -133,9 +133,9 @@ outputs:
   summary-json:
     description: 'JSON array with per-file details (name, fileId, size, sha1).'
   retryable:
-    description: 'Failure-path signal set when an SDK error is classified as retryable or not retryable.'
+    description: 'Failure-path signal for classified SDK errors: true only when the action is safe to re-run automatically.'
   retry-after:
-    description: 'Retry-After delay in seconds when B2 provides one on a classified SDK failure.'
+    description: 'Failure-path retry delay in seconds, clamped to 3600 and emitted only with retryable=true.'
 
 runs:
   using: 'node24'

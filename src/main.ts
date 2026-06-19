@@ -47,12 +47,18 @@ export async function run(): Promise<void> {
   process.once('SIGINT', onSigint)
   const signal = controller.signal
   let action: ParsedInputs['action'] | undefined
+  let dryRun: boolean | undefined
   const secretValues: string[] = []
 
   try {
     const inputs = parseInputs()
     action = inputs.action
-    secretValues.push(inputs.applicationKeyId, inputs.applicationKey)
+    dryRun = inputs.dryRun
+    // These values are a defensive formatter scrub list for dispatcher-scope
+    // credentials. Command-level secrets such as presigned URLs are masked at
+    // the command site with core.setSecret, and SDK free-form B2 messages are
+    // not reflected into failure output.
+    secretValues.push(inputs.applicationKey)
 
     const authorized = await buildClient({
       applicationKeyId: inputs.applicationKeyId,
@@ -328,6 +334,7 @@ export async function run(): Promise<void> {
   } catch (err) {
     const failure = classifyActionError(err, {
       ...(action !== undefined ? { action } : {}),
+      ...(dryRun !== undefined ? { dryRun } : {}),
       secretValues,
     })
     if (failure.retryable !== undefined) core.setOutput('retryable', String(failure.retryable))

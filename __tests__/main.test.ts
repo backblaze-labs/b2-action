@@ -5,6 +5,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import {
   AccessDeniedError,
   B2SsrfError,
+  BadAuthTokenError,
+  NetworkError,
   ServiceUnavailableError,
 } from '@backblaze-labs/b2-sdk/errors'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -570,7 +572,7 @@ describe('main dispatcher', () => {
     await ctx.run()
 
     expect(ctx.core.setFailed).toHaveBeenCalledWith(
-      'Transient B2 error: safe to retry this workflow. B2 said: try again later (status 503, code service_unavailable, request retry-request, retry after 30s)',
+      'Transient B2 error: safe to retry this workflow. B2 response details: status 503, code service_unavailable, retry after 30s',
     )
     expect(outputs(ctx)).toMatchObject({
       retryable: 'true',
@@ -578,7 +580,26 @@ describe('main dispatcher', () => {
     })
   })
 
-  it('redacts masked secrets from SDK errors before setFailed', async () => {
+  it('does not emit retryable=true or retry-after for mutating SDK failures', async () => {
+    const ctx = await loadMain()
+    ctx.parseInputs.mockReturnValue(inputs('upload'))
+    ctx.commands.uploadCommand.mockRejectedValue(
+      new ServiceUnavailableError(
+        { status: 503, code: 'service_unavailable', message: 'try again later' },
+        { retryAfter: 30, requestId: 'retry-request' },
+      ),
+    )
+
+    await ctx.run()
+
+    expect(ctx.core.setFailed).toHaveBeenCalledWith(
+      'Transient B2 error: the upload action may have partially committed; inspect B2 state before rerunning to avoid duplicate file versions, orphaned large-file uploads, or unintended deletes. B2 response details: status 503, code service_unavailable, retry after 30s',
+    )
+    expect(outputs(ctx)).toMatchObject({ retryable: 'false' })
+    expect(outputs(ctx)).not.toHaveProperty('retry-after')
+  })
+
+  it('does not reflect masked secrets from SDK errors before setFailed', async () => {
     const ctx = await loadMain()
     ctx.parseInputs.mockReturnValue(inputs('list'))
     ctx.commands.listCommand.mockRejectedValue(
@@ -592,9 +613,46 @@ describe('main dispatcher', () => {
     await ctx.run()
 
     const failure = ctx.core.setFailed.mock.calls[0]?.[0]
-    expect(failure).toContain('***')
     expect(failure).not.toContain(TEST_APPLICATION_KEY)
     expect(failure).not.toContain(TEST_AUTH_TOKEN)
+  })
+
+  it('does not reflect auth tokens from buildClient failures', async () => {
+    const ctx = await loadMain()
+    ctx.parseInputs.mockReturnValue(inputs('list'))
+    ctx.buildClient.mockRejectedValue(
+      new AccessDeniedError({
+        status: 403,
+        code: 'access_denied',
+        message: `authorize failed for ${TEST_AUTH_TOKEN}`,
+      }),
+    )
+
+    await ctx.run()
+
+    const failure = ctx.core.setFailed.mock.calls[0]?.[0]
+    expect(failure).toBe(
+      'B2 permission denied: check application key capabilities, bucket access, and file name prefix restrictions. B2 response details: status 403, code access_denied',
+    )
+    expect(failure).not.toContain(TEST_AUTH_TOKEN)
+  })
+
+  it('reports unauthorized scope errors as permission failures', async () => {
+    const ctx = await loadMain()
+    ctx.parseInputs.mockReturnValue(inputs('list'))
+    ctx.buildClient.mockRejectedValue(
+      new BadAuthTokenError({
+        status: 401,
+        code: 'unauthorized',
+        message: 'Application key is missing capabilities: listFiles',
+      }),
+    )
+
+    await ctx.run()
+
+    const failure = ctx.core.setFailed.mock.calls[0]?.[0]
+    expect(failure).toContain('B2 permission denied')
+    expect(failure).not.toContain('B2 authentication failed')
   })
 
   it('reports endpoint safety errors without echoing raw URLs', async () => {
@@ -615,6 +673,23 @@ describe('main dispatcher', () => {
     expect(failure).not.toContain('password')
     expect(failure).not.toContain('token=secret')
     expect(outputs(ctx)).toMatchObject({ retryable: 'false' })
+  })
+
+  it('reports wrapped endpoint safety errors without retry guidance', async () => {
+    const ctx = await loadMain()
+    const rawUrl = 'http://169.254.169.254/latest/meta-data'
+    ctx.parseInputs.mockReturnValue(inputs('list'))
+    ctx.commands.listCommand.mockRejectedValue(
+      new NetworkError('fetch failed', new B2SsrfError(`blocked ${rawUrl}`, rawUrl)),
+    )
+
+    await ctx.run()
+
+    expect(ctx.core.setFailed).toHaveBeenCalledWith(
+      'B2 endpoint safety check failed: rejected an unsafe B2 endpoint or server-provided URL. Check the endpoint input and B2 realm configuration.',
+    )
+    expect(outputs(ctx)).toMatchObject({ retryable: 'false' })
+    expect(outputs(ctx)).not.toHaveProperty('retry-after')
   })
 
   it('reports sync aggregate errors with a sample', async () => {

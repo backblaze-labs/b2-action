@@ -29,7 +29,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
-- Top-level action failures now classify known SDK errors into actionable authentication, permission, and transient retry messages, expose `retryable` / `retry-after` outputs when classified, and sanitize reflected SDK error text before logging. ([#27](https://github.com/backblaze-labs/b2-action/issues/27))
+- Top-level action failures now classify known SDK errors into actionable authentication, permission, and transient retry messages, expose failure-path `retryable` / `retry-after` outputs only when an automatic retry is safe, and avoid reflecting server-controlled SDK text before logging. ([#27](https://github.com/backblaze-labs/b2-action/issues/27))
 
 ### Documentation
 
