@@ -80,6 +80,7 @@ pnpm verify-dist    # build, then `git diff --exit-code dist/` (must be clean)
 pnpm docs           # typedoc (strict): generates docs/ for GitHub Pages
 pnpm docs:watch     # typedoc in watch mode for local authoring
 pnpm docs:lint      # markdownlint-cli2 against **/*.md
+pnpm docs:links     # runs pinned lychee in offline + fragment-aware mode
 pnpm docs:check-action-yml  # action.yml <> README sync check
 ```
 
@@ -131,7 +132,7 @@ Every PR runs:
 | `audit` | `pnpm audit --prod --audit-level high`: fails on a high/critical advisory in a **production** dependency. Scoped to prod (not devDeps) so a dev-tool advisory can't block an unrelated PR; devDep updates are handled by Dependabot. CI calls the builtin `pnpm audit` directly (resolves against the lockfile, no install); `pnpm run audit` is the local-convenience equivalent. |
 | `sync-check` ([docs-lint.yml](./.github/workflows/docs-lint.yml)) | every input/output in `action.yml` also appears in the README reference tables. Drift fails CI. |
 | `markdownlint` ([docs-lint.yml](./.github/workflows/docs-lint.yml)) | prose-style consistency across `**/*.md`. Config in [`.markdownlint-cli2.jsonc`](./.markdownlint-cli2.jsonc). |
-| `link-check` ([docs-lint.yml](./.github/workflows/docs-lint.yml)) | lychee runs in `--offline` mode against `**/*.md`; catches broken relative paths and anchor fragments. External URLs are not pinged. |
+| `link-check` ([docs-lint.yml](./.github/workflows/docs-lint.yml)) | `pnpm docs:links` runs pinned lychee in `--offline` mode against `**/*.md`; catches broken relative paths and anchor fragments. External URLs are not pinged. |
 | `spellcheck` ([docs-lint.yml](./.github/workflows/docs-lint.yml)) | cspell across `**/*.ts`, `**/*.md`, `**/*.yml`, `action.yml`. Config in [`cspell.json`](./cspell.json); domain-specific words live in [`.cspell/project-words.txt`](./.cspell/project-words.txt). Add a word there when cspell flags a deliberate identifier. |
 | `docs` ([docs.yml](./.github/workflows/docs.yml)) | TypeDoc with `treatWarningsAsErrors: true`; every export must have JSDoc. Published to GitHub Pages on push to `main`. |
 

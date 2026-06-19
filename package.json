@@ -24,7 +24,7 @@
     "docs:watch": "typedoc --watch",
     "docs:check-action-yml": "node scripts/check-action-yml-vs-readme.mjs",
     "docs:lint": "markdownlint-cli2",
-    "docs:links": "lychee --no-progress --offline --include-fragments '**/*.md'",
+    "docs:links": "node scripts/run-lychee.mjs --offline --include-fragments --no-progress --verbose --exclude-path '(^|/)node_modules/' '**/*.md'",
     "spellcheck": "cspell --no-progress --no-must-find-files",
     "prepare": "husky"
   },
