@@ -79,11 +79,17 @@ function canMintAttestation(permissions) {
 }
 
 function compactExpression(value) {
-  return typeof value === 'string' ? value.trim().replace(/\s+/g, ' ') : ''
+  if (typeof value !== 'string') return ''
+
+  const trimmed = value.trim()
+  const expressionMatch = trimmed.match(/^\${{\s*(.*?)\s*}}$/)
+  if (expressionMatch) return githubExpression(expressionMatch[1])
+
+  return trimmed.replace(/\s+/g, ' ')
 }
 
 function githubExpression(expression) {
-  return `\${{ ${expression} }}`
+  return `\${{${expression.replace(/\s+/g, '')}}}`
 }
 
 function resolvesToValidateOutput(job, value, outputName) {
@@ -226,7 +232,8 @@ function checkReleaseWorkflow(doc) {
   const releaseRefStep = findStep(
     validate,
     (step) =>
-      step.id === 'release-ref' && asMapping(step.env).RUN_REF === githubExpression('github.ref'),
+      step.id === 'release-ref' &&
+      compactExpression(asMapping(step.env).RUN_REF) === githubExpression('github.ref'),
   )
   requireStep('validate', 'resolve the requested release tag against github.ref', releaseRefStep)
   if (releaseRefStep) {
