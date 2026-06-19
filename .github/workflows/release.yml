@@ -40,8 +40,8 @@ permissions:
   contents: read # default read-only access; publish escalates below
 
 concurrency:
-  # Serialize all release publishes so two stable tags cannot race to move the
-  # same floating major tag and leave it pointing at the older commit.
+  # Serialize the full release workflow, including validation, so two stable
+  # tags cannot race to move the same floating major tag.
   group: ${{ github.workflow }}
   cancel-in-progress: false
 
