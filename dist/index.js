@@ -35505,6 +35505,11 @@ const VALID_ACTIONS = [
     'head',
     'purge',
 ];
+/**
+ * Runtime side-effect policy for each action verb.
+ *
+ * @internal
+ */
 const ACTION_EFFECTS = {
     upload: { kind: 'write', honorsDryRun: false },
     download: { kind: 'read', honorsDryRun: false },

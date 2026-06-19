@@ -45,6 +45,11 @@ type ActionEffect = {
   readonly honorsDryRun: boolean
 }
 
+/**
+ * Runtime side-effect policy for each action verb.
+ *
+ * @internal
+ */
 export const ACTION_EFFECTS = {
   upload: { kind: 'write', honorsDryRun: false },
   download: { kind: 'read', honorsDryRun: false },
