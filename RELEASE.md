@@ -76,7 +76,9 @@ git push origin vX.Y.Z --force
 
 ### Floating tag automation
 
-The default `GITHUB_TOKEN` **cannot** create or move a tag whose commit contains workflow files (anything under `.github/workflows/`). Both `git push` and the refs API reject it, and the required `workflows` permission cannot be granted to `GITHUB_TOKEN`. Stable releases therefore require a `FLOATING_TAG_TOKEN` secret before the GitHub Release is published:
+The default `GITHUB_TOKEN` **cannot** create or move a tag whose commit contains workflow files (anything under `.github/workflows/`). Both `git push` and the refs API reject it, and the required `workflows` permission cannot be granted to `GITHUB_TOKEN`. The normal stable-release path therefore requires a `FLOATING_TAG_TOKEN` secret before the GitHub Release is published; the only exception is the documented `workflow_dispatch` emergency path after manual tag handling.
+
+Use one of these credential paths:
 
 - **Fine-grained PAT** (accepted control): repo `backblaze-labs/b2-action`, permissions **Contents: Read and write** + **Workflows: Read and write**. Rotate it at least every 90 days, after maintainer access changes, and after any suspected exposure.
 - **GitHub App** token via `actions/create-github-app-token` is preferred once available because it avoids a long-lived secret.
