@@ -137,18 +137,19 @@ jobs:
           # can't be granted to it. So use a token that has it: create a
           # fine-grained PAT on this repo with Contents + Workflows: Read and
           # write (or a classic PAT with `repo` + `workflow`) and add it as the
-          # FLOATING_TAG_TOKEN secret. If the secret is absent the float is
-          # skipped with a warning instead of failing the release.
+          # FLOATING_TAG_TOKEN secret. If the secret is absent on a stable
+          # release, fail loudly so the consumer-facing `vN` alias cannot lag
+          # behind unnoticed.
           GH_TOKEN: ${{ secrets.FLOATING_TAG_TOKEN }}
         run: |
           MAJOR=$(echo "$REF" | sed -nE 's/^(v[0-9]+).*/\1/p')
           if [ -z "$MAJOR" ]; then
-            echo "::warning::Could not derive major-version tag from '$REF'; skipping float."
-            exit 0
+            echo "::error::Could not derive major-version tag from '$REF'; refusing to skip the consumer-facing floating tag update."
+            exit 1
           fi
           if [ -z "${GH_TOKEN:-}" ]; then
-            echo "::warning::FLOATING_TAG_TOKEN secret not set; skipping float of $MAJOR. Move it by hand: git tag -f $MAJOR $REF && git push origin $MAJOR --force"
-            exit 0
+            echo "::error::FLOATING_TAG_TOKEN secret is required for stable releases; otherwise users pinned to @$MAJOR remain on the previous release. Configure the secret or move it by hand: git tag -f $MAJOR ${REF}^{commit} && git push origin refs/tags/$MAJOR --force"
+            exit 1
           fi
           SHA=$(git rev-parse "${REF}^{commit}")
           echo "Pointing floating tag $MAJOR at $REF ($SHA)"

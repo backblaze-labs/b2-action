@@ -51,7 +51,7 @@ To re-run a release for an existing tag, use the `workflow_dispatch` input on `r
 4. Verifies the tag equals `package.json` version, that the bundle contains the `b2-github-action/` User-Agent token, and that the bundle inlines the same version string. ncc tree-shakes the JSON import in `src/version.ts` so the token and the version appear separately in the bundle, not as one contiguous literal; checking each independently is the end-to-end "bake" gate.
 5. Detects pre-release suffixes (`-alpha`, `-beta`, `-rc...`). Pre-releases skip the floating-tag step.
 6. Creates the GitHub Release via `softprops/action-gh-release@v3` with `generate_release_notes: true`.
-7. Moves the floating major tag (e.g. `v1`) to the release commit via the refs API. See [Floating tag automation](#floating-tag-automation) below for the token requirement.
+7. Moves the floating major tag (e.g. `v1`) to the release commit via the refs API. See [Floating tag automation](#floating-tag-automation) below for the token requirement; missing or expired credentials fail stable releases so the consumer-facing alias cannot lag silently.
 
 ## One-time setup
 
@@ -76,7 +76,7 @@ git push origin vX.Y.Z --force
 
 ### Floating tag automation
 
-The default `GITHUB_TOKEN` **cannot** create or move a tag whose commit contains workflow files (anything under `.github/workflows/`). Both `git push` and the refs API reject it, and the required `workflows` permission cannot be granted to `GITHUB_TOKEN`. The floating-tag step uses a `FLOATING_TAG_TOKEN` secret instead:
+The default `GITHUB_TOKEN` **cannot** create or move a tag whose commit contains workflow files (anything under `.github/workflows/`). Both `git push` and the refs API reject it, and the required `workflows` permission cannot be granted to `GITHUB_TOKEN`. Stable releases therefore require a `FLOATING_TAG_TOKEN` secret for the floating-tag step:
 
 - **Fine-grained PAT** (recommended): repo `backblaze-labs/b2-action`, permissions **Contents: Read and write** + **Workflows: Read and write**. An org may require admin approval.
 - **Classic PAT** with `repo` + `workflow` scopes.
@@ -88,11 +88,14 @@ Store it as a repo secret:
 gh secret set FLOATING_TAG_TOKEN --repo backblaze-labs/b2-action
 ```
 
-If the secret is absent the release still succeeds: the float step warns instead of failing. Move the floating tag by hand:
+If the secret is absent or expired on a non-prerelease tag, the workflow fails rather than letting the GitHub Release publish while `@vN` consumers stay on the previous release. Treat that failure as a release blocker: either configure the secret and rerun the release workflow, or move the floating tag by hand.
+
+Manual fallback, replacing `vN` with the major tag such as `v1` and `vX.Y.Z` with the exact release tag:
 
 ```bash
-git tag -f vN vX.Y.Z
-git push origin vN --force
+git fetch origin --tags
+git tag -f vN vX.Y.Z^{commit}
+git push origin refs/tags/vN --force
 ```
 
 ### First Marketplace publish
