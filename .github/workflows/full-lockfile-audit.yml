@@ -101,6 +101,7 @@ jobs:
         run: |
           set -euo pipefail
           title="Full-lockfile dependency audit failure"
+          max_audit_output_bytes=50000
           issue_number="$(gh issue list \
             --repo "$REPO" \
             --state open \
@@ -114,7 +115,18 @@ jobs:
             echo "Run: $RUN_URL"
             echo ""
             echo '```text'
-            cat audit-output.txt
+            if [ -f audit-output.txt ]; then
+              audit_output_bytes="$(wc -c < audit-output.txt | tr -d ' ')"
+              if [ "$audit_output_bytes" -gt "$max_audit_output_bytes" ]; then
+                head -c "$max_audit_output_bytes" audit-output.txt
+                echo ""
+                echo "[truncated: ${audit_output_bytes} bytes total; see run logs for full output]"
+              else
+                cat audit-output.txt
+              fi
+            else
+              echo "audit-output.txt was not generated; see run logs for details."
+            fi
             echo '```'
           } > "$body"
           if [ -n "$issue_number" ]; then
