@@ -236,12 +236,17 @@ function checkReleaseWorkflow(doc) {
   const setupNodeStep = findStep(validate, (step) => stepUses(step, 'actions/setup-node@'))
   requireStep('validate', 'configure actions/setup-node', setupNodeStep)
   if (setupNodeStep) {
-    // setup-node's implicit package-manager cache is disabled here because the
-    // release job handles runtime artifacts. Re-enabling it changes the release
-    // trust boundary, so it belongs in this security policy.
+    // setup-node's package-manager-cache input is supported by the pinned
+    // action and disables automatic caching; `cache` must also stay unset so
+    // the release gate cannot opt into explicit dependency caching.
+    const setupNodeWith = asMapping(setupNodeStep.with)
     requireCondition(
-      asMapping(setupNodeStep.with)['package-manager-cache'] === false,
-      'validate setup-node must disable implicit package-manager caching',
+      setupNodeWith['package-manager-cache'] === false,
+      'validate setup-node must disable automatic package-manager caching',
+    )
+    requireCondition(
+      setupNodeWith.cache === undefined,
+      'validate setup-node must not enable explicit dependency caching',
     )
   }
 
