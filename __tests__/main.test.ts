@@ -152,7 +152,7 @@ describe('main dispatcher', () => {
     ctx.commands.uploadCommand.mockImplementation(async (_bucket, _inputs, commandSignal) => {
       process.emit('SIGTERM')
       commandSignal?.throwIfAborted()
-      return { files: [], bytesTransferred: 0 }
+      throw new Error('SIGTERM handler did not abort the command signal')
     })
 
     await ctx.run()
