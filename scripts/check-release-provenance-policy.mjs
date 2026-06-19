@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const workflow = readFileSync(resolve(repoRoot, '.github/workflows/release.yml'), 'utf8')
 const jobsMatch = /(^|\r?\n)jobs:\r?\n/.exec(workflow)
+const workflowHeader = jobsMatch ? workflow.slice(0, jobsMatch.index) : workflow
 const jobsText = jobsMatch ? workflow.slice(jobsMatch.index + jobsMatch[1].length) : ''
 
 const failures = []
@@ -37,6 +38,13 @@ const names = jobNames()
 const validate = jobBlock('validate')
 const attest = jobBlock('attest')
 const publish = jobBlock('publish')
+
+rejectIn(
+  'workflow',
+  workflowHeader,
+  /^ {0,2}(?:id-token|attestations): write\s*(?:#.*)?$/m,
+  'request workflow-level OIDC/attestation permissions',
+)
 
 for (const required of ['validate', 'attest', 'publish']) {
   if (!names.includes(required)) fail(`release workflow must define a ${required} job`)
