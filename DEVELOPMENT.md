@@ -82,8 +82,11 @@ pnpm docs:watch     # typedoc in watch mode for local authoring
 pnpm docs:lint      # markdownlint-cli2 against **/*.md
 pnpm docs:links     # runs pinned lychee in offline + fragment-aware mode, excluding node_modules
 pnpm docs:check-action-yml  # action.yml <> README sync check
-pnpm audit --audit-level high  # full lockfile audit, matching the weekly scheduled workflow
 ```
+
+The full-lockfile audit uses the pnpm builtin directly, not a package script:
+`pnpm audit --audit-level moderate`. This mirrors the scheduled/manual workflow
+and the dependency-policy PR gate.
 
 Requirements: Node 24+, pnpm 10+. The Action runs on Node 24 in the GitHub Actions runtime; CI tests Node 24 across Ubuntu / macOS / Windows.
 
@@ -155,7 +158,8 @@ listed in the same table and called out explicitly.
 | `self-smoke` | runs `node dist/index.js` with no inputs, expects the missing-input error |
 | `analyze` ([codeql.yml](./.github/workflows/codeql.yml)) | CodeQL (SAST) over the TypeScript source (`build-mode: none`, no compile needed). Runs on PRs to `main`, push to `main`, and weekly; findings surface in the repo Security tab. |
 | `audit` | `pnpm audit --prod --audit-level high`: fails on a high/critical advisory in a **production** dependency. Scoped to prod (not devDeps) so a dev-tool advisory can't block an unrelated PR; devDep updates are handled by Dependabot. CI calls the builtin `pnpm audit` directly (resolves against the lockfile, no install); `pnpm run audit` is the local-convenience equivalent. |
-| `full-lockfile-audit` ([full-lockfile-audit.yml](./.github/workflows/full-lockfile-audit.yml)) | Weekly `schedule` plus `workflow_dispatch` run of `pnpm audit --audit-level high` across the full lockfile, including dev/build tooling used to produce committed `dist/`. It intentionally does **not** run on `pull_request`, so devDep advisory noise does not block unrelated PRs, while scheduled failures still surface supply-chain risk loudly. |
+| `full-lockfile-audit-pr` / `full-lockfile-audit` ([full-lockfile-audit.yml](./.github/workflows/full-lockfile-audit.yml)) | `pnpm audit --audit-level moderate` across the full lockfile, including dev/build tooling used to produce committed `dist/`. Runs weekly, manually, and on PRs that touch `package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml`, or the audit workflow itself, so dependency-policy changes are gated without blocking unrelated PRs. Scheduled/manual failures open or update a tracking issue. |
+| `heartbeat` ([full-lockfile-audit-heartbeat.yml](./.github/workflows/full-lockfile-audit-heartbeat.yml)) | Daily check that a scheduled full-lockfile audit has fired in the last 8 days; opens or updates a tracking issue if the weekly cron silently stops running. |
 | `sync-check` ([docs-lint.yml](./.github/workflows/docs-lint.yml)) | every input/output in `action.yml` also appears in the README reference tables. Drift fails CI. |
 | `markdownlint` ([docs-lint.yml](./.github/workflows/docs-lint.yml)) | prose-style consistency across `**/*.md`. Config in [`.markdownlint-cli2.jsonc`](./.markdownlint-cli2.jsonc). |
 | `link-check` ([docs-lint.yml](./.github/workflows/docs-lint.yml)) | `pnpm docs:links` runs pinned lychee in `--offline` mode against `**/*.md`; catches broken relative paths and anchor fragments. External URLs are not pinged. |

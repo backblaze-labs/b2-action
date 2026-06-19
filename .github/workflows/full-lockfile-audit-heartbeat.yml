@@ -1,0 +1,97 @@
+name: Full lockfile audit heartbeat
+
+on:
+  schedule:
+    # Daily, 05:41 UTC (off-the-hour to avoid the GH Actions cron stampede).
+    - cron: '41 5 * * *'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+  issues: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  heartbeat:
+    name: verify recent full-lockfile audit
+    if: github.repository == 'backblaze-labs/b2-action'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check latest scheduled audit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+
+          threshold_epoch="$(date -u -d '8 days ago' +%s)"
+          latest_created="$(gh run list \
+            --repo "$REPO" \
+            --workflow full-lockfile-audit.yml \
+            --event schedule \
+            --branch main \
+            --limit 20 \
+            --json createdAt \
+            --jq '.[0].createdAt // ""')"
+          latest_status="$(gh run list \
+            --repo "$REPO" \
+            --workflow full-lockfile-audit.yml \
+            --event schedule \
+            --branch main \
+            --limit 20 \
+            --json status \
+            --jq '.[0].status // ""')"
+          latest_conclusion="$(gh run list \
+            --repo "$REPO" \
+            --workflow full-lockfile-audit.yml \
+            --event schedule \
+            --branch main \
+            --limit 20 \
+            --json conclusion \
+            --jq '.[0].conclusion // ""')"
+          latest_url="$(gh run list \
+            --repo "$REPO" \
+            --workflow full-lockfile-audit.yml \
+            --event schedule \
+            --branch main \
+            --limit 20 \
+            --json url \
+            --jq '.[0].url // ""')"
+
+          if [ -n "$latest_created" ]; then
+            latest_epoch="$(date -u -d "$latest_created" +%s)"
+            if [ "$latest_epoch" -ge "$threshold_epoch" ]; then
+              echo "Latest scheduled audit fired at $latest_created ($latest_status/$latest_conclusion): $latest_url"
+              exit 0
+            fi
+          fi
+
+          title="Full-lockfile audit heartbeat missing"
+          issue_number="$(gh issue list \
+            --repo "$REPO" \
+            --state open \
+            --search "$title in:title" \
+            --json number \
+            --jq '.[0].number // ""')"
+          body="$(mktemp)"
+          {
+            echo "No scheduled full-lockfile audit run has been observed in the last 8 days."
+            echo ""
+            echo "Heartbeat run: $RUN_URL"
+            if [ -n "$latest_created" ]; then
+              echo ""
+              echo "Latest scheduled audit run: $latest_created ($latest_status/$latest_conclusion): $latest_url"
+            fi
+          } > "$body"
+          if [ -n "$issue_number" ]; then
+            gh issue comment "$issue_number" --repo "$REPO" --body-file "$body"
+          else
+            gh issue create --title "$title" --repo "$REPO" --body-file "$body"
+          fi
+          exit 1

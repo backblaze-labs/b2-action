@@ -6,6 +6,8 @@ This folder contains:
 - **`docs.yml`**: runs TypeDoc on every PR and deploys the generated API docs to GitHub Pages on pushes to `main`.
 - **`security.yml`**: runs the shared GitHub Actions security composite action against every workflow: actionlint, third-party action pin checks, and zizmor audits.
 - **`codeql.yml`**: CodeQL (SAST) static analysis of the TypeScript source. Runs on PRs to `main`, on push to `main`, and weekly; findings surface in the repo Security tab.
+- **`full-lockfile-audit.yml`**: weekly + manual `pnpm audit --audit-level moderate` across the full lockfile (dev/build tooling included); also runs on PRs that touch dependency policy or lockfiles.
+- **`full-lockfile-audit-heartbeat.yml`**: daily + manual check that the scheduled full-lockfile audit has fired recently; opens or updates a tracking issue when the weekly cron lapses.
 - **`release.yml`**: fires on three-component `vX.Y.Z` tags (a bare `v1` does **not** trigger it): full gate + GitHub Release + floats the major-version tag (`v1`, `v2`, …).
 - **`daily-smoke.yml`**: 03:13 UTC cron: real-B2 end-to-end smoke against the test bucket.
 - **`large-multipart-smoke.yml`**: weekly real-B2 multipart upload + download SHA-1 integrity check for a payload above B2's recommended part size.

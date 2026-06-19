@@ -8,7 +8,9 @@ allowBuilds:
 minimumReleaseAgeExclude:
   - '@backblaze-labs/*'
 
-# Keep the scheduled full-lockfile audit green while Vitest still permits the
-# vulnerable Vite 7.3.3 resolution.
+# Keep dependency audits from resolving vulnerable dev/build tooling versions
+# while still allowing future compatible security patches.
 overrides:
-  vite: 7.3.5
+  js-yaml: '>=4.2.0'
+  markdown-it: '>=14.2.0'
+  vite: '>=7.3.5'

@@ -1,9 +1,15 @@
 name: Full lockfile audit
 
 on:
+  pull_request:
+    paths:
+      - package.json
+      - pnpm-lock.yaml
+      - pnpm-workspace.yaml
+      - .github/workflows/full-lockfile-audit.yml
   schedule:
-    # Weekly full-lockfile audit for dev/build tooling supply-chain risk.
-    - cron: '23 4 * * 1'
+    # Weekly, Monday 04:37 UTC (off-the-hour to avoid the GH Actions cron stampede).
+    - cron: '37 4 * * 1'
   workflow_dispatch:
 
 permissions:
@@ -11,12 +17,16 @@ permissions:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
-  full-lockfile-audit:
-    name: full-lockfile dependency audit
+  full-lockfile-audit-pr:
+    name: full-lockfile dependency audit (PR)
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -27,6 +37,88 @@ jobs:
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: 24
-      # Unlike PR CI's prod-only audit, this covers dev/build tooling too.
-      # Run directly against the committed lockfile; no install is needed.
-      - run: pnpm audit --audit-level high
+      # Covers dev/build tooling too. Run directly against the committed lockfile;
+      # no install is needed.
+      - name: Audit full lockfile
+        run: |
+          set +e
+          status=1
+          for attempt in 1 2 3; do
+            pnpm audit --audit-level moderate > audit-output.txt 2>&1
+            status=$?
+            if [ "$status" -eq 0 ]; then
+              break
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              sleep $((attempt * 15))
+            fi
+          done
+          cat audit-output.txt
+          exit "$status"
+
+  full-lockfile-audit:
+    name: full-lockfile dependency audit
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@0e279bb959325dab635dd2c09392533439d90093 # v6.0.8
+        with:
+          version: 11
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 24
+      # Covers dev/build tooling too. Run directly against the committed lockfile;
+      # no install is needed.
+      - name: Audit full lockfile
+        run: |
+          set +e
+          status=1
+          for attempt in 1 2 3; do
+            pnpm audit --audit-level moderate > audit-output.txt 2>&1
+            status=$?
+            if [ "$status" -eq 0 ]; then
+              break
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              sleep $((attempt * 15))
+            fi
+          done
+          cat audit-output.txt
+          exit "$status"
+      - name: Open issue on audit failure
+        if: failure() && github.repository == 'backblaze-labs/b2-action'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          title="Full-lockfile dependency audit failure"
+          issue_number="$(gh issue list \
+            --repo "$REPO" \
+            --state open \
+            --search "$title in:title" \
+            --json number \
+            --jq '.[0].number // ""')"
+          body="$(mktemp)"
+          {
+            echo "The scheduled/manual full-lockfile dependency audit failed."
+            echo ""
+            echo "Run: $RUN_URL"
+            echo ""
+            echo '```text'
+            cat audit-output.txt
+            echo '```'
+          } > "$body"
+          if [ -n "$issue_number" ]; then
+            gh issue comment "$issue_number" --repo "$REPO" --body-file "$body"
+          else
+            gh issue create --title "$title" --repo "$REPO" --body-file "$body"
+          fi
