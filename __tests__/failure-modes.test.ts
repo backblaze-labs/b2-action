@@ -116,6 +116,7 @@ describe('action-layer B2 failure modes', () => {
         fx.bucket,
         makeInputs('list', fx, { source: 'limited/', maxResults: 10 }),
       )
+      await expectPendingBeforeRetryBackoff(resultPromise)
       // Register the rejection handler before advancing timers so the final
       // retry rejection is caught instead of becoming an unhandled rejection.
       const rejection = expect(resultPromise).rejects.toThrow('rate limit still active')
@@ -132,4 +133,21 @@ function currentSdkAuthToken(authorized: Awaited<ReturnType<typeof buildClient>>
   const token = authorized.client.accountInfo.getAuthToken()
   expect(token).toBeTruthy()
   return token
+}
+
+async function expectPendingBeforeRetryBackoff<T>(promise: Promise<T>): Promise<void> {
+  let settled = false
+  void promise.then(
+    () => {
+      settled = true
+    },
+    () => {
+      settled = true
+    },
+  )
+
+  // Flush immediate promise work only; retry backoff timers must still be pending.
+  await vi.advanceTimersByTimeAsync(0)
+
+  expect(settled).toBe(false)
 }
