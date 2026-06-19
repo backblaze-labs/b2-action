@@ -6,7 +6,7 @@ import { deleteCommand } from '../../src/commands/delete.ts'
 import { presignCommand } from '../../src/commands/presign.ts'
 import { uploadCommand } from '../../src/commands/upload.ts'
 import type { ParsedInputs } from '../../src/inputs.ts'
-import { makeFixture, makeInputs, type TestFixture } from '../_helpers.ts'
+import { captureFailure, makeFixture, makeInputs, seedFile, type TestFixture } from '../_helpers.ts'
 
 function baseInputs(action: ParsedInputs['action']): ParsedInputs {
   return makeInputs(action, { bucket: 'gh-action-misc' })
@@ -82,6 +82,22 @@ describe('delete command', () => {
       deleteCommand(fx.bucket, { ...baseInputs('delete'), source: 'nope.txt' }),
     ).rejects.toThrow(/not found/)
   })
+
+  it('does not disclose hidden source existence in default dry-run logs', async () => {
+    await seedFile(fx, 'private-delete.txt', 'secret')
+    await fx.bucket.hideFile('private-delete.txt')
+
+    const { error, stdout } = await captureFailure(() =>
+      deleteCommand(fx.bucket, {
+        ...baseInputs('delete'),
+        source: 'private-delete.txt',
+        dryRun: true,
+      }),
+    )
+
+    expect(error.message).toBe(`File not found in bucket "${fx.bucket.name}": private-delete.txt`)
+    expect(`${stdout}\n${error.message}`).not.toMatch(/File is hidden|hide marker|latest version/)
+  })
 })
 
 describe('copy command', () => {
@@ -126,6 +142,22 @@ describe('copy command', () => {
         destination: 'wherever.txt',
       }),
     ).rejects.toThrow(/File not found/)
+  })
+
+  it('does not disclose hidden source existence in default logs', async () => {
+    await seedFile(fx, 'private-copy.txt', 'secret')
+    await fx.bucket.hideFile('private-copy.txt')
+
+    const { error, stdout } = await captureFailure(() =>
+      copyCommand(fx.client, fx.bucket, {
+        ...baseInputs('copy'),
+        source: 'private-copy.txt',
+        destination: 'copy-target.txt',
+      }),
+    )
+
+    expect(error.message).toBe(`File not found in bucket "${fx.bucket.name}": private-copy.txt`)
+    expect(`${stdout}\n${error.message}`).not.toMatch(/File is hidden|hide marker|latest version/)
   })
 
   it('errors when destination is missing', async () => {

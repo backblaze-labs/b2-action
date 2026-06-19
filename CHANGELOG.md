@@ -20,13 +20,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Changed
 
 - `upload`: directory/glob uploads now consistently treat `destination` as a prefix even when the source resolves to a single file; only an explicit single-file source treats a non-trailing-slash `destination` as the exact object key.
-- `copy` / `delete` / `retention`: when a file's latest exact-name version is a hide marker, the action now reports it as hidden (`latest version is a hide marker`) instead of using the previous `File not found` message. Consumers that match workflow logs should update hidden-file expectations. ([#31](https://github.com/backblaze-labs/b2-action/issues/31))
-- `copy` / `delete` / `retention`: if the hidden-file diagnostic probe fails, the action now emits a default-visible warning before falling back to `File not found`. ([#31](https://github.com/backblaze-labs/b2-action/issues/31))
 
 ### Documentation
 
 - README: added a "Pinning and versioning" section recommending consumers pin `backblaze-labs/b2-action` to a commit SHA (or a signed `@vX.Y.Z` tag) rather than the mutable `@v1` floating tag, mirroring the supply-chain practice the Action applies to its own workflows.
-- README: document that exact-name `copy`, single-file `delete`, and `retention` operate only when the latest exact-name version is an upload, and report hidden files when the latest version is a hide marker. ([#31](https://github.com/backblaze-labs/b2-action/issues/31))
+- README: document that exact-name `copy`, single-file `delete`, and `retention` operate only when the latest exact-name version is an upload; a latest hide marker is reported with the same `File not found` diagnostic as an absent name so default logs do not reveal hidden-object existence. ([#31](https://github.com/backblaze-labs/b2-action/issues/31))
 
 ## [1.0.1] - 2026-05-29
 

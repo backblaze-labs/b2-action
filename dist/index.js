@@ -35257,10 +35257,11 @@ async function getBucket(authorized) {
 /**
  * Resolve an exact file name only when its latest version is an upload. If the
  * latest exact-name version is a hide marker, this intentionally reports the
- * file as hidden instead of selecting an older upload from version history.
- * Throws when the latest exact-name state is hidden, deleted, or absent. Used
- * by `copy`, `delete`, and `retention` to resolve a file name to a `fileId`
- * before operating on it.
+ * file as not found instead of selecting an older upload from version history
+ * or revealing hidden-object existence in default workflow logs. Throws when
+ * the latest exact-name state is hidden, deleted, or absent. Used by `copy`,
+ * `delete`, and `retention` to resolve a file name to a `fileId` before
+ * operating on it.
  *
  * Consistency assumption: B2's `listFileNames` is read-after-write consistent
  * for a recently-uploaded file in the same region. The simulator returns
@@ -35275,31 +35276,12 @@ async function getBucket(authorized) {
  *   the action's destination bucket (cross-bucket copy).
  */
 async function findFileByName(bucket, fileName, bucketDisplayName) {
+    const display = bucketDisplayName ?? bucket.name;
     const page = await bucket.listFileNames({ prefix: fileName, pageSize: 1 });
     const exactLatest = page.files.find((f) => f.fileName === fileName);
     if (exactLatest?.action === 'upload')
         return exactLatest;
-    // Production B2 omits hidden files from listFileNames, while B2Simulator can
-    // surface the hide marker directly. listFileNames may still return a non-exact
-    // prefix match, so listFileVersions is the production-relevant fallback for
-    // distinguishing hidden from absent. This second call is intentionally limited
-    // to failed exact-name resolutions; successful upload hits return above.
-    if (exactLatest?.action === 'hide' || (await latestVersionIsHideMarker(bucket, fileName))) {
-        throw new Error(`File is hidden in bucket "${bucketDisplayName ?? bucket.name}" (latest version is a hide marker): ${fileName}`);
-    }
-    throw new Error(`File not found in bucket "${bucketDisplayName ?? bucket.name}": ${fileName}`);
-}
-async function latestVersionIsHideMarker(bucket, fileName) {
-    try {
-        const page = await bucket.listFileVersions({ prefix: fileName, pageSize: 1 });
-        const latest = page.files.find((f) => f.fileName === fileName);
-        return latest?.action === 'hide';
-    }
-    catch (error) {
-        const detail = error instanceof Error ? error.message : String(error);
-        warning(`Could not inspect file versions for hidden-file diagnostics; reporting as not found: ${detail}`);
-        return false;
-    }
+    throw new Error(`File not found in bucket "${display}": ${fileName}`);
 }
 
 // EXTERNAL MODULE: external "node:buffer"
@@ -36226,7 +36208,8 @@ async function purgeCommand(bucket, inputs, signal) {
  *
  * At least one of `retention-mode` / `legal-hold` must be supplied.
  *
- * The target file version is resolved by name (latest visible version).
+ * The target file version is resolved by exact name only when the latest
+ * version is an upload.
  */
 async function retentionCommand(bucket, inputs) {
     const source = requireSource(inputs.source, 'retention', 'the B2 file name');

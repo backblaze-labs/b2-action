@@ -3,7 +3,14 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { retentionCommand } from '../../src/commands/retention.ts'
 import { uploadCommand } from '../../src/commands/upload.ts'
-import { boundInputs, makeFixture, makeInputs, seedFile, type TestFixture } from '../_helpers.ts'
+import {
+  boundInputs,
+  captureFailure,
+  makeFixture,
+  makeInputs,
+  seedFile,
+  type TestFixture,
+} from '../_helpers.ts'
 
 describe('retention command', () => {
   let fx: TestFixture
@@ -101,5 +108,19 @@ describe('retention command', () => {
     await expect(retentionCommand(fx.bucket, inputs({ source: 'none.txt' }))).rejects.toThrow(
       /retention-mode.*legal-hold/,
     )
+  })
+
+  it('does not disclose hidden source existence in default logs', async () => {
+    await seedFile(fx, 'private-retention.txt', 'secret')
+    await fx.bucket.hideFile('private-retention.txt')
+
+    const { error, stdout } = await captureFailure(() =>
+      retentionCommand(fx.bucket, inputs({ source: 'private-retention.txt', legalHold: 'on' })),
+    )
+
+    expect(error.message).toBe(
+      `File not found in bucket "${fx.bucket.name}": private-retention.txt`,
+    )
+    expect(`${stdout}\n${error.message}`).not.toMatch(/File is hidden|hide marker|latest version/)
   })
 })

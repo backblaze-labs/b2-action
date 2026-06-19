@@ -189,3 +189,24 @@ export async function captureStdout(fn: () => Promise<void> | void): Promise<str
   }
   return chunks.join('')
 }
+
+/** Capture stdout and the thrown Error from an operation expected to fail. */
+export async function captureFailure(fn: () => Promise<unknown>): Promise<{
+  error: Error
+  stdout: string
+}> {
+  let caught: unknown
+  const stdout = await captureStdout(async () => {
+    try {
+      await fn()
+    } catch (error) {
+      caught = error
+    }
+  })
+
+  if (!(caught instanceof Error)) {
+    throw new Error('Expected operation to throw an Error')
+  }
+
+  return { error: caught, stdout }
+}

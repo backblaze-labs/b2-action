@@ -32,7 +32,8 @@ export interface RetentionResult {
  *
  * At least one of `retention-mode` / `legal-hold` must be supplied.
  *
- * The target file version is resolved by name (latest visible version).
+ * The target file version is resolved by exact name only when the latest
+ * version is an upload.
  */
 export async function retentionCommand(
   bucket: Bucket,

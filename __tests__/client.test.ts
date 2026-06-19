@@ -3,7 +3,13 @@ import type { Bucket, HttpTransport } from '@backblaze-labs/b2-sdk'
 import { B2Simulator } from '@backblaze-labs/b2-sdk/simulator'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { buildClient, findFileByName, getBucket } from '../src/client.ts'
-import { captureStdout, makeFixture, seedFile, type TestFixture } from './_helpers.ts'
+import {
+  captureFailure,
+  captureStdout,
+  makeFixture,
+  seedFile,
+  type TestFixture,
+} from './_helpers.ts'
 import { TEST_APPLICATION_KEY, TEST_APPLICATION_KEY_ID, TEST_ENDPOINT } from './_parsed-inputs.ts'
 
 afterEach(() => {
@@ -145,12 +151,12 @@ describe('client helpers', () => {
       )
     })
 
-    it('rejects hidden files whose latest version is a hide marker', async () => {
-      await seedFile(fx, 'hidden.txt', 'hello')
-      await fx.bucket.hideFile('hidden.txt')
+    it('reports hidden files as not found when the latest version is a hide marker', async () => {
+      await seedFile(fx, 'private.txt', 'hello')
+      await fx.bucket.hideFile('private.txt')
 
-      await expect(findFileByName(fx.bucket, 'hidden.txt')).rejects.toThrow(
-        `File is hidden in bucket "${BUCKET}" (latest version is a hide marker): hidden.txt`,
+      await expect(findFileByName(fx.bucket, 'private.txt')).rejects.toThrow(
+        `File not found in bucket "${BUCKET}": private.txt`,
       )
     })
 
@@ -164,10 +170,13 @@ describe('client helpers', () => {
   })
 
   describe('production list semantics', () => {
-    it('detects hidden files when listFileNames omits the hide marker', async () => {
+    // Production B2 omits hidden exact names from listFileNames, while
+    // B2Simulator surfaces hide markers directly. These hand-rolled buckets
+    // model that production-only path without relying on simulator behavior.
+    it('keeps hidden and absent names indistinguishable when hide markers are omitted', async () => {
       const listFileNames = vi.fn(async () => ({ files: [], nextFileName: null }))
       const listFileVersions = vi.fn(async () => ({
-        files: [{ fileName: 'hidden.txt', action: 'hide' }],
+        files: [{ fileName: 'private.txt', action: 'hide' }],
         nextFileName: null,
         nextFileId: null,
       }))
@@ -177,16 +186,17 @@ describe('client helpers', () => {
         listFileVersions,
       } as unknown as Bucket
 
-      await expect(findFileByName(bucket, 'hidden.txt')).rejects.toThrow(
-        `File is hidden in bucket "${BUCKET}" (latest version is a hide marker): hidden.txt`,
-      )
-      expect(listFileVersions).toHaveBeenCalledTimes(1)
+      const { error, stdout } = await captureFailure(() => findFileByName(bucket, 'private.txt'))
+
+      expect(error.message).toBe(`File not found in bucket "${BUCKET}": private.txt`)
+      expect(`${stdout}\n${error.message}`).not.toMatch(/File is hidden|hide marker/)
     })
 
-    it('warns when hidden-file fallback lookup fails', async () => {
+    it('does not log raw version-probe failures or secret-like values by default', async () => {
+      const fakeSecret = 'fake-application-key-3b8431cbd02e'
       const listFileNames = vi.fn(async () => ({ files: [], nextFileName: null }))
       const listFileVersions = vi.fn(async () => {
-        throw new Error('temporary listFileVersions failure')
+        throw new Error(`temporary listFileVersions failure token=${fakeSecret}`)
       })
       const bucket = {
         name: BUCKET,
@@ -194,38 +204,11 @@ describe('client helpers', () => {
         listFileVersions,
       } as unknown as Bucket
 
-      const stdout = await captureStdout(async () => {
-        await expect(findFileByName(bucket, 'missing.txt')).rejects.toThrow(
-          `File not found in bucket "${BUCKET}": missing.txt`,
-        )
-      })
-      expect(stdout).toContain('::warning::')
-      expect(stdout).toContain(
-        'Could not inspect file versions for hidden-file diagnostics; reporting as not found: temporary listFileVersions failure',
-      )
-      expect(listFileVersions).toHaveBeenCalledTimes(1)
-    })
+      const { error, stdout } = await captureFailure(() => findFileByName(bucket, 'missing.txt'))
 
-    it('detects hidden exact names when listFileNames returns a prefix match', async () => {
-      const listFileNames = vi.fn(async () => ({
-        files: [{ fileName: 'hidden.txt.bak', action: 'upload' }],
-        nextFileName: null,
-      }))
-      const listFileVersions = vi.fn(async () => ({
-        files: [{ fileName: 'hidden.txt', action: 'hide' }],
-        nextFileName: null,
-        nextFileId: null,
-      }))
-      const bucket = {
-        name: BUCKET,
-        listFileNames,
-        listFileVersions,
-      } as unknown as Bucket
-
-      await expect(findFileByName(bucket, 'hidden.txt')).rejects.toThrow(
-        `File is hidden in bucket "${BUCKET}" (latest version is a hide marker): hidden.txt`,
-      )
-      expect(listFileVersions).toHaveBeenCalledTimes(1)
+      expect(error.message).toBe(`File not found in bucket "${BUCKET}": missing.txt`)
+      expect(`${stdout}\n${error.message}`).not.toContain(fakeSecret)
+      expect(stdout).not.toContain('temporary listFileVersions failure')
     })
   })
 })
