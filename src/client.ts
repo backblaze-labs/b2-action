@@ -83,12 +83,12 @@ export async function getBucket(authorized: AuthorizedClient) {
 }
 
 /**
- * Look up the most-recent visible (`action: 'upload'`) version of a file by
- * its exact name. If the latest version is a hide marker, this intentionally
- * reports the file as hidden instead of selecting an older upload under the
- * same name. Throws if no upload version exists (hidden / deleted / never
- * existed). Used by `copy`, `delete`, and `retention` to resolve a file name
- * to a `fileId` before operating on it.
+ * Resolve a file only when the latest exact-name version is an upload. If
+ * that latest version is a hide marker, this intentionally reports the file
+ * as hidden instead of selecting an older upload from version history. Throws
+ * if no exact-name upload version is currently addressable (hidden / deleted
+ * / never existed). Used by `copy`, `delete`, and `retention` to resolve a
+ * file name to a `fileId` before operating on it.
  *
  * Consistency assumption: B2's `listFileNames` is read-after-write consistent
  * for a recently-uploaded file in the same region. The simulator returns
@@ -111,6 +111,10 @@ export async function findFileByName(
   const exactLatest = page.files.find((f) => f.fileName === fileName)
   if (exactLatest?.action === 'upload') return exactLatest
 
+  // Production B2 omits hidden files from listFileNames, so a latest hide
+  // marker usually appears only through listFileVersions. B2Simulator exposes
+  // the hide marker directly from listFileNames, so both branches are kept and
+  // tested to cover simulator and production semantics.
   if (exactLatest?.action === 'hide' || (await latestVersionIsHideMarker(bucket, fileName))) {
     throw new Error(
       `File is hidden in bucket "${bucketDisplayName ?? bucket.name}" (latest version is a hide marker): ${fileName}`,
@@ -121,7 +125,15 @@ export async function findFileByName(
 }
 
 async function latestVersionIsHideMarker(bucket: Bucket, fileName: string): Promise<boolean> {
-  const page = await bucket.listFileVersions({ prefix: fileName, pageSize: 1 })
-  const latest = page.files.find((f) => f.fileName === fileName)
-  return latest?.action === 'hide'
+  try {
+    const page = await bucket.listFileVersions({ prefix: fileName, pageSize: 1 })
+    const latest = page.files.find((f) => f.fileName === fileName)
+    return latest?.action === 'hide'
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error)
+    core.debug(
+      `Could not inspect file versions for hidden-file diagnostics; reporting as not found: ${detail}`,
+    )
+    return false
+  }
 }

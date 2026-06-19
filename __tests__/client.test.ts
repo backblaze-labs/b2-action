@@ -1,5 +1,5 @@
 import { rm } from 'node:fs/promises'
-import type { HttpTransport } from '@backblaze-labs/b2-sdk'
+import type { Bucket, HttpTransport } from '@backblaze-labs/b2-sdk'
 import { B2Simulator } from '@backblaze-labs/b2-sdk/simulator'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { buildClient, findFileByName, getBucket } from '../src/client.ts'
@@ -150,6 +150,42 @@ describe('client helpers', () => {
 
       await expect(findFileByName(fx.bucket, 'hidden.txt')).rejects.toThrow(
         `File is hidden in bucket "${BUCKET}" (latest version is a hide marker): hidden.txt`,
+      )
+    })
+
+    it('detects hidden files when listFileNames omits the hide marker', async () => {
+      const listFileNames = vi.fn(async () => ({ files: [], nextFileName: null }))
+      const listFileVersions = vi.fn(async () => ({
+        files: [{ fileName: 'hidden.txt', action: 'hide' }],
+        nextFileName: null,
+        nextFileId: null,
+      }))
+      const bucket = {
+        name: BUCKET,
+        listFileNames,
+        listFileVersions,
+      } as unknown as Bucket
+
+      await expect(findFileByName(bucket, 'hidden.txt')).rejects.toThrow(
+        `File is hidden in bucket "${BUCKET}" (latest version is a hide marker): hidden.txt`,
+      )
+      expect(listFileNames).toHaveBeenCalledWith({ prefix: 'hidden.txt', pageSize: 1 })
+      expect(listFileVersions).toHaveBeenCalledWith({ prefix: 'hidden.txt', pageSize: 1 })
+    })
+
+    it('keeps the not-found diagnostic when hidden-file fallback lookup fails', async () => {
+      const listFileNames = vi.fn(async () => ({ files: [], nextFileName: null }))
+      const listFileVersions = vi.fn(async () => {
+        throw new Error('temporary listFileVersions failure')
+      })
+      const bucket = {
+        name: BUCKET,
+        listFileNames,
+        listFileVersions,
+      } as unknown as Bucket
+
+      await expect(findFileByName(bucket, 'missing.txt')).rejects.toThrow(
+        `File not found in bucket "${BUCKET}": missing.txt`,
       )
     })
 
