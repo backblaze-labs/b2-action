@@ -149,7 +149,7 @@ describe('client helpers', () => {
       await fx.bucket.hideFile('hidden.txt')
 
       await expect(findFileByName(fx.bucket, 'hidden.txt')).rejects.toThrow(
-        `File not found in bucket "${BUCKET}": hidden.txt`,
+        `File is hidden in bucket "${BUCKET}" (latest version is a hide marker): hidden.txt`,
       )
     })
 

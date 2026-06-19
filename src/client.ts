@@ -84,9 +84,11 @@ export async function getBucket(authorized: AuthorizedClient) {
 
 /**
  * Look up the most-recent visible (`action: 'upload'`) version of a file by
- * its exact name. Throws if no upload version exists (hidden / deleted /
- * never existed). Used by `copy`, `delete`, and `retention` to resolve a
- * file name to a `fileId` before operating on it.
+ * its exact name. If the latest version is a hide marker, this intentionally
+ * reports the file as hidden instead of selecting an older upload under the
+ * same name. Throws if no upload version exists (hidden / deleted / never
+ * existed). Used by `copy`, `delete`, and `retention` to resolve a file name
+ * to a `fileId` before operating on it.
  *
  * Consistency assumption: B2's `listFileNames` is read-after-write consistent
  * for a recently-uploaded file in the same region. The simulator returns
@@ -106,9 +108,20 @@ export async function findFileByName(
   bucketDisplayName?: string,
 ): Promise<FileVersion> {
   const page = await bucket.listFileNames({ prefix: fileName, pageSize: 1 })
-  const hit = page.files.find((f) => f.fileName === fileName && f.action === 'upload')
-  if (!hit) {
-    throw new Error(`File not found in bucket "${bucketDisplayName ?? bucket.name}": ${fileName}`)
+  const exactLatest = page.files.find((f) => f.fileName === fileName)
+  if (exactLatest?.action === 'upload') return exactLatest
+
+  if (exactLatest?.action === 'hide' || (await latestVersionIsHideMarker(bucket, fileName))) {
+    throw new Error(
+      `File is hidden in bucket "${bucketDisplayName ?? bucket.name}" (latest version is a hide marker): ${fileName}`,
+    )
   }
-  return hit
+
+  throw new Error(`File not found in bucket "${bucketDisplayName ?? bucket.name}": ${fileName}`)
+}
+
+async function latestVersionIsHideMarker(bucket: Bucket, fileName: string): Promise<boolean> {
+  const page = await bucket.listFileVersions({ prefix: fileName, pageSize: 1 })
+  const latest = page.files.find((f) => f.fileName === fileName)
+  return latest?.action === 'hide'
 }
