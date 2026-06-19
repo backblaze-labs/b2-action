@@ -191,12 +191,16 @@ describe('client helpers', () => {
       expect(listFileVersions).toHaveBeenCalledWith({ prefix: 'missing.txt', pageSize: 1 })
     })
 
-    it('rejects prefix matches that are not exact file names', async () => {
+    it('rejects prefix matches when no exact hidden version exists', async () => {
       const listFileNames = vi.fn(async () => ({
         files: [{ fileName: 'report.csv.bak', action: 'upload' }],
         nextFileName: null,
       }))
-      const listFileVersions = vi.fn()
+      const listFileVersions = vi.fn(async () => ({
+        files: [{ fileName: 'report.csv.bak', action: 'upload' }],
+        nextFileName: null,
+        nextFileId: null,
+      }))
       const bucket = {
         name: BUCKET,
         listFileNames,
@@ -206,7 +210,31 @@ describe('client helpers', () => {
       await expect(findFileByName(bucket, 'report.csv')).rejects.toThrow(
         `File not found in bucket "${BUCKET}": report.csv`,
       )
-      expect(listFileVersions).not.toHaveBeenCalled()
+      expect(listFileNames).toHaveBeenCalledWith({ prefix: 'report.csv', pageSize: 1 })
+      expect(listFileVersions).toHaveBeenCalledWith({ prefix: 'report.csv', pageSize: 1 })
+    })
+
+    it('detects hidden exact names when listFileNames returns a prefix match', async () => {
+      const listFileNames = vi.fn(async () => ({
+        files: [{ fileName: 'hidden.txt.bak', action: 'upload' }],
+        nextFileName: null,
+      }))
+      const listFileVersions = vi.fn(async () => ({
+        files: [{ fileName: 'hidden.txt', action: 'hide' }],
+        nextFileName: null,
+        nextFileId: null,
+      }))
+      const bucket = {
+        name: BUCKET,
+        listFileNames,
+        listFileVersions,
+      } as unknown as Bucket
+
+      await expect(findFileByName(bucket, 'hidden.txt')).rejects.toThrow(
+        `File is hidden in bucket "${BUCKET}" (latest version is a hide marker): hidden.txt`,
+      )
+      expect(listFileNames).toHaveBeenCalledWith({ prefix: 'hidden.txt', pageSize: 1 })
+      expect(listFileVersions).toHaveBeenCalledWith({ prefix: 'hidden.txt', pageSize: 1 })
     })
   })
 })
