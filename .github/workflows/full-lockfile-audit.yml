@@ -138,11 +138,13 @@ jobs:
             echo '```'
           } > "$body"
 
-          echo "body_file=$body" >> "$GITHUB_OUTPUT"
-          echo "label=$tracking_label" >> "$GITHUB_OUTPUT"
-          echo "label_color=$label_color" >> "$GITHUB_OUTPUT"
-          echo "label_description=$label_description" >> "$GITHUB_OUTPUT"
-          echo "title=$title" >> "$GITHUB_OUTPUT"
+          {
+            echo "body_file=$body"
+            echo "label=$tracking_label"
+            echo "label_color=$label_color"
+            echo "label_description=$label_description"
+            echo "title=$title"
+          } >> "$GITHUB_OUTPUT"
       - name: Open or update audit issue
         if: failure() && github.repository == 'backblaze-labs/b2-action' && github.ref_name == github.event.repository.default_branch && github.event_name != 'pull_request'
         uses: ./.github/actions/tracking-issue
