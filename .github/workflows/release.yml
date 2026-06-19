@@ -251,7 +251,15 @@ jobs:
             echo "::error::skip-floating-tag=true requires skip-floating-tag-justification so the stale @$MAJOR release decision is recorded."
             exit 1
           fi
-          echo "::notice::skip-floating-tag justification: $JUSTIFICATION"
+          escape_workflow_command() {
+            local value=${1//'%'/'%25'}
+            value=${value//$'\r'/'%0D'}
+            value=${value//$'\n'/'%0A'}
+            printf '%s' "$value"
+          }
+
+          ESCAPED_JUSTIFICATION=$(escape_workflow_command "$JUSTIFICATION")
+          echo "::notice::skip-floating-tag justification: $ESCAPED_JUSTIFICATION"
           echo "::warning::skip-floating-tag=true; publishing $REF without moving $MAJOR. Users pinned to @$MAJOR remain on the previous release until manual follow-up. See RELEASE.md#floating-tag-automation."
 
       # If this step fails after the floating tag moved, rerun this same

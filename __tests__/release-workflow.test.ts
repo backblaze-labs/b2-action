@@ -128,6 +128,26 @@ describe('release workflow floating tag safety', () => {
     expect(result.code).not.toBe(0)
     expect(result.output).toContain('skip-floating-tag-justification')
   })
+
+  shellIt('escapes emergency skip justification before logging notice', async () => {
+    const warningScript = stepRunScript(
+      parsePublishSteps(await readWorkflow()),
+      'Warn when stable floating tag is skipped',
+    )
+    const result = await runStepScript(warningScript, {
+      JUSTIFICATION: 'manual % reason\n::error::spoof\rnext',
+      MAJOR: 'v1',
+      REF: 'v1.2.3',
+    })
+    const escapedCarriageReturn = '%0D'
+
+    expect(result.code).toBe(0)
+    expect(result.output).toContain(
+      `::notice::skip-floating-tag justification: manual %25 reason%0A::error::spoof${escapedCarriageReturn}next`,
+    )
+    expect(result.output).not.toContain('\n::error::spoof')
+    expect(result.output).toContain('::warning::skip-floating-tag=true')
+  })
 })
 
 async function readWorkflow(): Promise<string> {
