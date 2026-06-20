@@ -26,9 +26,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Fixed
 
 - `pnpm docs:links` now downloads, verifies, and runs a pinned lychee binary on supported local platforms, and CI uses the same command, so contributors can reproduce the markdown-link gate from a clean checkout where lychee publishes a matching binary. ([#39](https://github.com/backblaze-labs/b2-action/issues/39))
-
-### Fixed
-
 - Top-level action failures now classify known SDK errors into actionable authentication, permission, and transient retry messages, expose failure-path `retryable` / `retry-after` outputs only when an automatic retry is safe, preserve sanitized generic B2 error detail and debug traces, and avoid leaking server-controlled SDK text before logging. ([#27](https://github.com/backblaze-labs/b2-action/issues/27))
 
 ### Documentation
