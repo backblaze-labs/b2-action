@@ -35,36 +35,41 @@ const shellIt = process.platform === 'win32' ? it.skip : it
 describe('release workflow floating tag safety', () => {
   it('keeps stable release side effects ordered by workflow structure', async () => {
     const steps = parsePublishSteps(await readWorkflow())
+    const stageStep = namedStep(steps, 'Stage release assets on draft release')
+    const verifyAssetsStep = namedStep(steps, 'Verify published release assets')
     const deriveStep = namedStep(steps, 'Derive major-version floating tag')
     const latestStep = namedStep(steps, 'Verify stable tag is latest for major')
     const moveStep = namedStep(steps, 'Move major-version floating tag (e.g. v1)')
     const warningStep = namedStep(steps, 'Warn when stable floating tag is skipped')
-    const releaseStep = namedStep(steps, 'Create / update GitHub Release')
+    const releaseStep = namedStep(steps, 'Publish staged GitHub Release')
 
+    expect(steps.indexOf(stageStep)).toBeLessThan(steps.indexOf(verifyAssetsStep))
+    expect(steps.indexOf(verifyAssetsStep)).toBeLessThan(steps.indexOf(deriveStep))
     expect(steps.indexOf(deriveStep)).toBeLessThan(steps.indexOf(latestStep))
     expect(steps.indexOf(latestStep)).toBeLessThan(steps.indexOf(moveStep))
     expect(steps.indexOf(latestStep)).toBeLessThan(steps.indexOf(warningStep))
     expect(steps.indexOf(moveStep)).toBeLessThan(steps.indexOf(releaseStep))
     expect(steps.indexOf(warningStep)).toBeLessThan(steps.indexOf(releaseStep))
-    expect(deriveStep.condition).toContain("steps.prerelease.outputs.is_prerelease == 'false'")
-    expect(latestStep.condition).toContain("steps.prerelease.outputs.is_prerelease == 'false'")
-    expect(moveStep.condition).toContain("steps.prerelease.outputs.is_prerelease == 'false'")
+    expect(deriveStep.condition).toContain("env.IS_PRERELEASE == 'false'")
+    expect(latestStep.condition).toContain("env.IS_PRERELEASE == 'false'")
+    expect(moveStep.condition).toContain("env.IS_PRERELEASE == 'false'")
     expect(moveStep.condition).toContain('skip-floating-tag')
-    expect(warningStep.condition).toContain("steps.prerelease.outputs.is_prerelease == 'false'")
+    expect(warningStep.condition).toContain("env.IS_PRERELEASE == 'false'")
     expect(warningStep.condition).toContain('workflow_dispatch')
     expect(warningStep.condition).toContain('skip-floating-tag')
-    expect(releaseStep.uses).toContain('softprops/action-gh-release')
+    expect(releaseStep.run).toContain('gh release edit "$RELEASE_TAG"')
+    expect(steps.some((step) => step.uses?.includes('softprops/action-gh-release'))).toBe(false)
   })
 
-  shellIt('classifies every hyphenated release tag as a pre-release', async () => {
-    const prereleaseScript = stepRunScript(
-      parsePublishSteps(await readWorkflow()),
-      'Identify pre-release',
+  it('classifies every hyphenated release tag as a pre-release during validation', async () => {
+    const releaseRefScript = stepRunScript(
+      parseValidateSteps(await readWorkflow()),
+      'Resolve immutable release tag',
     )
 
-    await expectPrereleaseOutput(prereleaseScript, 'v1.2.3-preview', true)
-    await expectPrereleaseOutput(prereleaseScript, 'v1.2.3-alpha.1', true)
-    await expectPrereleaseOutput(prereleaseScript, 'v1.2.3', false)
+    expect(releaseRefScript).toContain('if [[ "$REQUESTED_REF" == *-* ]]; then')
+    expect(releaseRefScript).toContain('echo "is-prerelease=true"')
+    expect(releaseRefScript).toContain('echo "is-prerelease=false"')
   })
 
   shellIt('executes the missing-token guard before any GitHub API call', async () => {
@@ -72,7 +77,8 @@ describe('release workflow floating tag safety', () => {
     const result = await runStepScript(moveScript, {
       GH_TOKEN: '',
       MAJOR: 'v1',
-      REF: 'v1.2.3',
+      RELEASE_SHA: 'abc123',
+      RELEASE_TAG: 'v1.2.3',
     })
 
     expect(result.code).not.toBe(0)
@@ -86,7 +92,8 @@ describe('release workflow floating tag safety', () => {
       {
         GH_TOKEN: 'expired-token',
         MAJOR: 'v1',
-        REF: 'v1.2.3',
+        RELEASE_SHA: 'abc123',
+        RELEASE_TAG: 'v1.2.3',
       },
       'expired',
     )
@@ -103,7 +110,8 @@ describe('release workflow floating tag safety', () => {
       {
         GH_TOKEN: 'available-token',
         MAJOR: 'v1',
-        REF: 'v1.2.3',
+        RELEASE_SHA: 'abc123',
+        RELEASE_TAG: 'v1.2.3',
       },
       'transient',
     )
@@ -122,7 +130,7 @@ describe('release workflow floating tag safety', () => {
       latestScript,
       {
         MAJOR: 'v1',
-        REF: 'v1.2.3',
+        RELEASE_TAG: 'v1.2.3',
       },
       { gitTags: ['v1.2.3', 'v1.2.4'] },
     )
@@ -140,7 +148,7 @@ describe('release workflow floating tag safety', () => {
       latestScript,
       {
         MAJOR: 'v1',
-        REF: 'v1.10.0',
+        RELEASE_TAG: 'v1.10.0',
       },
       { gitTags: ['v1.2.10', 'v1.10.0', 'v2.0.0', 'v1.11.0-rc.1'] },
     )
@@ -158,7 +166,7 @@ describe('release workflow floating tag safety', () => {
       GH_TOKEN: 'unused-token',
       JUSTIFICATION: '',
       MAJOR: 'v1',
-      REF: 'v1.2.3',
+      RELEASE_TAG: 'v1.2.3',
     })
 
     expect(result.code).not.toBe(0)
@@ -173,7 +181,7 @@ describe('release workflow floating tag safety', () => {
     const result = await runStepScript(warningScript, {
       JUSTIFICATION: 'manual % reason\n::error::spoof\rnext',
       MAJOR: 'v1',
-      REF: 'v1.2.3\n::error::ref-spoof',
+      RELEASE_TAG: 'v1.2.3\n::error::ref-spoof',
     })
     const escapedLineFeed = '%0A'
     const escapedCarriageReturn = '%0D'
@@ -206,9 +214,17 @@ function namedStep(steps: WorkflowStep[], name: string): WorkflowStep {
 }
 
 function parsePublishSteps(workflow: string): WorkflowStep[] {
-  const publishStart = workflow.indexOf('\n  publish:')
-  expect(publishStart).toBeGreaterThan(-1)
-  const stepsStart = workflow.indexOf('\n    steps:', publishStart)
+  return parseJobSteps(workflow, 'publish')
+}
+
+function parseValidateSteps(workflow: string): WorkflowStep[] {
+  return parseJobSteps(workflow, 'validate')
+}
+
+function parseJobSteps(workflow: string, job: string): WorkflowStep[] {
+  const jobStart = workflow.indexOf(`\n  ${job}:`)
+  expect(jobStart).toBeGreaterThan(-1)
+  const stepsStart = workflow.indexOf('\n    steps:', jobStart)
   expect(stepsStart).toBeGreaterThan(-1)
 
   const lines = workflow.slice(stepsStart).split('\n').slice(1)
@@ -435,15 +451,4 @@ function expectNoRefMutation(result: StepRunResult): void {
       (call) => call.includes('--method PATCH') || call.includes('--method POST'),
     ),
   ).toBe(false)
-}
-
-async function expectPrereleaseOutput(
-  script: string,
-  ref: string,
-  expected: boolean,
-): Promise<void> {
-  const result = await runStepScript(script, { REF: ref })
-
-  expect(result.code).toBe(0)
-  expect(result.githubOutput).toContain(`is_prerelease=${expected}`)
 }
