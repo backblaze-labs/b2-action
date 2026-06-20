@@ -51,15 +51,15 @@ export async function run(): Promise<void> {
   const secretValues: string[] = []
 
   try {
+    // These values are a defensive formatter scrub list for parser and
+    // dispatcher-scope credentials and tokens. Command-level secrets such as
+    // presigned URLs are masked at the command site with core.setSecret. Any
+    // SDK free-form B2 messages that reach failure output are sanitized in
+    // errors.ts.
     secretValues.push(...collectInputSecretsForScrubbing())
     const inputs = parseInputs()
     action = inputs.action
     dryRun = inputs.dryRun
-    // These values are a defensive formatter scrub list for dispatcher-scope
-    // credentials and tokens. Command-level secrets such as presigned URLs are
-    // masked at the command site with core.setSecret. Any SDK free-form B2
-    // messages that reach failure output are sanitized in errors.ts.
-    secretValues.push(inputs.applicationKey)
 
     const authorized = await buildClient({
       applicationKeyId: inputs.applicationKeyId,
