@@ -1,0 +1,159 @@
+name: Full lockfile audit
+
+on:
+  pull_request:
+    paths:
+      - package.json
+      - pnpm-lock.yaml
+      - pnpm-workspace.yaml
+      - scripts/full-lockfile-audit.mjs
+      - .github/actions/tracking-issue/action.yml
+      - .github/workflows/full-lockfile-audit.yml
+  push:
+    branches:
+      - main
+    paths:
+      - package.json
+      - pnpm-lock.yaml
+      - pnpm-workspace.yaml
+      - scripts/full-lockfile-audit.mjs
+      - .github/actions/tracking-issue/action.yml
+      - .github/workflows/full-lockfile-audit.yml
+  schedule:
+    # Weekly, Monday 04:37 UTC (off-the-hour to avoid the GH Actions cron stampede).
+    - cron: '37 4 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read # check out the repository and read the committed lockfile
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  full-lockfile-audit:
+    name: full-lockfile dependency audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read # check out the repository and read the committed lockfile
+      issues: write # open or update default-branch tracking issues
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@0e279bb959325dab635dd2c09392533439d90093 # v6.0.8
+        with:
+          # Exact patch avoids resolving a new package-manager release at audit
+          # run time; update with reviewed pnpm/tooling bumps.
+          version: 11.5.3
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 24
+      # Covers dev/build tooling too. Run directly against the committed lockfile;
+      # no install is needed.
+      - name: Audit full lockfile
+        id: audit
+        continue-on-error: ${{ github.event_name == 'pull_request' }}
+        run: node scripts/full-lockfile-audit.mjs
+      - name: Report informational PR audit failure
+        if: github.event_name == 'pull_request' && steps.audit.outcome == 'failure'
+        run: |
+          echo "::warning title=Full-lockfile audit failed::A high/critical advisory or audit infrastructure failure was detected. See this job log for details."
+      - name: Close dependency audit issue on recovery
+        if: success() && github.repository == 'backblaze-labs/b2-action' && github.ref_name == github.event.repository.default_branch && github.event_name != 'pull_request'
+        uses: ./.github/actions/tracking-issue
+        with:
+          mode: close
+          title: Full-lockfile dependency audit failure
+          label: full-lockfile-audit-failure
+          recovery-message: 'Full-lockfile audit recovered and passed: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'
+          repo: ${{ github.repository }}
+          github-token: ${{ github.token }}
+      - name: Close audit infrastructure issue on recovery
+        if: success() && github.repository == 'backblaze-labs/b2-action' && github.ref_name == github.event.repository.default_branch && github.event_name != 'pull_request'
+        uses: ./.github/actions/tracking-issue
+        with:
+          mode: close
+          title: Full-lockfile audit infrastructure failure
+          label: full-lockfile-audit-infrastructure-failure
+          recovery-message: 'Full-lockfile audit recovered and passed: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'
+          repo: ${{ github.repository }}
+          github-token: ${{ github.token }}
+      - name: Prepare audit tracking issue
+        id: audit_issue
+        if: failure() && github.repository == 'backblaze-labs/b2-action' && github.ref_name == github.event.repository.default_branch && github.event_name != 'pull_request'
+        env:
+          AUDIT_OUTPUT: audit-output.txt
+          FAILURE_KIND: ${{ steps.audit.outputs.failure_kind || 'dependency' }}
+          MAX_AUDIT_OUTPUT_CHARS: '50000'
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          case "$FAILURE_KIND" in
+            infrastructure)
+              title="Full-lockfile audit infrastructure failure"
+              tracking_label="full-lockfile-audit-infrastructure-failure"
+              label_color="D93F0B"
+              label_description="Workflow-owned full-lockfile audit infrastructure tracking"
+              marker="<!-- full-lockfile-audit-infrastructure-failure -->"
+              summary="The scheduled/manual full-lockfile dependency audit could not reach the registry or timed out after retries."
+              ;;
+            *)
+              title="Full-lockfile dependency audit failure"
+              tracking_label="full-lockfile-audit-failure"
+              label_color="B60205"
+              label_description="Workflow-owned full-lockfile audit failure tracking"
+              marker="<!-- full-lockfile-audit-failure -->"
+              summary="The scheduled/manual full-lockfile dependency audit found a high/critical advisory."
+              ;;
+          esac
+
+          body="$(mktemp)"
+          {
+            echo "$marker"
+            echo "$summary"
+            echo ""
+            echo "Run: $RUN_URL"
+            echo ""
+            echo '```text'
+            if [ -f "$AUDIT_OUTPUT" ]; then
+              node <<'NODE'
+          const fs = require('node:fs')
+          const maxChars = Number(process.env.MAX_AUDIT_OUTPUT_CHARS ?? '50000')
+          const outputPath = process.env.AUDIT_OUTPUT ?? 'audit-output.txt'
+          const raw = fs.readFileSync(outputPath, 'utf8').replaceAll('```', '` ` `')
+          const chars = Array.from(raw)
+          if (chars.length > maxChars) {
+            process.stdout.write(chars.slice(0, maxChars).join(''))
+            process.stdout.write(`\n[truncated: ${chars.length} characters total; see run logs for full output]\n`)
+          } else {
+            process.stdout.write(raw)
+          }
+          NODE
+            else
+              echo "audit-output.txt was not generated; see run logs for details."
+            fi
+            echo '```'
+          } > "$body"
+
+          {
+            echo "body_file=$body"
+            echo "label=$tracking_label"
+            echo "label_color=$label_color"
+            echo "label_description=$label_description"
+            echo "title=$title"
+          } >> "$GITHUB_OUTPUT"
+      - name: Open or update audit issue
+        if: failure() && github.repository == 'backblaze-labs/b2-action' && github.ref_name == github.event.repository.default_branch && github.event_name != 'pull_request'
+        uses: ./.github/actions/tracking-issue
+        with:
+          mode: open-or-update
+          title: ${{ steps.audit_issue.outputs.title }}
+          label: ${{ steps.audit_issue.outputs.label }}
+          label-color: ${{ steps.audit_issue.outputs.label_color }}
+          label-description: ${{ steps.audit_issue.outputs.label_description }}
+          body-file: ${{ steps.audit_issue.outputs.body_file }}
+          repo: ${{ github.repository }}
+          github-token: ${{ github.token }}

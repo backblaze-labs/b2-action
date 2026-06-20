@@ -1,0 +1,93 @@
+name: Full lockfile audit heartbeat
+
+on:
+  schedule:
+    # Daily, 05:41 UTC (off-the-hour to avoid the GH Actions cron stampede).
+    - cron: '41 5 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read # check out the shared tracking-issue composite action
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  heartbeat:
+    name: verify recent full-lockfile audit
+    if: github.repository == 'backblaze-labs/b2-action'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: read # inspect scheduled full-lockfile audit runs
+      contents: read # check out the shared tracking-issue composite action
+      issues: write # open or update the default-branch heartbeat tracking issue
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 24
+      - name: Check latest scheduled audit
+        id: check
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          runs="$(mktemp)"
+          gh run list \
+            --repo "$REPO" \
+            --workflow full-lockfile-audit.yml \
+            --branch "$DEFAULT_BRANCH" \
+            --limit 50 \
+            --json createdAt,event,status,conclusion,url \
+            > "$runs"
+          node scripts/full-lockfile-audit-heartbeat.mjs "$runs"
+      - name: Close heartbeat issue on recovery
+        if: steps.check.outputs.heartbeat_status == 'healthy' && github.ref_name == github.event.repository.default_branch
+        uses: ./.github/actions/tracking-issue
+        with:
+          mode: close
+          title: Full-lockfile audit heartbeat missing
+          label: full-lockfile-audit-heartbeat
+          recovery-message: 'Full-lockfile audit heartbeat recovered: ${{ steps.check.outputs.latest_url }}'
+          repo: ${{ github.repository }}
+          github-token: ${{ github.token }}
+      - name: Prepare heartbeat tracking issue
+        id: heartbeat_issue
+        if: failure() && steps.check.outputs.heartbeat_status == 'stale' && github.ref_name == github.event.repository.default_branch
+        env:
+          HEARTBEAT_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          LATEST_CONCLUSION: ${{ steps.check.outputs.latest_conclusion }}
+          LATEST_CREATED: ${{ steps.check.outputs.latest_created }}
+          LATEST_EVENT: ${{ steps.check.outputs.latest_event }}
+          LATEST_STATUS: ${{ steps.check.outputs.latest_status }}
+          LATEST_URL: ${{ steps.check.outputs.latest_url }}
+        run: |
+          set -euo pipefail
+          body="$(mktemp)"
+          {
+            echo "<!-- full-lockfile-audit-heartbeat -->"
+            echo "No scheduled, manual, or main-push full-lockfile audit run has been observed in the last 10 days."
+            echo ""
+            echo "Heartbeat run: $HEARTBEAT_RUN_URL"
+            echo ""
+            echo "Latest audit run: $LATEST_CREATED ($LATEST_EVENT/$LATEST_STATUS/$LATEST_CONCLUSION): $LATEST_URL"
+          } > "$body"
+          echo "body_file=$body" >> "$GITHUB_OUTPUT"
+      - name: Open or update heartbeat issue
+        if: failure() && steps.check.outputs.heartbeat_status == 'stale' && github.ref_name == github.event.repository.default_branch
+        uses: ./.github/actions/tracking-issue
+        with:
+          mode: open-or-update
+          title: Full-lockfile audit heartbeat missing
+          label: full-lockfile-audit-heartbeat
+          label-color: D93F0B
+          label-description: Workflow-owned full-lockfile audit heartbeat tracking
+          body-file: ${{ steps.heartbeat_issue.outputs.body_file }}
+          repo: ${{ github.repository }}
+          github-token: ${{ github.token }}

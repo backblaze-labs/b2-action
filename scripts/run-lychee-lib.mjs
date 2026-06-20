@@ -347,6 +347,10 @@ function binaryNameFor(platformKey) {
 
 async function downloadOnce(url, destination, fetchImpl, timeoutMs, maxBytes) {
   const signal = AbortSignal.timeout(timeoutMs)
+  const tempDestination = `${destination}.tmp-${process.pid}-${Date.now()}-${Math.random()
+    .toString(16)
+    .slice(2)}`
+  rmSync(tempDestination, { force: true, recursive: true })
   try {
     const response = await fetchImpl(url, {
       headers: { 'user-agent': 'backblaze-labs/b2-action docs:links' },
@@ -371,16 +375,22 @@ async function downloadOnce(url, destination, fetchImpl, timeoutMs, maxBytes) {
     await pipeline(
       Readable.fromWeb(response.body),
       limitDownloadBytes(maxBytes),
-      createWriteStream(destination),
+      createWriteStream(tempDestination),
       { signal },
     )
+    replaceDownloadedFile(tempDestination, destination)
   } catch (err) {
+    rmSync(tempDestination, { force: true, recursive: true })
     if (signal.aborted) {
       throw new DownloadFailure(`timed out after ${timeoutMs}ms`, { retryable: true })
     }
     if (err instanceof DownloadFailure) throw err
     throw new DownloadFailure(formatError(err), { retryable: true })
   }
+}
+
+export function replaceDownloadedFile(tempDestination, destination, rename = renameSync) {
+  rename(tempDestination, destination)
 }
 
 async function withInstallLock(lockDir, fn) {

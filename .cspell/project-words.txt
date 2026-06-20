@@ -42,6 +42,7 @@ colorterm
 fsevents
 pathext
 posix
+undici
 multipart
 resumability
 inlines
@@ -58,9 +59,12 @@ checkout
 ncconfig
 nvmrc
 
-# Test helpers and bucket fixture names
+# Build/dev tooling
+vite
 vitest
 vitests
+
+# Test helpers and bucket fixture names
 spyon
 listhide
 syncdown

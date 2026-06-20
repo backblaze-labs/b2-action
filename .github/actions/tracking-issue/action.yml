@@ -1,0 +1,141 @@
+name: Tracking issue
+description: Open, update, or close one workflow-owned tracking issue.
+
+inputs:
+  mode:
+    description: Either open-or-update or close.
+    required: true
+  title:
+    description: Exact issue title to manage.
+    required: true
+  label:
+    description: Dedicated tracking label.
+    required: true
+  label-color:
+    description: Hex color for the tracking label.
+    required: false
+    default: B60205
+  label-description:
+    description: Description for the tracking label.
+    required: false
+    default: Workflow-owned tracking issue
+  body-file:
+    description: Path to the body file for open-or-update mode.
+    required: false
+  recovery-message:
+    description: Comment body to add before closing an open issue.
+    required: false
+  repo:
+    description: Repository in owner/name form.
+    required: true
+  github-token:
+    description: GitHub token with issues permission.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Validate inputs
+      shell: bash
+      env:
+        BODY_FILE: ${{ inputs.body-file }}
+        MODE: ${{ inputs.mode }}
+      run: |
+        set -euo pipefail
+        case "$MODE" in
+          open-or-update)
+            if [ ! -f "$BODY_FILE" ]; then
+              echo "body-file is required for open-or-update mode" >&2
+              exit 1
+            fi
+            ;;
+          close)
+            ;;
+          *)
+            echo "mode must be open-or-update or close" >&2
+            exit 1
+            ;;
+        esac
+
+    - name: Find tracking issue
+      id: find
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        LABEL: ${{ inputs.label }}
+        REPO: ${{ inputs.repo }}
+        TITLE: ${{ inputs.title }}
+      run: |
+        set -euo pipefail
+        issue_number="$(gh api \
+          --method GET "repos/$REPO/issues" \
+          -f state=open \
+          -f labels="$LABEL" \
+          -f per_page=100 \
+          --paginate \
+          --slurp \
+          | jq -r '[.[][] | select(.title == env.TITLE and .user.login == "github-actions[bot]" and (.pull_request | not))] | .[0].number // ""')"
+        echo "number=$issue_number" >> "$GITHUB_OUTPUT"
+
+    - name: Ensure tracking label
+      if: ${{ inputs.mode == 'open-or-update' }}
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        LABEL: ${{ inputs.label }}
+        LABEL_COLOR: ${{ inputs.label-color }}
+        LABEL_DESCRIPTION: ${{ inputs.label-description }}
+        REPO: ${{ inputs.repo }}
+      run: |
+        set -euo pipefail
+        label_exists="$(gh label list \
+          --repo "$REPO" \
+          --search "$LABEL" \
+          --limit 1000 \
+          --json name \
+          --jq 'any(.name == env.LABEL)')"
+        if [ "$label_exists" != "true" ]; then
+          gh label create "$LABEL" \
+            --repo "$REPO" \
+            --description "$LABEL_DESCRIPTION" \
+            --color "$LABEL_COLOR"
+        fi
+
+    - name: Open or update issue
+      if: ${{ inputs.mode == 'open-or-update' }}
+      shell: bash
+      env:
+        BODY_FILE: ${{ inputs.body-file }}
+        GH_TOKEN: ${{ inputs.github-token }}
+        ISSUE_NUMBER: ${{ steps.find.outputs.number }}
+        LABEL: ${{ inputs.label }}
+        REPO: ${{ inputs.repo }}
+        TITLE: ${{ inputs.title }}
+      run: |
+        set -euo pipefail
+        if [ -n "$ISSUE_NUMBER" ]; then
+          gh issue edit "$ISSUE_NUMBER" --repo "$REPO" --body-file "$BODY_FILE"
+        else
+          gh issue create --title "$TITLE" --repo "$REPO" --label "$LABEL" --body-file "$BODY_FILE"
+        fi
+
+    - name: Close issue
+      if: ${{ inputs.mode == 'close' }}
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        ISSUE_NUMBER: ${{ steps.find.outputs.number }}
+        RECOVERY_MESSAGE: ${{ inputs.recovery-message }}
+        REPO: ${{ inputs.repo }}
+      run: |
+        set -euo pipefail
+        if [ -z "$ISSUE_NUMBER" ]; then
+          exit 0
+        fi
+        if [ -n "$RECOVERY_MESSAGE" ]; then
+          gh issue comment "$ISSUE_NUMBER" --repo "$REPO" --body "$RECOVERY_MESSAGE"
+        fi
+        gh api --method PATCH "repos/$REPO/issues/$ISSUE_NUMBER" \
+          -f state=closed \
+          -f state_reason=completed \
+          >/dev/null
