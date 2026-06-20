@@ -85,11 +85,18 @@ runs:
         REPO: ${{ inputs.repo }}
       run: |
         set -euo pipefail
-        gh label create "$LABEL" \
+        label_exists="$(gh label list \
           --repo "$REPO" \
-          --description "$LABEL_DESCRIPTION" \
-          --color "$LABEL_COLOR" \
-          2>/dev/null || true
+          --search "$LABEL" \
+          --limit 1000 \
+          --json name \
+          --jq 'any(.name == env.LABEL)')"
+        if [ "$label_exists" != "true" ]; then
+          gh label create "$LABEL" \
+            --repo "$REPO" \
+            --description "$LABEL_DESCRIPTION" \
+            --color "$LABEL_COLOR"
+        fi
 
     - name: Open or update issue
       if: ${{ inputs.mode == 'open-or-update' }}
