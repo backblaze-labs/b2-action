@@ -54,9 +54,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     outputs:
-      is-prerelease: ${{ steps.release-ref.outputs.is-prerelease }}
-      release-sha: ${{ steps.release-ref.outputs.release-sha }}
-      release-tag: ${{ steps.release-ref.outputs.release-tag }}
+      is_prerelease: ${{ steps.release_ref.outputs.is_prerelease }}
+      release_sha: ${{ steps.release_ref.outputs.release_sha }}
+      release_tag: ${{ steps.release_ref.outputs.release_tag }}
     env:
       REQUESTED_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
       # Don't install/run git hooks in CI. Husky honors HUSKY=0 by skipping
@@ -69,7 +69,7 @@ jobs:
           fetch-depth: 0
 
       - name: Resolve immutable release tag
-        id: release-ref
+        id: release_ref
         env:
           RUN_REF: ${{ github.ref }}
         run: |
@@ -94,12 +94,12 @@ jobs:
           fi
           git checkout --detach "$RELEASE_SHA"
           {
-            echo "release-tag=$REQUESTED_REF"
-            echo "release-sha=$RELEASE_SHA"
+            echo "release_tag=$REQUESTED_REF"
+            echo "release_sha=$RELEASE_SHA"
             if [[ "$REQUESTED_REF" == *-* ]]; then
-              echo "is-prerelease=true"
+              echo "is_prerelease=true"
             else
-              echo "is-prerelease=false"
+              echo "is_prerelease=false"
             fi
           } >> "$GITHUB_OUTPUT"
           echo "Resolved refs/tags/$REQUESTED_REF to $RELEASE_SHA."
@@ -122,7 +122,7 @@ jobs:
 
       - name: Verify dist/ at tag matches a fresh build
         env:
-          RELEASE_TAG: ${{ steps.release-ref.outputs.release-tag }}
+          RELEASE_TAG: ${{ steps.release_ref.outputs.release_tag }}
         run: |
           if ! git diff --exit-code -- dist/; then
             echo "::error::dist/ at $RELEASE_TAG is out of sync with src/ at the same ref. Tag the commit only after 'pnpm build' is committed."
@@ -131,7 +131,7 @@ jobs:
 
       - name: Verify VERSION matches the tag
         env:
-          RELEASE_TAG: ${{ steps.release-ref.outputs.release-tag }}
+          RELEASE_TAG: ${{ steps.release_ref.outputs.release_tag }}
         run: |
           TAG=${RELEASE_TAG#v}
           PKG_VERSION=$(node -p "require('./package.json').version")
@@ -164,8 +164,8 @@ jobs:
       id-token: write # mint OIDC token only in this isolated provenance job
       attestations: write # publish the GitHub Artifact Attestation for dist/index.js
     env:
-      RELEASE_SHA: ${{ needs.validate.outputs.release-sha }}
-      RELEASE_TAG: ${{ needs.validate.outputs.release-tag }}
+      RELEASE_SHA: ${{ needs.validate.outputs.release_sha }}
+      RELEASE_TAG: ${{ needs.validate.outputs.release_tag }}
     steps:
       - uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
         with:
@@ -204,9 +204,9 @@ jobs:
       contents: write # creates GitHub Releases/assets and moves floating major-version tags
       attestations: read # verifies staged release assets without minting new attestations
     env:
-      IS_PRERELEASE: ${{ needs.validate.outputs.is-prerelease }}
-      RELEASE_SHA: ${{ needs.validate.outputs.release-sha }}
-      RELEASE_TAG: ${{ needs.validate.outputs.release-tag }}
+      IS_PRERELEASE: ${{ needs.validate.outputs.is_prerelease }}
+      RELEASE_SHA: ${{ needs.validate.outputs.release_sha }}
+      RELEASE_TAG: ${{ needs.validate.outputs.release_tag }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:

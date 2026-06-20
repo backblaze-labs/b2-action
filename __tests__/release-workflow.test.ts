@@ -90,8 +90,8 @@ describe('release workflow floating tag safety', () => {
     )
 
     expect(releaseRefScript).toContain('if [[ "$REQUESTED_REF" == *-* ]]; then')
-    expect(releaseRefScript).toContain('echo "is-prerelease=true"')
-    expect(releaseRefScript).toContain('echo "is-prerelease=false"')
+    expect(releaseRefScript).toContain('echo "is_prerelease=true"')
+    expect(releaseRefScript).toContain('echo "is_prerelease=false"')
   })
 
   shellIt('executes the missing-token guard before any GitHub API call', async () => {

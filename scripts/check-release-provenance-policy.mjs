@@ -241,20 +241,20 @@ function checkReleaseWorkflow(doc) {
 
   const validateOutputs = asMapping(validate.outputs)
   requireCondition(
-    compactExpression(validateOutputs['release-sha']) ===
-      githubExpression('steps.release-ref.outputs.release-sha'),
-    'validate must export the resolved release-sha output',
+    compactExpression(validateOutputs.release_sha) ===
+      githubExpression('steps.release_ref.outputs.release_sha'),
+    'validate must export the resolved release_sha output',
   )
   requireCondition(
-    compactExpression(validateOutputs['release-tag']) ===
-      githubExpression('steps.release-ref.outputs.release-tag'),
-    'validate must export the resolved release-tag output',
+    compactExpression(validateOutputs.release_tag) ===
+      githubExpression('steps.release_ref.outputs.release_tag'),
+    'validate must export the resolved release_tag output',
   )
 
   const releaseRefStep = findStep(
     validate,
     (step) =>
-      step.id === 'release-ref' &&
+      step.id === 'release_ref' &&
       compactExpression(asMapping(step.env).RUN_REF) === githubExpression('github.ref'),
   )
   requireStep('validate', 'resolve the requested release tag against github.ref', releaseRefStep)
@@ -381,8 +381,8 @@ function requireCheckoutByValidatedSha(jobName, jobConfig) {
   if (!checkout) return
 
   requireCondition(
-    resolvesToValidateOutput(jobConfig, asMapping(checkout.with).ref, 'release-sha'),
-    `${jobName} checkout must use needs.validate.outputs.release-sha`,
+    resolvesToValidateOutput(jobConfig, asMapping(checkout.with).ref, 'release_sha'),
+    `${jobName} checkout must use needs.validate.outputs.release_sha`,
   )
 }
 
