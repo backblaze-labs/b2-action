@@ -8,7 +8,7 @@ import {
   NetworkError,
   ServiceUnavailableError,
 } from '@backblaze-labs/b2-sdk/errors'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { classifyActionError } from '../src/errors.ts'
 
 describe('classifyActionError', () => {
@@ -294,6 +294,34 @@ describe('classifyActionError', () => {
     expect(result).not.toContain(base64Url)
     expect(result).not.toContain(hex)
     expect(result).not.toContain(urlEncoded)
+  })
+
+  it('does not throw when secret URI encoding would fail', () => {
+    const malformed = 'app-key-\uD800-secret'
+    const result = message(new NetworkError(`leaked ${malformed}`), {
+      action: 'list',
+      secretValues: [malformed],
+    })
+
+    expect(result).toContain('***')
+    expect(result).not.toContain(malformed)
+  })
+
+  it('does not derive encoded variants for oversized secrets', () => {
+    const oversized = 'secret'.repeat(400)
+    const bufferFrom = vi.spyOn(Buffer, 'from')
+    try {
+      const result = message(new NetworkError(oversized), {
+        action: 'list',
+        secretValues: [oversized],
+      })
+
+      expect(result).toContain('***')
+      expect(result).not.toContain(oversized.slice(0, 100))
+      expect(bufferFrom).not.toHaveBeenCalled()
+    } finally {
+      bufferFrom.mockRestore()
+    }
   })
 
   it('does not redact non-secret B2 file IDs or SHA-1 hashes', () => {

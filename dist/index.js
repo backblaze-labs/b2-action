@@ -41146,6 +41146,7 @@ const UNKNOWN_RETRY_HINT = 'retry may be appropriate after checking whether the 
 const SSRF_FAILURE_MESSAGE = 'B2 endpoint safety check failed: rejected an unsafe B2 endpoint or server-provided URL. Check the endpoint input and B2 realm configuration.';
 const MAX_LOG_FIELD_LENGTH = 1_000;
 const MAX_LOG_INPUT_LENGTH = MAX_LOG_FIELD_LENGTH * 2;
+const MAX_DERIVED_SECRET_LENGTH = 512;
 const DEFAULT_NETWORK_RETRY_AFTER_SECONDS = 30;
 const MAX_RETRY_AFTER_SECONDS = 3_600;
 const MAX_CAUSE_DEPTH = 32;
@@ -41278,17 +41279,34 @@ function sanitizeLogField(value, options) {
 function secretVariants(secret) {
     if (secret === '')
         return [];
-    const variants = new Set([secret]);
-    if (secret.length >= 4) {
+    const variants = new Set();
+    addSecretVariant(variants, secret);
+    if (secret.length > MAX_LOG_INPUT_LENGTH) {
+        addSecretVariant(variants, secret.slice(0, MAX_LOG_INPUT_LENGTH));
+    }
+    if (secret.length >= 4 && secret.length <= MAX_DERIVED_SECRET_LENGTH) {
         const base64 = Buffer.from(secret, 'utf8').toString('base64');
         const base64Url = base64.replaceAll('+', '-').replaceAll('/', '_');
-        variants.add(encodeURIComponent(secret));
-        variants.add(base64);
-        variants.add(base64Url);
-        variants.add(base64Url.replace(/=+$/u, ''));
-        variants.add(Buffer.from(secret, 'utf8').toString('hex'));
+        addUriEncodedSecretVariant(variants, secret);
+        addSecretVariant(variants, base64);
+        addSecretVariant(variants, base64Url);
+        addSecretVariant(variants, base64Url.replace(/=+$/u, ''));
+        addSecretVariant(variants, Buffer.from(secret, 'utf8').toString('hex'));
     }
     return [...variants].sort((a, b) => b.length - a.length);
+}
+function addSecretVariant(variants, value) {
+    if (value !== '')
+        variants.add(value);
+}
+function addUriEncodedSecretVariant(variants, secret) {
+    try {
+        addSecretVariant(variants, encodeURIComponent(secret));
+    }
+    catch {
+        // Malformed surrogate pairs are valid JavaScript strings but invalid URI
+        // components. Keep raw/base64/hex masking without letting scrubbing fail.
+    }
 }
 
 ;// CONCATENATED MODULE: ./src/summary.ts
