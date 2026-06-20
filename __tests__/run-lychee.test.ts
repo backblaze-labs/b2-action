@@ -38,6 +38,11 @@ const runLychee = (await import('../scripts/run-lychee-lib.mjs')) as {
   isEntrypoint: (metaUrl: string, argv1: string | undefined) => boolean
   lycheeArgsFor: (args?: readonly string[]) => string[]
   positiveIntegerOrDefault: (value: unknown, defaultValue: number) => number
+  replaceDownloadedFile: (
+    tempDestination: string,
+    destination: string,
+    rename?: (tempDestination: string, destination: string) => void,
+  ) => void
 }
 
 describe('run-lychee helper', () => {
@@ -238,6 +243,21 @@ describe('run-lychee helper', () => {
       }),
     ).rejects.toThrow(/download limit/)
     await expect(readFile(destination)).rejects.toThrow(/ENOENT/)
+  })
+
+  it('keeps an existing download when replacement fails', async () => {
+    const destination = join(workDir, 'downloaded')
+    const tempDestination = join(workDir, 'downloaded.tmp')
+    await writeFile(destination, 'old')
+    await writeFile(tempDestination, 'new')
+
+    expect(() =>
+      runLychee.replaceDownloadedFile(tempDestination, destination, () => {
+        throw new Error('rename failed')
+      }),
+    ).toThrow(/rename failed/)
+    await expect(readFile(destination, 'utf8')).resolves.toBe('old')
+    await expect(readFile(tempDestination, 'utf8')).resolves.toBe('new')
   })
 
   it('sanitizes invalid download retry options', async () => {

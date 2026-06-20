@@ -378,8 +378,7 @@ async function downloadOnce(url, destination, fetchImpl, timeoutMs, maxBytes) {
       createWriteStream(tempDestination),
       { signal },
     )
-    rmSync(destination, { force: true })
-    renameSync(tempDestination, destination)
+    replaceDownloadedFile(tempDestination, destination)
   } catch (err) {
     rmSync(tempDestination, { force: true })
     if (signal.aborted) {
@@ -388,6 +387,10 @@ async function downloadOnce(url, destination, fetchImpl, timeoutMs, maxBytes) {
     if (err instanceof DownloadFailure) throw err
     throw new DownloadFailure(formatError(err), { retryable: true })
   }
+}
+
+export function replaceDownloadedFile(tempDestination, destination, rename = renameSync) {
+  rename(tempDestination, destination)
 }
 
 async function withInstallLock(lockDir, fn) {
