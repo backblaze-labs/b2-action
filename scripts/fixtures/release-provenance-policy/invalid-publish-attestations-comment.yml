@@ -1,0 +1,21 @@
+# expected: only the attest job may request id-token: write
+name: invalid release permissions
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps: []
+  attest:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps: []
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      attestations: write # comments must not hide the grant
+    steps: []

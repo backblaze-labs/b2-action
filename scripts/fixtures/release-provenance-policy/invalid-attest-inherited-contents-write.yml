@@ -1,0 +1,19 @@
+# expected: must not combine OIDC/attestation permissions with contents: write
+name: invalid release permissions
+permissions:
+  contents: write
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps: []
+  attest:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      attestations: write
+    steps: []
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps: []

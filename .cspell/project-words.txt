@@ -104,6 +104,7 @@ md5
 aes256
 base64
 hexdigest
+sigstore
 
 # Test-only path identifiers
 somedir

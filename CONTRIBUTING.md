@@ -6,14 +6,14 @@ Thanks for your interest. The Action is intentionally small and built on the off
 
 ```bash
 pnpm install
-pnpm all        # lint + typecheck + test + build + spellcheck
+pnpm all        # lint + release policy + typecheck + test + build + spellcheck
 ```
 
 Requirements: Node 24+, pnpm 10+. The action runs on Node 24 in the GitHub Actions runtime; we test against Node 24 on Linux, macOS, and Windows.
 
 `pnpm install` also wires up git hooks (via [husky](https://github.com/typicode/husky)):
 
-- **`pre-commit`** runs `lint + typecheck + test + build + dist/ freshness + spellcheck`. Every local code/doc check, every commit, no path-gating.
+- **`pre-commit`** runs `lint + release-provenance policy + typecheck + test + build + dist/ freshness + spellcheck`. Every local code/doc check, every commit, no path-gating.
 - **`pre-push`** runs `pnpm test:coverage`, which subsumes the plain `test` already done in `pre-commit`.
 
 Skip a hook with `--no-verify` if you absolutely need to. CI runs the same checks regardless. In the release workflow husky is disabled via `HUSKY=0` so the in-CI `git push` of the floating major tag doesn't re-trigger the local hooks.
