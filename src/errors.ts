@@ -18,6 +18,7 @@ const SSRF_FAILURE_MESSAGE =
   'B2 endpoint safety check failed: rejected an unsafe B2 endpoint or server-provided URL. Check the endpoint input and B2 realm configuration.'
 const MAX_LOG_FIELD_LENGTH = 1_000
 const MAX_LOG_INPUT_LENGTH = MAX_LOG_FIELD_LENGTH * 2
+const MAX_SECRET_BOUNDARY_WINDOW = MAX_LOG_INPUT_LENGTH
 const MAX_DERIVED_SECRET_LENGTH = 512
 const DEFAULT_NETWORK_RETRY_AFTER_SECONDS = 30
 const MAX_RETRY_AFTER_SECONDS = 3_600
@@ -186,15 +187,27 @@ function sanitizeUntrustedText(value: string): string {
 
 function sanitizeLogField(value: string, options: ActionErrorOptions): string {
   const secretValues = options.secretValues ?? []
-  const bounded = value.length > MAX_LOG_INPUT_LENGTH ? value.slice(0, MAX_LOG_INPUT_LENGTH) : value
-  let sanitized = sanitizeUntrustedText(bounded)
-  for (const secret of secretValues) {
-    for (const variant of secretVariants(secret)) {
-      sanitized = sanitized.split(variant).join('***')
-    }
-  }
+  const scrubInputLength =
+    secretValues.length > 0
+      ? MAX_LOG_INPUT_LENGTH + MAX_SECRET_BOUNDARY_WINDOW
+      : MAX_LOG_INPUT_LENGTH
+  const bounded = value.length > scrubInputLength ? value.slice(0, scrubInputLength) : value
+  const masked = maskSecrets(bounded, secretValues)
+  const scrubbed =
+    masked.length > MAX_LOG_INPUT_LENGTH ? masked.slice(0, MAX_LOG_INPUT_LENGTH) : masked
+  const sanitized = sanitizeUntrustedText(scrubbed)
   if (sanitized.length <= MAX_LOG_FIELD_LENGTH) return sanitized
   return `${sanitized.slice(0, MAX_LOG_FIELD_LENGTH)}... [truncated]`
+}
+
+function maskSecrets(value: string, secretValues: readonly string[]): string {
+  let masked = value
+  for (const secret of secretValues) {
+    for (const variant of secretVariants(secret)) {
+      masked = masked.split(variant).join('***')
+    }
+  }
+  return masked
 }
 
 function secretVariants(secret: string): string[] {

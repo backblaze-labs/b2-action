@@ -324,6 +324,21 @@ describe('classifyActionError', () => {
     }
   })
 
+  it('redacts secrets that cross the input truncation boundary', () => {
+    const secret = 'zxq-boundary-secret-value'
+    const signedUrl = `https://files.example/${'a'.repeat(1_800)}`
+    const filler = 'x'.repeat(1_995 - signedUrl.length - 1)
+    const leakedPrefix = secret.slice(0, 5)
+    const result = message(new NetworkError(`${signedUrl} ${filler}${secret} trailing`), {
+      action: 'list',
+      secretValues: [secret],
+    })
+
+    expect(result).toContain('***')
+    expect(result).not.toContain(secret)
+    expect(result).not.toContain(leakedPrefix)
+  })
+
   it('does not redact non-secret B2 file IDs or SHA-1 hashes', () => {
     const fileId =
       '4_z0000000000000000000000001_f200ec353a2187_d20250101_m000001_c001_v0001000_t0001'
