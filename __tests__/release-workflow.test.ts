@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { delimiter, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
+import { parse } from 'yaml'
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const releaseWorkflowPath = resolve(repoRoot, '.github/workflows/release.yml')
@@ -30,9 +31,30 @@ type StepRunOptions = {
   gitTags?: string[]
 }
 
+type ReleaseWorkflowConfig = {
+  on?: {
+    push?: {
+      tags?: string[]
+    }
+  }
+}
+
 const shellIt = process.platform === 'win32' ? it.skip : it
 
 describe('release workflow floating tag safety', () => {
+  it('uses a broad tag glob and keeps strict SemVer validation in the release step', async () => {
+    const workflow = await readWorkflow()
+    const config = parse(workflow) as ReleaseWorkflowConfig
+    const releaseRefScript = stepRunScript(
+      parseValidateSteps(workflow),
+      'Resolve immutable release tag',
+    )
+
+    expect(config.on?.push?.tags).toEqual(['v[0-9]*.[0-9]*.[0-9]*'])
+    expect(config.on?.push?.tags?.some((pattern) => pattern.includes('+'))).toBe(false)
+    expect(releaseRefScript).toContain('^v[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?$')
+  })
+
   it('keeps stable release side effects ordered by workflow structure', async () => {
     const steps = parsePublishSteps(await readWorkflow())
     const stageStep = namedStep(steps, 'Stage release assets on draft release')
@@ -196,6 +218,19 @@ describe('release workflow floating tag safety', () => {
     )
     expect(result.output).not.toContain('\n::error::ref-spoof')
     expect(result.output).toContain('::warning::skip-floating-tag=true')
+  })
+
+  it('checks dist/index.js before hashing the release asset', async () => {
+    const checksumScript = stepRunScript(
+      parsePublishSteps(await readWorkflow()),
+      'Generate dist checksum',
+    )
+    const guardIndex = checksumScript.indexOf('[ ! -s dist/index.js ]')
+    const hashIndex = checksumScript.indexOf('sha256sum dist/index.js')
+
+    expect(guardIndex).toBeGreaterThanOrEqual(0)
+    expect(hashIndex).toBeGreaterThan(guardIndex)
+    expect(checksumScript).toContain("Expected release asset 'dist/index.js' is missing or empty.")
   })
 })
 

@@ -20,11 +20,10 @@ name: Release
 on:
   push:
     tags:
-      # Three-component semver only. A bare `v1` (the floating major tag this
-      # workflow maintains) must NOT trigger a release. `+` = one or more of
-      # the preceding char in GitHub's filter syntax.
-      - 'v[0-9]+.[0-9]+.[0-9]+'
-      - 'v[0-9]+.[0-9]+.[0-9]+-*'
+      # Broad three-component SemVer-shaped glob. A bare `v1` (the floating
+      # major tag this workflow maintains) must NOT trigger a release. Strict
+      # validation happens in the `Resolve immutable release tag` step.
+      - 'v[0-9]*.[0-9]*.[0-9]*'
   workflow_dispatch:
     inputs:
       tag:
@@ -229,6 +228,10 @@ jobs:
       - name: Generate dist checksum
         id: generate-checksum
         run: |
+          if [ ! -s dist/index.js ]; then
+            echo "::error::Expected release asset 'dist/index.js' is missing or empty. Fix the release workflow and rerun it from refs/tags/$RELEASE_TAG."
+            exit 1
+          fi
           HASH=$(sha256sum dist/index.js | cut -d ' ' -f1)
           # Use the bare asset name: consumers download release assets into a
           # flat directory before running `sha256sum -c index.js.sha256`.
