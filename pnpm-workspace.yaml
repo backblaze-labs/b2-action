@@ -23,3 +23,6 @@ overrides:
   # Vitest can resolve Vite below 7.3.5; keep the build/test toolchain on the
   # patched minor. Drop when Vitest's Vite floor is >=7.3.5.
   vite: '>=7.3.5 <8.0.0'
+  # Vite pulls esbuild; keep it above the <0.28.1 dev-server file-read range.
+  # Drop when Vite's esbuild floor is >=0.28.1.
+  esbuild: '>=0.28.1 <0.29.0'
