@@ -72,6 +72,16 @@ function permissionIsWrite(permissions, name) {
   return typeof value === 'string' && value.trim().toLowerCase() === 'write'
 }
 
+function permissionIsSpecified(permissions, name) {
+  if (typeof permissions === 'string') return permissions.trim() !== ''
+  return Object.hasOwn(asMapping(permissions), name)
+}
+
+function effectivePermissionIsWrite(workflowPermissions, jobPermissions, name) {
+  if (permissionIsSpecified(jobPermissions, name)) return permissionIsWrite(jobPermissions, name)
+  return permissionIsWrite(workflowPermissions, name)
+}
+
 function canMintAttestation(permissions) {
   return (
     permissionIsWrite(permissions, 'id-token') || permissionIsWrite(permissions, 'attestations')
@@ -186,7 +196,10 @@ function checkPermissionIsolation(doc, label, report = fail) {
         `${label}: only the attest job may request id-token: write or attestations: write (${name})`,
       )
     }
-    if (canMintAttestation(permissions) && permissionIsWrite(permissions, 'contents')) {
+    if (
+      canMintAttestation(permissions) &&
+      effectivePermissionIsWrite(workflowPermissions, permissions, 'contents')
+    ) {
       report(`${label}: ${name} must not combine OIDC/attestation permissions with contents: write`)
     }
   }
