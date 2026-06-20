@@ -42,6 +42,7 @@ colorterm
 fsevents
 pathext
 posix
+undici
 multipart
 resumability
 inlines

@@ -17,6 +17,9 @@ overrides:
   # markdownlint-cli2 and TypeDoc pull markdown-it; keep it above the <=14.1.1
   # parser DoS range. Drop when both trees resolve markdown-it >=14.2.0 directly.
   markdown-it: '>=14.2.0 <15.0.0'
+  # @actions/http-client pulls undici; keep production action deps above the
+  # <6.27.0 WebSocket DoS range. Drop when it resolves undici >=6.27.0 directly.
+  undici: '>=6.27.0 <7.0.0'
   # Vitest can resolve Vite below 7.3.5; keep the build/test toolchain on the
   # patched minor. Drop when Vitest's Vite floor is >=7.3.5.
   vite: '>=7.3.5 <8.0.0'

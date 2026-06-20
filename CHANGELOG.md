@@ -12,7 +12,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Run workflow security through the shared `backblaze-labs/github-actions` composite action in `.github/workflows/security.yml`, covering actionlint, third-party action pin checks, and zizmor audits without duplicating those scripts in this repo. ([#18](https://github.com/backblaze-labs/b2-action/issues/18))
 - Add a dependency vulnerability gate: a CI `audit` job runs `pnpm audit --prod --audit-level high` (available locally as `pnpm run audit`), failing the build on a high or critical advisory in a production dependency. Scoped to production deps so a dev-tooling advisory cannot block an unrelated PR. ([#21](https://github.com/backblaze-labs/b2-action/issues/21))
 - Add a CodeQL (SAST) workflow (`.github/workflows/codeql.yml`) that statically analyzes the TypeScript source on every PR to `main`, on push to `main`, and weekly, surfacing findings in the repo Security tab. Uses `build-mode: none` (no compile needed) and SHA-pinned `github/codeql-action`. ([#20](https://github.com/backblaze-labs/b2-action/issues/20))
-- Add a full-lockfile dependency audit workflow and heartbeat for dev/build tooling, with per-change PR/push visibility plus weekly/manual default-branch tracking issues. Bound `vite`, `js-yaml`, and `markdown-it` overrides to patched current-major ranges. ([#35](https://github.com/backblaze-labs/b2-action/issues/35))
+- Add a full-lockfile dependency audit workflow and heartbeat for dev/build tooling, with per-change PR/push visibility plus weekly/manual default-branch tracking issues. Bound `vite`, `js-yaml`, `markdown-it`, and `undici` overrides to patched current-major ranges. ([#35](https://github.com/backblaze-labs/b2-action/issues/35))
 
 ### Added
 
