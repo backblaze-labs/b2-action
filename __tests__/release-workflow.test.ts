@@ -232,6 +232,19 @@ describe('release workflow floating tag safety', () => {
     expect(hashIndex).toBeGreaterThan(guardIndex)
     expect(checksumScript).toContain("Expected release asset 'dist/index.js' is missing or empty.")
   })
+
+  // cspell:ignore targetCommitish commitish
+  it('rejects an existing draft release targeting a different commit', async () => {
+    const stageScript = stepRunScript(
+      parsePublishSteps(await readWorkflow()),
+      'Stage release assets on draft release',
+    )
+
+    expect(stageScript).toContain('--json isDraft,targetCommitish')
+    expect(stageScript).toContain('read -r is_draft target_commitish')
+    expect(stageScript).toContain('[ "$target_commitish" != "$RELEASE_SHA" ]')
+    expect(stageScript).toContain('expected validated commit $RELEASE_SHA')
+  })
 })
 
 async function readWorkflow(): Promise<string> {

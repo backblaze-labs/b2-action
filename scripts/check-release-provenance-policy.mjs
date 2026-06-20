@@ -333,7 +333,7 @@ function checkReleaseWorkflow(doc) {
     'publish must request attestations: read',
   )
   requireCondition(
-    !canMintAttestation(asMapping(publish.permissions)),
+    !canMintAttestation(publish.permissions),
     'publish must not request OIDC or attestation write permissions',
   )
   requireCheckoutByValidatedSha('publish', publish)

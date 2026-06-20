@@ -255,10 +255,15 @@ jobs:
         run: |
           set -euo pipefail
 
-          if is_draft="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft -q .isDraft)"; then
+          if release_info="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft,targetCommitish -q '[.isDraft, .targetCommitish] | @tsv')"; then
+            IFS=$'\t' read -r is_draft target_commitish <<< "$release_info"
             if [ "$is_draft" != "true" ]; then
               echo "Release $RELEASE_TAG is already published; leaving existing assets untouched."
               exit 0
+            fi
+            if [ "$target_commitish" != "$RELEASE_SHA" ]; then
+              echo "::error::Draft release $RELEASE_TAG targets $target_commitish, expected validated commit $RELEASE_SHA. Delete or retarget the draft before rerunning."
+              exit 1
             fi
             echo "Updating existing draft release $RELEASE_TAG."
           else
