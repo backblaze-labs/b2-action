@@ -55,6 +55,16 @@ describe('release workflow floating tag safety', () => {
     expect(releaseRefScript).toContain('^v[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?$')
   })
 
+  it('parses workflow run scripts with CRLF line endings', async () => {
+    const workflow = (await readWorkflow()).replace(/\n/g, '\r\n')
+    const releaseRefScript = stepRunScript(
+      parseValidateSteps(workflow),
+      'Resolve immutable release tag',
+    )
+
+    expect(releaseRefScript).toContain('git checkout --detach "$RELEASE_SHA"')
+  })
+
   it('keeps stable release side effects ordered by workflow structure', async () => {
     const steps = parsePublishSteps(await readWorkflow())
     const stageStep = namedStep(steps, 'Stage release assets on draft release')
@@ -248,7 +258,7 @@ describe('release workflow floating tag safety', () => {
 })
 
 async function readWorkflow(): Promise<string> {
-  return await readFile(releaseWorkflowPath, 'utf8')
+  return (await readFile(releaseWorkflowPath, 'utf8')).replace(/\r\n?/g, '\n')
 }
 
 function moveFloatingTagScript(workflow: string): string {
@@ -270,12 +280,13 @@ function parseValidateSteps(workflow: string): WorkflowStep[] {
 }
 
 function parseJobSteps(workflow: string, job: string): WorkflowStep[] {
-  const jobStart = workflow.indexOf(`\n  ${job}:`)
+  const normalizedWorkflow = workflow.replace(/\r\n?/g, '\n')
+  const jobStart = normalizedWorkflow.indexOf(`\n  ${job}:`)
   expect(jobStart).toBeGreaterThan(-1)
-  const stepsStart = workflow.indexOf('\n    steps:', jobStart)
+  const stepsStart = normalizedWorkflow.indexOf('\n    steps:', jobStart)
   expect(stepsStart).toBeGreaterThan(-1)
 
-  const lines = workflow.slice(stepsStart).split('\n').slice(1)
+  const lines = normalizedWorkflow.slice(stepsStart).split('\n').slice(1)
   const blocks: string[][] = []
   let current: string[] | undefined
 
