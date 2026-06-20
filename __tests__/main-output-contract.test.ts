@@ -80,8 +80,11 @@ async function captureOutputKeys(action: ActionName): Promise<string[]> {
 
 function mockDispatcherPath(action: ActionName) {
   const core = {
+    getInput: vi.fn<(name: string) => string>(() => ''),
     setOutput: vi.fn(),
     setFailed: vi.fn(),
+    setSecret: vi.fn(),
+    debug: vi.fn(),
     info: vi.fn(),
     warning: vi.fn(),
   }
@@ -90,7 +93,10 @@ function mockDispatcherPath(action: ActionName) {
     .mockReturnValue(
       makeInputs(action, action === 'purge' ? { dryRun: true, allowBucketPurge: true } : {}),
     )
-  const authorized = { client: { kind: 'client' }, bucketName: 'gh-action-test' }
+  const authorized = {
+    client: { kind: 'client', accountInfo: { getAuthToken: vi.fn(() => 'contract-token') } },
+    bucketName: 'gh-action-test',
+  }
   const bucket = { name: 'gh-action-test' }
   const buildClient = vi.fn().mockResolvedValue(authorized)
   const getBucket = vi.fn().mockResolvedValue(bucket)
@@ -100,7 +106,10 @@ function mockDispatcherPath(action: ActionName) {
   applyCommandResult(commands, action)
 
   vi.doMock('@actions/core', () => core)
-  vi.doMock('../src/inputs.ts', () => ({ parseInputs }))
+  vi.doMock('../src/inputs.ts', async () => ({
+    ...(await vi.importActual<typeof import('../src/inputs.ts')>('../src/inputs.ts')),
+    parseInputs,
+  }))
   vi.doMock('../src/client.ts', () => ({ buildClient, getBucket }))
   vi.doMock('../src/summary.ts', () => ({ writeStepSummary }))
   vi.doMock('../src/commands/upload.ts', () => ({ uploadCommand: commands.uploadCommand }))

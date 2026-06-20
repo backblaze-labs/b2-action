@@ -16,7 +16,8 @@ import { summarizeSyncErrors, syncCommand } from './commands/sync.ts'
 import { unhideCommand } from './commands/unhide.ts'
 import { uploadCommand } from './commands/upload.ts'
 import { verifyCommand } from './commands/verify.ts'
-import { type ParsedInputs, parseInputs } from './inputs.ts'
+import { classifyActionError, formatActionDebugError } from './errors.ts'
+import { collectInputSecretsForScrubbing, type ParsedInputs, parseInputs } from './inputs.ts'
 import { writeStepSummary } from './summary.ts'
 
 /**
@@ -45,9 +46,20 @@ export async function run(): Promise<void> {
   process.once('SIGTERM', onSigterm)
   process.once('SIGINT', onSigint)
   const signal = controller.signal
+  let action: ParsedInputs['action'] | undefined
+  let dryRun: boolean | undefined
+  const secretValues: string[] = []
 
   try {
+    // These values are a defensive formatter scrub list for parser and
+    // dispatcher-scope credentials and tokens. Command-level secrets such as
+    // presigned URLs are masked at the command site with core.setSecret. Any
+    // SDK free-form B2 messages that reach failure output are sanitized in
+    // errors.ts.
+    secretValues.push(...collectInputSecretsForScrubbing())
     const inputs = parseInputs()
+    action = inputs.action
+    dryRun = inputs.dryRun
 
     const authorized = await buildClient({
       applicationKeyId: inputs.applicationKeyId,
@@ -55,6 +67,8 @@ export async function run(): Promise<void> {
       bucket: inputs.bucket,
       ...(inputs.endpoint !== undefined ? { endpoint: inputs.endpoint } : {}),
     })
+    const authToken = authorized.client.accountInfo.getAuthToken()
+    if (authToken) registerSecretValue(secretValues, authToken)
     const bucket = await getBucket(authorized)
 
     switch (inputs.action) {
@@ -319,7 +333,15 @@ export async function run(): Promise<void> {
       }
     }
   } catch (err) {
-    core.setFailed(err instanceof Error ? err.message : String(err))
+    const failure = classifyActionError(err, {
+      ...(action !== undefined ? { action } : {}),
+      ...(dryRun !== undefined ? { dryRun } : {}),
+      secretValues,
+    })
+    core.debug(formatActionDebugError(err, { secretValues }))
+    if (failure.retryable !== undefined) core.setOutput('retryable', String(failure.retryable))
+    if (failure.retryAfter !== undefined) core.setOutput('retry-after', String(failure.retryAfter))
+    core.setFailed(failure.message)
   } finally {
     process.off('SIGTERM', onSigterm)
     process.off('SIGINT', onSigint)
@@ -384,6 +406,15 @@ async function emitDeletionSummary(
 
 function setFileCountOutput(count: number): void {
   core.setOutput('file-count', String(count))
+}
+
+function registerSecretValue(secretValues: string[], value: string): void {
+  const trimmed = value.trim()
+  for (const secret of [value, trimmed]) {
+    if (secret === '' || secretValues.includes(secret)) continue
+    core.setSecret(secret)
+    secretValues.push(secret)
+  }
 }
 
 function retentionStatusLine(result: {

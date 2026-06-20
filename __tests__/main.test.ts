@@ -2,6 +2,14 @@ import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import {
+  AccessDeniedError,
+  B2Error,
+  B2SsrfError,
+  BadAuthTokenError,
+  NetworkError,
+  ServiceUnavailableError,
+} from '@backblaze-labs/b2-sdk/errors'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { DownloadedFile } from '../src/commands/download.ts'
 import type { ListedFile } from '../src/commands/list.ts'
@@ -18,6 +26,7 @@ import {
 type LoadedMain = Awaited<ReturnType<typeof loadMain>>
 
 const DISPATCH_BUCKET = 'dispatch-bucket'
+const TEST_AUTH_TOKEN = 'auth-token-for-main-tests'
 const RETAIN_UNTIL = Date.parse('2030-01-01T00:00:00Z')
 const FIXTURE_UPLOAD_TS = Date.parse('2026-01-01T00:00:00Z')
 
@@ -538,6 +547,29 @@ describe('main dispatcher', () => {
     expect(ctx.buildClient).not.toHaveBeenCalled()
   })
 
+  it('scrubs sensitive raw inputs from parser failures', async () => {
+    const ctx = await loadMain()
+    const sseSecret = 'customer-key-secret'
+    const rawSse = `C:${sseSecret}`
+    ctx.core.getInput.mockImplementation((name) => (name === 'sse' ? rawSse : ''))
+    ctx.parseInputs.mockImplementation(() => {
+      throw new Error(`Invalid 'sse' input: "${rawSse}". Expected "B2".`)
+    })
+
+    await ctx.run()
+
+    const failure = ctx.core.setFailed.mock.calls[0]?.[0]
+    const debug = ctx.core.debug.mock.calls[0]?.[0]
+    expect(failure).toContain('Invalid')
+    expect(failure).not.toContain(rawSse)
+    expect(failure).not.toContain(sseSecret)
+    expect(debug).not.toContain(rawSse)
+    expect(debug).not.toContain(sseSecret)
+    expect(ctx.core.setSecret).toHaveBeenCalledWith(rawSse)
+    expect(ctx.core.setSecret).toHaveBeenCalledWith(sseSecret)
+    expect(ctx.buildClient).not.toHaveBeenCalled()
+  })
+
   it('reports non-Error failures through setFailed', async () => {
     const ctx = await loadMain()
     const plainFailure = { toString: () => 'plain string' }
@@ -549,6 +581,176 @@ describe('main dispatcher', () => {
 
     expect(ctx.core.setFailed).toHaveBeenCalledWith('plain string')
     expect(ctx.buildClient).not.toHaveBeenCalled()
+  })
+
+  it('emits retry outputs for classified SDK failures', async () => {
+    const ctx = await loadMain()
+    ctx.parseInputs.mockReturnValue(inputs('list'))
+    ctx.commands.listCommand.mockRejectedValue(
+      new ServiceUnavailableError(
+        { status: 503, code: 'service_unavailable', message: 'try again later' },
+        { retryAfter: 30, requestId: 'retry-request' },
+      ),
+    )
+
+    await ctx.run()
+
+    expect(ctx.core.setFailed).toHaveBeenCalledWith(
+      'Transient B2 error: safe to retry this workflow. B2 response details: status 503, code service_unavailable, retry after 30s',
+    )
+    expect(outputs(ctx)).toMatchObject({
+      retryable: 'true',
+      'retry-after': '30',
+    })
+  })
+
+  it('does not emit retryable=true or retry-after for mutating SDK failures', async () => {
+    const ctx = await loadMain()
+    ctx.parseInputs.mockReturnValue(inputs('upload'))
+    ctx.commands.uploadCommand.mockRejectedValue(
+      new ServiceUnavailableError(
+        { status: 503, code: 'service_unavailable', message: 'try again later' },
+        { retryAfter: 30, requestId: 'retry-request' },
+      ),
+    )
+
+    await ctx.run()
+
+    expect(ctx.core.setFailed).toHaveBeenCalledWith(
+      'Transient B2 error: the upload action may have partially committed; inspect B2 state before rerunning to avoid duplicate file versions, orphaned large-file uploads, or unintended deletes. B2 response details: status 503, code service_unavailable, retry after 30s',
+    )
+    expect(outputs(ctx)).toMatchObject({ retryable: 'false' })
+    expect(outputs(ctx)).not.toHaveProperty('retry-after')
+  })
+
+  it('does not reflect masked secrets from SDK errors before setFailed', async () => {
+    const ctx = await loadMain()
+    ctx.parseInputs.mockReturnValue(inputs('list'))
+    ctx.commands.listCommand.mockRejectedValue(
+      new AccessDeniedError({
+        status: 403,
+        code: 'access_denied',
+        message: `denied ${TEST_APPLICATION_KEY} ${TEST_AUTH_TOKEN}`,
+      }),
+    )
+
+    await ctx.run()
+
+    const failure = ctx.core.setFailed.mock.calls[0]?.[0]
+    expect(failure).not.toContain(TEST_APPLICATION_KEY)
+    expect(failure).not.toContain(TEST_AUTH_TOKEN)
+  })
+
+  it('registers auth tokens for runner log masking', async () => {
+    const ctx = await loadMain()
+    const rawAuthToken = ` ${TEST_AUTH_TOKEN} `
+    ctx.parseInputs.mockReturnValue(inputs('list'))
+    ctx.authorized.client.accountInfo.getAuthToken.mockReturnValue(rawAuthToken)
+    ctx.commands.listCommand.mockResolvedValue({ files: [], truncated: false })
+
+    await ctx.run()
+
+    expect(ctx.core.setSecret).toHaveBeenCalledWith(rawAuthToken)
+    expect(ctx.core.setSecret).toHaveBeenCalledWith(TEST_AUTH_TOKEN)
+  })
+
+  it('does not reflect auth tokens from buildClient failures', async () => {
+    const ctx = await loadMain()
+    ctx.parseInputs.mockReturnValue(inputs('list'))
+    ctx.buildClient.mockRejectedValue(
+      new AccessDeniedError({
+        status: 403,
+        code: 'access_denied',
+        message: `authorize failed for ${TEST_AUTH_TOKEN}`,
+      }),
+    )
+
+    await ctx.run()
+
+    const failure = ctx.core.setFailed.mock.calls[0]?.[0]
+    expect(failure).toBe(
+      'B2 permission denied: check application key capabilities, bucket access, and file name prefix restrictions. B2 response details: status 403, code access_denied',
+    )
+    expect(failure).not.toContain(TEST_AUTH_TOKEN)
+  })
+
+  it('reports unauthorized scope errors as permission failures', async () => {
+    const ctx = await loadMain()
+    ctx.parseInputs.mockReturnValue(inputs('list'))
+    ctx.buildClient.mockRejectedValue(
+      new BadAuthTokenError({
+        status: 401,
+        code: 'unauthorized',
+        message: 'Application key is missing capabilities: listFiles',
+      }),
+    )
+
+    await ctx.run()
+
+    const failure = ctx.core.setFailed.mock.calls[0]?.[0]
+    expect(failure).toContain('B2 permission denied')
+    expect(failure).not.toContain('B2 authentication failed')
+  })
+
+  it('reports endpoint safety errors without echoing raw URLs', async () => {
+    const ctx = await loadMain()
+    const rawUrl = 'http://user:password@169.254.169.254/latest/meta-data?token=secret'
+    ctx.parseInputs.mockReturnValue(inputs('list'))
+    ctx.commands.listCommand.mockRejectedValue(
+      new B2SsrfError(`malformed URL from B2 response: ${rawUrl}`, rawUrl),
+    )
+
+    await ctx.run()
+
+    const failure = ctx.core.setFailed.mock.calls[0]?.[0]
+    expect(failure).toBe(
+      'B2 endpoint safety check failed: rejected an unsafe B2 endpoint or server-provided URL. Check the endpoint input and B2 realm configuration.',
+    )
+    expect(failure).not.toContain(rawUrl)
+    expect(failure).not.toContain('password')
+    expect(failure).not.toContain('token=secret')
+    expect(outputs(ctx)).toMatchObject({ retryable: 'false' })
+  })
+
+  it('reports wrapped endpoint safety errors without retry guidance', async () => {
+    const ctx = await loadMain()
+    const rawUrl = 'http://169.254.169.254/latest/meta-data'
+    ctx.parseInputs.mockReturnValue(inputs('list'))
+    ctx.commands.listCommand.mockRejectedValue(
+      new NetworkError('fetch failed', new B2SsrfError(`blocked ${rawUrl}`, rawUrl)),
+    )
+
+    await ctx.run()
+
+    expect(ctx.core.setFailed).toHaveBeenCalledWith(
+      'B2 endpoint safety check failed: rejected an unsafe B2 endpoint or server-provided URL. Check the endpoint input and B2 realm configuration.',
+    )
+    expect(outputs(ctx)).toMatchObject({ retryable: 'false' })
+    expect(outputs(ctx)).not.toHaveProperty('retry-after')
+  })
+
+  it('reports generic B2 failures with actionable detail and debug cause', async () => {
+    const ctx = await loadMain()
+    ctx.parseInputs.mockReturnValue(inputs('download'))
+    ctx.commands.downloadCommand.mockRejectedValue(
+      new B2Error({
+        status: 400,
+        code: 'bad_request',
+        message: 'invalid file name: reports//daily.csv',
+      }),
+    )
+
+    await ctx.run()
+
+    const failure = ctx.core.setFailed.mock.calls[0]?.[0]
+    expect(failure).toContain('B2 request failed')
+    expect(failure).toContain('Bad request')
+    expect(failure).toContain('invalid file name: reports//daily.csv')
+    expect(failure).toContain('status 400')
+    expect(failure).toContain('code bad_request')
+    expect(ctx.core.debug).toHaveBeenCalledWith(
+      expect.stringContaining('invalid file name: reports//daily.csv'),
+    )
   })
 
   it('reports sync aggregate errors with a sample', async () => {
@@ -695,13 +897,22 @@ async function loadMain() {
   vi.resetModules()
 
   const core = {
+    getInput: vi.fn<(name: string) => string>(() => ''),
     setOutput: vi.fn(),
     setFailed: vi.fn(),
+    setSecret: vi.fn(),
+    debug: vi.fn(),
     info: vi.fn(),
     warning: vi.fn(),
   }
   const parseInputs = vi.fn<() => ParsedInputs>()
-  const authorized = { client: { kind: 'client' }, bucketName: DISPATCH_BUCKET }
+  const authorized = {
+    client: {
+      kind: 'client',
+      accountInfo: { getAuthToken: vi.fn(() => TEST_AUTH_TOKEN) },
+    },
+    bucketName: DISPATCH_BUCKET,
+  }
   const bucket = { name: DISPATCH_BUCKET }
   const buildClient = vi.fn<() => Promise<typeof authorized>>().mockResolvedValue(authorized)
   const getBucket = vi.fn<() => Promise<typeof bucket>>().mockResolvedValue(bucket)
@@ -724,7 +935,10 @@ async function loadMain() {
   }
 
   vi.doMock('@actions/core', () => core)
-  vi.doMock('../src/inputs.ts', () => ({ parseInputs }))
+  vi.doMock('../src/inputs.ts', async () => ({
+    ...(await vi.importActual<typeof import('../src/inputs.ts')>('../src/inputs.ts')),
+    parseInputs,
+  }))
   vi.doMock('../src/client.ts', () => ({ buildClient, getBucket }))
   vi.doMock('../src/summary.ts', () => ({ writeStepSummary }))
   vi.doMock('../src/commands/upload.ts', () => ({ uploadCommand: commands.uploadCommand }))
@@ -747,7 +961,16 @@ async function loadMain() {
   vi.doMock('../src/commands/purge.ts', () => ({ purgeCommand: commands.purgeCommand }))
 
   const main = await importMainForTest()
-  return { ...main, core, parseInputs, buildClient, getBucket, writeStepSummary, commands }
+  return {
+    ...main,
+    core,
+    parseInputs,
+    authorized,
+    buildClient,
+    getBucket,
+    writeStepSummary,
+    commands,
+  }
 }
 
 async function importMainForTest() {

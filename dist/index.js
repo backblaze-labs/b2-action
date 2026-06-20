@@ -35505,11 +35505,46 @@ const VALID_ACTIONS = [
     'head',
     'purge',
 ];
+/**
+ * Runtime side-effect policy for each action verb.
+ *
+ * @internal
+ */
+const ACTION_EFFECTS = {
+    upload: { kind: 'write', honorsDryRun: false },
+    download: { kind: 'read', honorsDryRun: false },
+    sync: { kind: 'write', honorsDryRun: true },
+    copy: { kind: 'write', honorsDryRun: false },
+    delete: { kind: 'write', honorsDryRun: true },
+    presign: { kind: 'read', honorsDryRun: false },
+    list: { kind: 'read', honorsDryRun: false },
+    hide: { kind: 'write', honorsDryRun: false },
+    unhide: { kind: 'write', honorsDryRun: false },
+    verify: { kind: 'read', honorsDryRun: false },
+    retention: { kind: 'write', honorsDryRun: false },
+    head: { kind: 'read', honorsDryRun: false },
+    purge: { kind: 'write', honorsDryRun: true },
+};
 const VALID_COMPARE = ['modtime', 'size', 'none'];
 const VALID_KEEP = ['no-delete', 'delete', 'keep-days'];
 const VALID_DIRECTION = ['auto', 'up', 'down'];
 const VALID_RETENTION_MODE = ['compliance', 'governance', 'none'];
 const VALID_LEGAL_HOLD = ['on', 'off'];
+const APPLICATION_KEY_ID_ENV = 'B2_APPLICATION_KEY_ID';
+const APPLICATION_KEY_ENV = 'B2_APPLICATION_KEY';
+/**
+ * Sensitive raw values that can appear in parser-scope errors before
+ * {@link parseInputs} returns its structured output.
+ */
+function collectInputSecretsForScrubbing() {
+    const secretValues = new Set();
+    addSecretValue(secretValues, getInput('application-key-id'));
+    addSecretValue(secretValues, process.env[APPLICATION_KEY_ID_ENV]);
+    addSecretValue(secretValues, getInput('application-key'));
+    addSecretValue(secretValues, process.env[APPLICATION_KEY_ENV]);
+    addSseSecretValue(secretValues, getInput('sse'));
+    return [...secretValues];
+}
 /**
  * Parse and validate inputs.
  *
@@ -35525,8 +35560,8 @@ const VALID_LEGAL_HOLD = ['on', 'off'];
  */
 function parseInputs() {
     const action = parseEnum('action', required('action').toLowerCase(), VALID_ACTIONS);
-    const applicationKeyId = resolveCredential('application-key-id', 'B2_APPLICATION_KEY_ID');
-    const applicationKey = resolveCredential('application-key', 'B2_APPLICATION_KEY');
+    const applicationKeyId = resolveCredential('application-key-id', APPLICATION_KEY_ID_ENV);
+    const applicationKey = resolveCredential('application-key', APPLICATION_KEY_ENV);
     // The keyId is identifying (not the secret half of the HMAC pair), but mask
     // it anyway for defense in depth: the canonical AWS analogue mask AKIA-style
     // IDs in CI logs, and masking costs nothing in debuggability since the user
@@ -35642,6 +35677,28 @@ function optionalSource(action, allowBucketPurge) {
     if (v !== '')
         return v;
     return action === 'purge' && allowBucketPurge ? '' : undefined;
+}
+function addSecretValue(secretValues, value) {
+    if (value === undefined || value === '')
+        return;
+    const trimmed = value.trim();
+    for (const secret of new Set([value, trimmed])) {
+        if (secret === '' || secretValues.has(secret))
+            continue;
+        core_setSecret(secret);
+        secretValues.add(secret);
+    }
+}
+function addSseSecretValue(secretValues, value) {
+    if (value === undefined)
+        return;
+    const normalized = value.trim();
+    if (normalized === '' || normalized.toUpperCase() === 'B2')
+        return;
+    addSecretValue(secretValues, value);
+    if (normalized.startsWith('C:') || normalized.startsWith('c:')) {
+        addSecretValue(secretValues, normalized.slice(2).trim());
+    }
 }
 function resolveCredential(inputName, envName) {
     const fromInput = optional(inputName);
@@ -41079,6 +41136,189 @@ async function sha1OfFile(path) {
     return hasher.digest();
 }
 
+;// CONCATENATED MODULE: ./src/errors.ts
+
+
+const SAFE_RETRY_HINT = 'safe to retry this workflow.';
+const DRY_RUN_RETRY_HINT = 'safe to retry this dry-run workflow.';
+const MUTATING_RETRY_SUFFIX = 'action may have partially committed; inspect B2 state before rerunning to avoid duplicate file versions, orphaned large-file uploads, or unintended deletes.';
+const UNKNOWN_RETRY_HINT = 'retry may be appropriate after checking whether the request had side effects.';
+const SSRF_FAILURE_MESSAGE = 'B2 endpoint safety check failed: rejected an unsafe B2 endpoint or server-provided URL. Check the endpoint input and B2 realm configuration.';
+const MAX_LOG_FIELD_LENGTH = 1_000;
+const MAX_LOG_INPUT_LENGTH = MAX_LOG_FIELD_LENGTH * 2;
+const MAX_SECRET_BOUNDARY_WINDOW = MAX_LOG_INPUT_LENGTH;
+const MAX_DERIVED_SECRET_LENGTH = 512;
+const DEFAULT_NETWORK_RETRY_AFTER_SECONDS = 30;
+const MAX_RETRY_AFTER_SECONDS = 3_600;
+const MAX_CAUSE_DEPTH = 32;
+function classifyActionError(err, options = {}) {
+    // Order matters: specific SDK classes first, then retryable B2Error, then
+    // the generic B2Error fallback last so new subclasses are not shadowed.
+    if (hasSsrfCause(err)) {
+        return failure(SSRF_FAILURE_MESSAGE, false);
+    }
+    if (err instanceof BadAuthTokenError && isAuthorizationScopeFailure(err)) {
+        return failure(`B2 permission denied: application key is missing required capabilities or is outside the bucket/prefix scope. Update the key capabilities or use a key scoped to this bucket/prefix. ${formatB2Details(err, options)}`, false);
+    }
+    if (err instanceof BadAuthTokenError) {
+        return failure(`B2 authentication failed: check application-key-id and application-key, and confirm the key is active. ${formatB2Details(err, options)}`, false);
+    }
+    if (err instanceof B2InsufficientCapabilityError) {
+        const missing = err.missing.length > 0 ? err.missing.join(', ') : '(unknown)';
+        return failure(`B2 permission denied: application key is missing required capabilities: ${sanitizeLogField(missing, options)}. Update the key capabilities or use a key scoped to this bucket/prefix.`, false);
+    }
+    if (err instanceof AccessDeniedError) {
+        return failure(`B2 permission denied: check application key capabilities, bucket access, and file name prefix restrictions. ${formatB2Details(err, options)}`, false);
+    }
+    if (err instanceof NetworkError) {
+        const retry = retryPolicy(options);
+        return failure(`Transient network error talking to B2: ${retry.hint} ${sanitizeLogField(err.message, options)}`, retry.safe, retry.safe ? DEFAULT_NETWORK_RETRY_AFTER_SECONDS : undefined);
+    }
+    if (err instanceof B2Error && err.retryable) {
+        const retry = retryPolicy(options);
+        return failure(`Transient B2 error: ${retry.hint} ${formatB2Details(err, options)}`, retry.safe, retry.safe ? err.retryAfter : undefined);
+    }
+    if (err instanceof B2Error) {
+        return failure(`B2 request failed: ${formatGenericB2Guidance(err, options)} ${formatB2Details(err, options)}`, false);
+    }
+    const message = err instanceof Error ? err.message : String(err);
+    return failure(sanitizeLogField(message, options), undefined);
+}
+function formatActionDebugError(err, options = {}) {
+    const message = err instanceof Error ? (err.stack ?? err.message) : String(err);
+    return sanitizeLogField(message, options);
+}
+function failure(message, retryable, retryAfter) {
+    return { message, retryable, retryAfter: normalizeRetryAfter(retryAfter) };
+}
+function formatB2Details(err, options) {
+    const details = [
+        `status ${sanitizeLogField(String(err.status), options)}`,
+        `code ${sanitizeLogField(err.code, options)}`,
+    ];
+    const retryAfter = normalizeRetryAfter(err.retryAfter);
+    if (retryAfter !== undefined) {
+        details.push(`retry after ${sanitizeLogField(String(retryAfter), options)}s`);
+    }
+    return `B2 response details: ${details.join(', ')}`;
+}
+function formatGenericB2Guidance(err, options) {
+    const message = sanitizeLogField(err.message, options);
+    switch (err.code) {
+        case 'file_not_present':
+        case 'no_such_file':
+            return `File not found; check the bucket and file name. B2 said: ${message}.`;
+        case 'duplicate_bucket_name':
+            return `Bucket name already exists; choose a unique bucket name. B2 said: ${message}.`;
+        case 'cap_exceeded':
+        case 'storage_cap_exceeded':
+        case 'transaction_cap_exceeded':
+        case 'download_cap_exceeded':
+            return `B2 account cap was exceeded; reduce usage or wait before retrying. B2 said: ${message}.`;
+        case 'bad_request':
+            return `Bad request; check the action inputs for invalid values. B2 said: ${message}.`;
+        default:
+            return `B2 said: ${message}.`;
+    }
+}
+function retryPolicy(options) {
+    const { action } = options;
+    if (action === undefined)
+        return { safe: false, hint: UNKNOWN_RETRY_HINT };
+    const effect = ACTION_EFFECTS[action];
+    if (options.dryRun === true && effect.honorsDryRun) {
+        return { safe: true, hint: DRY_RUN_RETRY_HINT };
+    }
+    if (effect.kind === 'read')
+        return { safe: true, hint: SAFE_RETRY_HINT };
+    return { safe: false, hint: `the ${action} ${MUTATING_RETRY_SUFFIX}` };
+}
+function isAuthorizationScopeFailure(err) {
+    if (err.code !== 'unauthorized')
+        return false;
+    // The SDK currently exposes scoped-key `unauthorized` responses as
+    // BadAuthTokenError with only server prose to distinguish capability/scope
+    // misses. Keep this as best-effort until a structured subtype exists.
+    return /\b(capability|capabilities|scope|bucket|prefix|permission|not authorized|unauthorized)\b/i.test(err.message);
+}
+function hasSsrfCause(err) {
+    const seen = new Set();
+    let current = err;
+    for (let depth = 0; current instanceof Error && depth < MAX_CAUSE_DEPTH; depth += 1) {
+        if (current instanceof B2SsrfError)
+            return true;
+        if (seen.has(current))
+            return false;
+        seen.add(current);
+        current = current.cause;
+    }
+    return false;
+}
+function normalizeRetryAfter(retryAfter) {
+    if (retryAfter === undefined || !Number.isFinite(retryAfter) || retryAfter < 0)
+        return undefined;
+    return Math.min(Math.ceil(retryAfter), MAX_RETRY_AFTER_SECONDS);
+}
+function sanitizeUntrustedText(value) {
+    return value
+        .replace(/\bhttps?:\/\/\S+/gi, '[redacted-url]')
+        .replace(/\bBearer\s+[A-Za-z0-9._~+/=-]+/gi, 'Bearer ***');
+}
+function sanitizeLogField(value, options) {
+    const secretValues = options.secretValues ?? [];
+    const scrubInputLength = secretValues.length > 0
+        ? MAX_LOG_INPUT_LENGTH + MAX_SECRET_BOUNDARY_WINDOW
+        : MAX_LOG_INPUT_LENGTH;
+    const bounded = value.length > scrubInputLength ? value.slice(0, scrubInputLength) : value;
+    const masked = maskSecrets(bounded, secretValues);
+    const scrubbed = masked.length > MAX_LOG_INPUT_LENGTH ? masked.slice(0, MAX_LOG_INPUT_LENGTH) : masked;
+    const sanitized = sanitizeUntrustedText(scrubbed);
+    if (sanitized.length <= MAX_LOG_FIELD_LENGTH)
+        return sanitized;
+    return `${sanitized.slice(0, MAX_LOG_FIELD_LENGTH)}... [truncated]`;
+}
+function maskSecrets(value, secretValues) {
+    let masked = value;
+    for (const secret of secretValues) {
+        for (const variant of secretVariants(secret)) {
+            masked = masked.split(variant).join('***');
+        }
+    }
+    return masked;
+}
+function secretVariants(secret) {
+    if (secret === '')
+        return [];
+    const variants = new Set();
+    addSecretVariant(variants, secret);
+    if (secret.length > MAX_LOG_INPUT_LENGTH) {
+        addSecretVariant(variants, secret.slice(0, MAX_LOG_INPUT_LENGTH));
+    }
+    if (secret.length >= 4 && secret.length <= MAX_DERIVED_SECRET_LENGTH) {
+        const base64 = Buffer.from(secret, 'utf8').toString('base64');
+        const base64Url = base64.replaceAll('+', '-').replaceAll('/', '_');
+        addUriEncodedSecretVariant(variants, secret);
+        addSecretVariant(variants, base64);
+        addSecretVariant(variants, base64Url);
+        addSecretVariant(variants, base64Url.replace(/=+$/u, ''));
+        addSecretVariant(variants, Buffer.from(secret, 'utf8').toString('hex'));
+    }
+    return [...variants].sort((a, b) => b.length - a.length);
+}
+function addSecretVariant(variants, value) {
+    if (value !== '')
+        variants.add(value);
+}
+function addUriEncodedSecretVariant(variants, secret) {
+    try {
+        addSecretVariant(variants, encodeURIComponent(secret));
+    }
+    catch {
+        // Malformed surrogate pairs are valid JavaScript strings but invalid URI
+        // components. Keep raw/base64/hex masking without letting scrubbing fail.
+    }
+}
+
 ;// CONCATENATED MODULE: ./src/summary.ts
 
 
@@ -41149,6 +41389,7 @@ function escapeHtml(value) {
 
 
 
+
 /**
  * Action entrypoint. Parses inputs, builds an authorized B2Client, dispatches
  * to the requested subcommand, and writes structured outputs back via
@@ -41175,14 +41416,28 @@ async function run() {
     process.once('SIGTERM', onSigterm);
     process.once('SIGINT', onSigint);
     const signal = controller.signal;
+    let action;
+    let dryRun;
+    const secretValues = [];
     try {
+        // These values are a defensive formatter scrub list for parser and
+        // dispatcher-scope credentials and tokens. Command-level secrets such as
+        // presigned URLs are masked at the command site with core.setSecret. Any
+        // SDK free-form B2 messages that reach failure output are sanitized in
+        // errors.ts.
+        secretValues.push(...collectInputSecretsForScrubbing());
         const inputs = parseInputs();
+        action = inputs.action;
+        dryRun = inputs.dryRun;
         const authorized = await buildClient({
             applicationKeyId: inputs.applicationKeyId,
             applicationKey: inputs.applicationKey,
             bucket: inputs.bucket,
             ...(inputs.endpoint !== undefined ? { endpoint: inputs.endpoint } : {}),
         });
+        const authToken = authorized.client.accountInfo.getAuthToken();
+        if (authToken)
+            registerSecretValue(secretValues, authToken);
         const bucket = await getBucket(authorized);
         switch (inputs.action) {
             case 'upload': {
@@ -41450,7 +41705,17 @@ async function run() {
         }
     }
     catch (err) {
-        setFailed(err instanceof Error ? err.message : String(err));
+        const failure = classifyActionError(err, {
+            ...(action !== undefined ? { action } : {}),
+            ...(dryRun !== undefined ? { dryRun } : {}),
+            secretValues,
+        });
+        core_debug(formatActionDebugError(err, { secretValues }));
+        if (failure.retryable !== undefined)
+            setOutput('retryable', String(failure.retryable));
+        if (failure.retryAfter !== undefined)
+            setOutput('retry-after', String(failure.retryAfter));
+        setFailed(failure.message);
     }
     finally {
         process.off('SIGTERM', onSigterm);
@@ -41508,6 +41773,15 @@ async function emitDeletionSummary(verb, result, inputs) {
 }
 function setFileCountOutput(count) {
     setOutput('file-count', String(count));
+}
+function registerSecretValue(secretValues, value) {
+    const trimmed = value.trim();
+    for (const secret of [value, trimmed]) {
+        if (secret === '' || secretValues.includes(secret))
+            continue;
+        core_setSecret(secret);
+        secretValues.push(secret);
+    }
 }
 function retentionStatusLine(result) {
     const parts = [`mode=${result.appliedMode ?? '-'}`];
