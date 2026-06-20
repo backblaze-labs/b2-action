@@ -641,6 +641,19 @@ describe('main dispatcher', () => {
     expect(failure).not.toContain(TEST_AUTH_TOKEN)
   })
 
+  it('registers auth tokens for runner log masking', async () => {
+    const ctx = await loadMain()
+    const rawAuthToken = ` ${TEST_AUTH_TOKEN} `
+    ctx.parseInputs.mockReturnValue(inputs('list'))
+    ctx.authorized.client.accountInfo.getAuthToken.mockReturnValue(rawAuthToken)
+    ctx.commands.listCommand.mockResolvedValue({ files: [], truncated: false })
+
+    await ctx.run()
+
+    expect(ctx.core.setSecret).toHaveBeenCalledWith(rawAuthToken)
+    expect(ctx.core.setSecret).toHaveBeenCalledWith(TEST_AUTH_TOKEN)
+  })
+
   it('does not reflect auth tokens from buildClient failures', async () => {
     const ctx = await loadMain()
     ctx.parseInputs.mockReturnValue(inputs('list'))
@@ -948,7 +961,16 @@ async function loadMain() {
   vi.doMock('../src/commands/purge.ts', () => ({ purgeCommand: commands.purgeCommand }))
 
   const main = await importMainForTest()
-  return { ...main, core, parseInputs, buildClient, getBucket, writeStepSummary, commands }
+  return {
+    ...main,
+    core,
+    parseInputs,
+    authorized,
+    buildClient,
+    getBucket,
+    writeStepSummary,
+    commands,
+  }
 }
 
 async function importMainForTest() {

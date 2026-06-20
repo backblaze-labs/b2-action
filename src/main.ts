@@ -68,7 +68,7 @@ export async function run(): Promise<void> {
       ...(inputs.endpoint !== undefined ? { endpoint: inputs.endpoint } : {}),
     })
     const authToken = authorized.client.accountInfo.getAuthToken()
-    if (authToken) secretValues.push(authToken)
+    if (authToken) registerSecretValue(secretValues, authToken)
     const bucket = await getBucket(authorized)
 
     switch (inputs.action) {
@@ -406,6 +406,15 @@ async function emitDeletionSummary(
 
 function setFileCountOutput(count: number): void {
   core.setOutput('file-count', String(count))
+}
+
+function registerSecretValue(secretValues: string[], value: string): void {
+  const trimmed = value.trim()
+  for (const secret of [value, trimmed]) {
+    if (secret === '' || secretValues.includes(secret)) continue
+    core.setSecret(secret)
+    secretValues.push(secret)
+  }
 }
 
 function retentionStatusLine(result: {

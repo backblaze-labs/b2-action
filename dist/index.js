@@ -41437,7 +41437,7 @@ async function run() {
         });
         const authToken = authorized.client.accountInfo.getAuthToken();
         if (authToken)
-            secretValues.push(authToken);
+            registerSecretValue(secretValues, authToken);
         const bucket = await getBucket(authorized);
         switch (inputs.action) {
             case 'upload': {
@@ -41773,6 +41773,15 @@ async function emitDeletionSummary(verb, result, inputs) {
 }
 function setFileCountOutput(count) {
     setOutput('file-count', String(count));
+}
+function registerSecretValue(secretValues, value) {
+    const trimmed = value.trim();
+    for (const secret of [value, trimmed]) {
+        if (secret === '' || secretValues.includes(secret))
+            continue;
+        core_setSecret(secret);
+        secretValues.push(secret);
+    }
 }
 function retentionStatusLine(result) {
     const parts = [`mode=${result.appliedMode ?? '-'}`];
