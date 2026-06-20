@@ -1,6 +1,11 @@
 import * as core from '@actions/core'
-import type { FileVersion } from '@backblaze-labs/b2-sdk'
-import { B2Client, type Bucket, type HttpTransport } from '@backblaze-labs/b2-sdk'
+import type { AuthorizeAccountResponse, FileVersion } from '@backblaze-labs/b2-sdk'
+import {
+  B2Client,
+  type Bucket,
+  type HttpTransport,
+  InMemoryAccountInfo,
+} from '@backblaze-labs/b2-sdk'
 import { VERSION } from './version.ts'
 
 /**
@@ -30,6 +35,20 @@ export interface BuildClientOptions {
   transport?: HttpTransport | undefined
 }
 
+function maskAccountAuthToken(token: string | null | undefined): void {
+  if (token) core.setSecret(token)
+}
+
+class SecretMaskingAccountInfo extends InMemoryAccountInfo {
+  // The SDK routes authorize() and transparent reauthorize() through the
+  // supplied AccountInfo.setAuth. The reauth masking test is the CI guard for
+  // this SDK coupling when the dependency is bumped.
+  override setAuth(auth: AuthorizeAccountResponse): void {
+    maskAccountAuthToken(auth.authorizationToken)
+    super.setAuth(auth)
+  }
+}
+
 /**
  * Build an authorized B2Client.
  *
@@ -42,8 +61,10 @@ export interface BuildClientOptions {
  *      Actions runs finish well inside that window. If a long-running job
  *      outlives the token, the SDK transparently re-authorizes on the next
  *      401, so the action layer does not need its own refresh loop.
- *   3. Mask the resulting authorization token via `core.setSecret` so any later
- *      log line that happens to include it (errors, debug traces) is redacted.
+ *   3. Use an AccountInfo wrapper that masks each account authorization token
+ *      as it is stored, including SDK-driven reauthorization after token
+ *      expiry. The post-authorize mask is kept as a fallback in case a future
+ *      SDK version bypasses the wrapper for initial authorization.
  *
  * The `transport` parameter is only used by tests (the SDK's B2Simulator
  * provides one). Production callers leave it undefined to use the SDK's
@@ -55,15 +76,17 @@ export async function buildClient(options: BuildClientOptions): Promise<Authoriz
   const client = new B2Client({
     applicationKeyId: options.applicationKeyId,
     applicationKey: options.applicationKey,
+    accountInfo: new SecretMaskingAccountInfo(),
     userAgent,
     ...(options.transport !== undefined ? { transport: options.transport } : {}),
     ...(options.endpoint !== undefined ? { realm: options.endpoint } : {}),
   })
 
   await client.authorize()
-
-  const token = client.accountInfo.getAuthToken()
-  if (token) core.setSecret(token)
+  // Deliberately overlaps with setAuth for initial auth. If a future SDK
+  // changes authorize() storage, the public AccountInfo getter still masks the
+  // stored account token before command code can log.
+  maskAccountAuthToken(client.accountInfo.getAuthToken())
 
   return { client, bucketName: options.bucket }
 }
