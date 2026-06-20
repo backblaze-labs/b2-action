@@ -350,7 +350,7 @@ async function downloadOnce(url, destination, fetchImpl, timeoutMs, maxBytes) {
   const tempDestination = `${destination}.tmp-${process.pid}-${Date.now()}-${Math.random()
     .toString(16)
     .slice(2)}`
-  rmSync(tempDestination, { force: true })
+  rmSync(tempDestination, { force: true, recursive: true })
   try {
     const response = await fetchImpl(url, {
       headers: { 'user-agent': 'backblaze-labs/b2-action docs:links' },
@@ -380,7 +380,7 @@ async function downloadOnce(url, destination, fetchImpl, timeoutMs, maxBytes) {
     )
     replaceDownloadedFile(tempDestination, destination)
   } catch (err) {
-    rmSync(tempDestination, { force: true })
+    rmSync(tempDestination, { force: true, recursive: true })
     if (signal.aborted) {
       throw new DownloadFailure(`timed out after ${timeoutMs}ms`, { retryable: true })
     }
