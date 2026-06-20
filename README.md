@@ -284,7 +284,7 @@ The `sse: C:<value>` input expects a **base64-encoded 32-byte (256-bit) key**. G
 openssl rand -base64 32
 ```
 
-That outputs ~44 characters (e.g. `JXqRk7TZUyDhPmlAv9pn0WzgQGkBNyfwHJtoMSCRXNc=`). Paste the value into a GitHub repository secret (`Settings → Secrets and variables → Actions`): convention is `B2_SSE_C_KEY_B64`.
+That outputs ~44 characters. Paste the generated value into a GitHub repository secret (`Settings → Secrets and variables → Actions`): convention is `B2_SSE_C_KEY_B64`.
 
 A few things to know before you commit to SSE-C:
 

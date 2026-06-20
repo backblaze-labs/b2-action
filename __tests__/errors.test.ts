@@ -111,10 +111,9 @@ describe('classifyActionError', () => {
   })
 
   it('redacts URL and bearer token patterns from network error messages', () => {
+    const bearerToken = 'fixture-token-for-redaction'
     const result = message(
-      new NetworkError(
-        'fetch https://signed.example/file?sig=abc Bearer abcdef1234567890abcdef1234567890',
-      ),
+      new NetworkError(`fetch https://signed.example/file?sig=abc Bearer ${bearerToken}`),
       { action: 'list' },
     )
 
@@ -122,7 +121,7 @@ describe('classifyActionError', () => {
       'Transient network error talking to B2: safe to retry this workflow. fetch [redacted-url] Bearer ***',
     )
     expect(result).not.toContain('https://signed.example')
-    expect(result).not.toContain('abcdef1234567890abcdef1234567890')
+    expect(result).not.toContain(bearerToken)
   })
 
   it('classifies retryable B2 API errors as transient failures', () => {
@@ -262,7 +261,8 @@ describe('classifyActionError', () => {
 
   it('does not reflect signed URLs or bearer tokens from server error messages', () => {
     const signedUrl = 'https://files.example/bucket/file.txt?X-Bz-Signature=abcdef123456'
-    const bearer = 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9'
+    const bearerScheme = 'Bearer'
+    const bearer = `${bearerScheme} fixture-token-for-sdk-error-redaction`
     const result = message(
       new AccessDeniedError({
         status: 403,
