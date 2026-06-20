@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { parseInputs } from '../src/inputs.ts'
-import { resetInputEnv, setInput } from './_helpers.ts'
+import { collectInputSecretsForScrubbing, parseInputs } from '../src/inputs.ts'
+import { captureStdout, resetInputEnv, setInput } from './_helpers.ts'
 
 describe('parseInputs', () => {
   beforeEach(() => {
@@ -33,6 +33,20 @@ describe('parseInputs', () => {
     const r = parseInputs()
     expect(r.applicationKeyId).toBe('env-kid')
     expect(r.applicationKey).toBe('env-sek')
+  })
+
+  it('dedupes parser-scope secret masks before registering them', async () => {
+    setInput('application-key', 'secret')
+    process.env.B2_APPLICATION_KEY_ID = ' kid '
+    process.env.B2_APPLICATION_KEY = 'secret'
+
+    let secrets: string[] = []
+    const stdout = await captureStdout(() => {
+      secrets = collectInputSecretsForScrubbing()
+    })
+
+    expect(secrets).toEqual([' kid ', 'kid', 'secret'])
+    expect(stdout.match(/::add-mask::/g)).toHaveLength(3)
   })
 
   it('rejects an unknown action value', () => {

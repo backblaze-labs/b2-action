@@ -35682,8 +35682,8 @@ function addSecretValue(secretValues, value) {
     if (value === undefined || value === '')
         return;
     const trimmed = value.trim();
-    for (const secret of [value, trimmed]) {
-        if (secret === '')
+    for (const secret of new Set([value, trimmed])) {
+        if (secret === '' || secretValues.has(secret))
             continue;
         core_setSecret(secret);
         secretValues.add(secret);

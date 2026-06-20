@@ -361,8 +361,8 @@ function optionalSource(action: ActionName, allowBucketPurge: boolean): string |
 function addSecretValue(secretValues: Set<string>, value: string | undefined): void {
   if (value === undefined || value === '') return
   const trimmed = value.trim()
-  for (const secret of [value, trimmed]) {
-    if (secret === '') continue
+  for (const secret of new Set([value, trimmed])) {
+    if (secret === '' || secretValues.has(secret)) continue
     core.setSecret(secret)
     secretValues.add(secret)
   }
