@@ -80,8 +80,10 @@ async function captureOutputKeys(action: ActionName): Promise<string[]> {
 
 function mockDispatcherPath(action: ActionName) {
   const core = {
+    getInput: vi.fn<(name: string) => string>(() => ''),
     setOutput: vi.fn(),
     setFailed: vi.fn(),
+    setSecret: vi.fn(),
     debug: vi.fn(),
     info: vi.fn(),
     warning: vi.fn(),

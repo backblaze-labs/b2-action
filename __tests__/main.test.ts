@@ -547,6 +547,29 @@ describe('main dispatcher', () => {
     expect(ctx.buildClient).not.toHaveBeenCalled()
   })
 
+  it('scrubs sensitive raw inputs from parser failures', async () => {
+    const ctx = await loadMain()
+    const sseSecret = 'customer-key-secret'
+    const rawSse = `C:${sseSecret}`
+    ctx.core.getInput.mockImplementation((name) => (name === 'sse' ? rawSse : ''))
+    ctx.parseInputs.mockImplementation(() => {
+      throw new Error(`Invalid 'sse' input: "${rawSse}". Expected "B2".`)
+    })
+
+    await ctx.run()
+
+    const failure = ctx.core.setFailed.mock.calls[0]?.[0]
+    const debug = ctx.core.debug.mock.calls[0]?.[0]
+    expect(failure).toContain('Invalid')
+    expect(failure).not.toContain(rawSse)
+    expect(failure).not.toContain(sseSecret)
+    expect(debug).not.toContain(rawSse)
+    expect(debug).not.toContain(sseSecret)
+    expect(ctx.core.setSecret).toHaveBeenCalledWith(rawSse)
+    expect(ctx.core.setSecret).toHaveBeenCalledWith(sseSecret)
+    expect(ctx.buildClient).not.toHaveBeenCalled()
+  })
+
   it('reports non-Error failures through setFailed', async () => {
     const ctx = await loadMain()
     const plainFailure = { toString: () => 'plain string' }
@@ -861,8 +884,10 @@ async function loadMain() {
   vi.resetModules()
 
   const core = {
+    getInput: vi.fn<(name: string) => string>(() => ''),
     setOutput: vi.fn(),
     setFailed: vi.fn(),
+    setSecret: vi.fn(),
     debug: vi.fn(),
     info: vi.fn(),
     warning: vi.fn(),

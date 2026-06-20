@@ -35530,6 +35530,21 @@ const VALID_KEEP = ['no-delete', 'delete', 'keep-days'];
 const VALID_DIRECTION = ['auto', 'up', 'down'];
 const VALID_RETENTION_MODE = ['compliance', 'governance', 'none'];
 const VALID_LEGAL_HOLD = ['on', 'off'];
+const APPLICATION_KEY_ID_ENV = 'B2_APPLICATION_KEY_ID';
+const APPLICATION_KEY_ENV = 'B2_APPLICATION_KEY';
+/**
+ * Sensitive raw values that can appear in parser-scope errors before
+ * {@link parseInputs} returns its structured output.
+ */
+function collectInputSecretsForScrubbing() {
+    const secretValues = new Set();
+    addSecretValue(secretValues, getInput('application-key-id'));
+    addSecretValue(secretValues, process.env[APPLICATION_KEY_ID_ENV]);
+    addSecretValue(secretValues, getInput('application-key'));
+    addSecretValue(secretValues, process.env[APPLICATION_KEY_ENV]);
+    addSseSecretValue(secretValues, getInput('sse'));
+    return [...secretValues];
+}
 /**
  * Parse and validate inputs.
  *
@@ -35545,8 +35560,8 @@ const VALID_LEGAL_HOLD = ['on', 'off'];
  */
 function parseInputs() {
     const action = parseEnum('action', required('action').toLowerCase(), VALID_ACTIONS);
-    const applicationKeyId = resolveCredential('application-key-id', 'B2_APPLICATION_KEY_ID');
-    const applicationKey = resolveCredential('application-key', 'B2_APPLICATION_KEY');
+    const applicationKeyId = resolveCredential('application-key-id', APPLICATION_KEY_ID_ENV);
+    const applicationKey = resolveCredential('application-key', APPLICATION_KEY_ENV);
     // The keyId is identifying (not the secret half of the HMAC pair), but mask
     // it anyway for defense in depth: the canonical AWS analogue mask AKIA-style
     // IDs in CI logs, and masking costs nothing in debuggability since the user
@@ -35662,6 +35677,28 @@ function optionalSource(action, allowBucketPurge) {
     if (v !== '')
         return v;
     return action === 'purge' && allowBucketPurge ? '' : undefined;
+}
+function addSecretValue(secretValues, value) {
+    if (value === undefined || value === '')
+        return;
+    const trimmed = value.trim();
+    for (const secret of [value, trimmed]) {
+        if (secret === '')
+            continue;
+        core_setSecret(secret);
+        secretValues.add(secret);
+    }
+}
+function addSseSecretValue(secretValues, value) {
+    if (value === undefined)
+        return;
+    const normalized = value.trim();
+    if (normalized === '' || normalized.toUpperCase() === 'B2')
+        return;
+    addSecretValue(secretValues, value);
+    if (normalized.startsWith('C:') || normalized.startsWith('c:')) {
+        addSecretValue(secretValues, normalized.slice(2).trim());
+    }
 }
 function resolveCredential(inputName, envName) {
     const fromInput = optional(inputName);
@@ -41355,13 +41392,14 @@ async function run() {
     let dryRun;
     const secretValues = [];
     try {
+        secretValues.push(...collectInputSecretsForScrubbing());
         const inputs = parseInputs();
         action = inputs.action;
         dryRun = inputs.dryRun;
         // These values are a defensive formatter scrub list for dispatcher-scope
-        // credentials. Command-level secrets such as presigned URLs are masked at
-        // the command site with core.setSecret, and SDK free-form B2 messages are
-        // not reflected into failure output.
+        // credentials and tokens. Command-level secrets such as presigned URLs are
+        // masked at the command site with core.setSecret. Any SDK free-form B2
+        // messages that reach failure output are sanitized in errors.ts.
         secretValues.push(inputs.applicationKey);
         const authorized = await buildClient({
             applicationKeyId: inputs.applicationKeyId,

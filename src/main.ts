@@ -17,7 +17,7 @@ import { unhideCommand } from './commands/unhide.ts'
 import { uploadCommand } from './commands/upload.ts'
 import { verifyCommand } from './commands/verify.ts'
 import { classifyActionError, formatActionDebugError } from './errors.ts'
-import { type ParsedInputs, parseInputs } from './inputs.ts'
+import { collectInputSecretsForScrubbing, type ParsedInputs, parseInputs } from './inputs.ts'
 import { writeStepSummary } from './summary.ts'
 
 /**
@@ -51,13 +51,14 @@ export async function run(): Promise<void> {
   const secretValues: string[] = []
 
   try {
+    secretValues.push(...collectInputSecretsForScrubbing())
     const inputs = parseInputs()
     action = inputs.action
     dryRun = inputs.dryRun
     // These values are a defensive formatter scrub list for dispatcher-scope
-    // credentials. Command-level secrets such as presigned URLs are masked at
-    // the command site with core.setSecret, and SDK free-form B2 messages are
-    // not reflected into failure output.
+    // credentials and tokens. Command-level secrets such as presigned URLs are
+    // masked at the command site with core.setSecret. Any SDK free-form B2
+    // messages that reach failure output are sanitized in errors.ts.
     secretValues.push(inputs.applicationKey)
 
     const authorized = await buildClient({
