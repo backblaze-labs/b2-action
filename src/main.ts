@@ -131,7 +131,7 @@ export async function run(): Promise<void> {
         setFileCountOutput(result.uploaded + result.downloaded + result.deleted + result.skipped)
         core.setOutput('bytes-transferred', String(result.bytesTransferred))
         if (result.errors > 0) {
-          setSummaryJsonOutput(result.events)
+          setSummaryJsonOutput(result.events, { failClosed: false })
           const sample = summarizeSyncErrors(result.events)
           throw new Error(`Sync completed with ${result.errors} error(s): ${sample}`)
         }
@@ -388,7 +388,7 @@ async function emitDeletionSummary(
   core.setOutput('files-deleted', String(actuallyDeleted))
   setFileCountOutput(result.files.length)
   if (result.errors > 0) {
-    setSummaryJsonOutput(result.files)
+    setSummaryJsonOutput(result.files, { failClosed: false })
     const labels = { delete: 'Delete', purge: 'Purge' } as const
     throw new Error(`${labels[verb]} completed with ${result.errors} error(s)`)
   }

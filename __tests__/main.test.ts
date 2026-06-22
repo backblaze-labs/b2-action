@@ -818,6 +818,38 @@ describe('main dispatcher', () => {
     )
   })
 
+  it('preserves sync aggregate errors when the summary preview is capped', async () => {
+    const ctx = await loadMain()
+    const events = Array.from({ length: 105 }, (_, i) => ({
+      type: i === 104 ? 'error' : 'skip',
+      path: `remote-${i}.txt`,
+      message: i === 104 ? 'denied' : undefined,
+      size: 0,
+    }))
+    ctx.parseInputs.mockReturnValue(inputs('sync'))
+    ctx.commands.summarizeSyncErrors.mockReturnValue('remote-104.txt: denied')
+    ctx.commands.syncCommand.mockResolvedValue({
+      events,
+      direction: 'b2-to-local',
+      uploaded: 0,
+      downloaded: 0,
+      deleted: 0,
+      skipped: 105,
+      errors: 1,
+      bytesTransferred: 0,
+    })
+
+    await ctx.run()
+
+    const out = outputs(ctx)
+    expect(ctx.core.setFailed).toHaveBeenCalledWith(
+      'Sync completed with 1 error(s): remote-104.txt: denied',
+    )
+    expect(out).not.toHaveProperty('summary-json')
+    expect(out['summary-json-truncated']).toBe('true')
+    expect(JSON.parse(out['summary-json-preview'] ?? '[]')).toHaveLength(100)
+  })
+
   it('reports failed verify results after publishing diagnostic outputs', async () => {
     const ctx = await loadMain()
     const result = {
@@ -906,6 +938,36 @@ describe('main dispatcher', () => {
         'summary-json': JSON.stringify(files),
       }),
     )
+    expect(ctx.writeStepSummary).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['delete', 'Delete', 1],
+    ['purge', 'Purge', 2],
+  ] as const)('preserves %s aggregate errors when the summary preview is capped', async (action, label, errors) => {
+    const ctx = await loadMain()
+    const files = Array.from({ length: 105 }, (_, i) => ({
+      fileName: `stuck-${i}.txt`,
+      fileId: `id-stuck-${i}`,
+      skipped: false,
+    }))
+    ctx.parseInputs.mockReturnValue(
+      inputs(action, action === 'purge' ? { allowBucketPurge: true } : {}),
+    )
+    const command = action === 'delete' ? ctx.commands.deleteCommand : ctx.commands.purgeCommand
+    command.mockResolvedValue({ files, errors })
+
+    await ctx.run()
+
+    const out = outputs(ctx)
+    expect(ctx.core.setFailed).toHaveBeenCalledWith(`${label} completed with ${errors} error(s)`)
+    expect(out).toMatchObject({
+      'files-deleted': '105',
+      'file-count': '105',
+      'summary-json-truncated': 'true',
+    })
+    expect(out).not.toHaveProperty('summary-json')
+    expect(JSON.parse(out['summary-json-preview'] ?? '[]')).toHaveLength(100)
     expect(ctx.writeStepSummary).not.toHaveBeenCalled()
   })
 

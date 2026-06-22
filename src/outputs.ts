@@ -20,6 +20,10 @@ export interface TruncatedSummaryJsonPayload {
   truncated: true
 }
 
+export interface SummaryJsonOutputOptions {
+  failClosed?: boolean
+}
+
 /**
  * Serialize per-file command details into the bounded `summary-json` output.
  *
@@ -31,7 +35,9 @@ export interface TruncatedSummaryJsonPayload {
  * partial value under that legacy output name. When a result exceeds the
  * supported cap, `summary-json-preview` receives the bounded prefix,
  * `summary-json-truncated` is set to `true`, and the action fails so existing
- * manifest consumers cannot silently process an incomplete array. Scalar count
+ * manifest consumers cannot silently process an incomplete array. Callers that
+ * are already failing may set `failClosed: false` to preserve the primary
+ * command error while still emitting truncation diagnostics. Scalar count
  * outputs (`file-count`, `files-listed`, etc.) remain the authoritative totals.
  */
 export function buildSummaryJsonPayload(items: readonly unknown[]): SummaryJsonPayload {
@@ -82,8 +88,12 @@ function buildSummaryJsonPreview(items: readonly unknown[]): {
   return { json, emittedCount }
 }
 
-export function setSummaryJsonOutput(items: readonly unknown[]): void {
+export function setSummaryJsonOutput(
+  items: readonly unknown[],
+  options: SummaryJsonOutputOptions = {},
+): void {
   const payload = buildSummaryJsonPayload(items)
+  const failClosed = options.failClosed ?? true
 
   core.setOutput('summary-json-truncated', String(payload.truncated))
   if (!payload.truncated) {
@@ -99,6 +109,8 @@ export function setSummaryJsonOutput(items: readonly unknown[]): void {
         SUMMARY_JSON_MAX_UTF16_BYTES,
       )} of UTF-16 JSON text`,
   )
+  if (!failClosed) return
+
   throw new Error(
     `summary-json exceeds supported output limits: ${payload.totalCount} item(s) cannot fit ` +
       `within ${SUMMARY_JSON_MAX_ENTRIES} entries and ${formatKiB(

@@ -41335,7 +41335,9 @@ const SUMMARY_JSON_MAX_UTF16_BYTES = 256 * 1024;
  * partial value under that legacy output name. When a result exceeds the
  * supported cap, `summary-json-preview` receives the bounded prefix,
  * `summary-json-truncated` is set to `true`, and the action fails so existing
- * manifest consumers cannot silently process an incomplete array. Scalar count
+ * manifest consumers cannot silently process an incomplete array. Callers that
+ * are already failing may set `failClosed: false` to preserve the primary
+ * command error while still emitting truncation diagnostics. Scalar count
  * outputs (`file-count`, `files-listed`, etc.) remain the authoritative totals.
  */
 function buildSummaryJsonPayload(items) {
@@ -41378,8 +41380,9 @@ function buildSummaryJsonPreview(items) {
     }
     return { json, emittedCount };
 }
-function setSummaryJsonOutput(items) {
+function setSummaryJsonOutput(items, options = {}) {
     const payload = buildSummaryJsonPayload(items);
+    const failClosed = options.failClosed ?? true;
     setOutput('summary-json-truncated', String(payload.truncated));
     if (!payload.truncated) {
         setOutput('summary-json', payload.json);
@@ -41389,6 +41392,8 @@ function setSummaryJsonOutput(items) {
     warning(`summary-json exceeds supported output limits; preview contains ` +
         `${payload.emittedCount} of ${payload.totalCount} item(s). ` +
         `limit is ${SUMMARY_JSON_MAX_ENTRIES} entries and ${formatKiB(SUMMARY_JSON_MAX_UTF16_BYTES)} of UTF-16 JSON text`);
+    if (!failClosed)
+        return;
     throw new Error(`summary-json exceeds supported output limits: ${payload.totalCount} item(s) cannot fit ` +
         `within ${SUMMARY_JSON_MAX_ENTRIES} entries and ${formatKiB(SUMMARY_JSON_MAX_UTF16_BYTES)} of UTF-16 JSON text. Refusing to emit a partial summary-json value; ` +
         `use file-count or verb-specific counts for totals and summary-json-preview only after ` +
@@ -41583,7 +41588,7 @@ async function run() {
                 setFileCountOutput(result.uploaded + result.downloaded + result.deleted + result.skipped);
                 setOutput('bytes-transferred', String(result.bytesTransferred));
                 if (result.errors > 0) {
-                    setSummaryJsonOutput(result.events);
+                    setSummaryJsonOutput(result.events, { failClosed: false });
                     const sample = summarizeSyncErrors(result.events);
                     throw new Error(`Sync completed with ${result.errors} error(s): ${sample}`);
                 }
@@ -41838,7 +41843,7 @@ async function emitDeletionSummary(verb, result, inputs) {
     setOutput('files-deleted', String(actuallyDeleted));
     setFileCountOutput(result.files.length);
     if (result.errors > 0) {
-        setSummaryJsonOutput(result.files);
+        setSummaryJsonOutput(result.files, { failClosed: false });
         const labels = { delete: 'Delete', purge: 'Purge' };
         throw new Error(`${labels[verb]} completed with ${result.errors} error(s)`);
     }
