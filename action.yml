@@ -87,7 +87,7 @@ inputs:
     required: false
     default: '1000'
   expected-sha1:
-    description: 'Expected 40-character hexadecimal SHA-1 digest for `verify`; malformed values fail before comparison. If unset, the SHA-1 is computed from `destination` (a local file). Requires B2 to expose a remote whole-file SHA-1; HEAD-only verify cannot validate multipart objects when that digest is unavailable.'
+    description: 'Expected 40-character hexadecimal SHA-1 digest for `verify`; malformed values fail before comparison. If unset, the SHA-1 is computed from `destination` (a local file). Non-comparable remote SHA-1 headers such as `none` or `unverified:<sha1>` publish `verified=false` outputs without failing the step.'
     required: false
   retention-mode:
     description: 'Object Lock retention mode for `retention`: compliance | governance | none.'
@@ -127,7 +127,7 @@ outputs:
   verified:
     description: 'true/false: whether `verify` succeeded.'
   remote-sha1:
-    description: 'Remote whole-file SHA-1 retrieved by `verify`, or empty when B2 does not expose one for a multipart object.'
+    description: 'Normalized comparable remote SHA-1 from `verify`, raw non-comparable B2 value such as `none` or `unverified:<sha1>`, or empty when B2 does not expose one.'
   local-sha1:
     description: 'Local file SHA-1 computed by `verify`.'
   summary-json:
