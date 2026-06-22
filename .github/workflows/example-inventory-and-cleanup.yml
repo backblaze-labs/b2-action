@@ -20,7 +20,7 @@ concurrency:
 jobs:
   inventory:
     name: inventory
-    if: github.event_name == 'workflow_dispatch' || github.event_name == 'push' || github.event.pull_request.head.repo.fork == false
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'push' || (github.event.pull_request.head.repo.fork == false && github.actor != 'dependabot[bot]')
     runs-on: ubuntu-latest
     env:
       PREFIX: examples/inventory/${{ github.run_id }}/

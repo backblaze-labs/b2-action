@@ -21,7 +21,7 @@ concurrency:
 jobs:
   head:
     name: head
-    if: github.event_name == 'workflow_dispatch' || github.event_name == 'push' || github.event.pull_request.head.repo.fork == false
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'push' || (github.event.pull_request.head.repo.fork == false && github.actor != 'dependabot[bot]')
     runs-on: ubuntu-latest
     env:
       KEY: examples/head/${{ github.run_id }}/probe.bin

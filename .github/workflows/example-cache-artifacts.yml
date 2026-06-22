@@ -20,7 +20,7 @@ concurrency:
 jobs:
   cache:
     name: cache
-    if: github.event_name == 'workflow_dispatch' || github.event_name == 'push' || github.event.pull_request.head.repo.fork == false
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'push' || (github.event.pull_request.head.repo.fork == false && github.actor != 'dependabot[bot]')
     runs-on: ubuntu-latest
     # We hardcode `Linux` rather than `${{ runner.os }}` because the `runner`
     # context isn't allowed in job-level `env:` (only at step level). This job
