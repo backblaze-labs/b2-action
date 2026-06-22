@@ -41429,6 +41429,7 @@ function formatKiB(bytes) {
 
 
 
+/** Maximum per-file rows rendered in a GitHub Actions step summary table. */
 const STEP_SUMMARY_MAX_ROWS = 100;
 /**
  * Append a markdown summary block to `$GITHUB_STEP_SUMMARY`. No-ops when

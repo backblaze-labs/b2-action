@@ -2,6 +2,7 @@ import { appendFile } from 'node:fs/promises'
 import * as core from '@actions/core'
 import { formatBytes } from './format.ts'
 
+/** Maximum per-file rows rendered in a GitHub Actions step summary table. */
 export const STEP_SUMMARY_MAX_ROWS = 100
 
 /**
