@@ -38,7 +38,7 @@ export async function writeStepSummary(opts: {
   totalRows?: number | undefined
 }): Promise<void> {
   const path = process.env.GITHUB_STEP_SUMMARY
-  if (path === undefined || path === '') return
+  if (!path) return
 
   // Keep the writer defensive for direct callers even though dispatcher
   // call sites pre-slice rows to avoid mapping very large result sets.
@@ -65,7 +65,7 @@ export async function writeStepSummary(opts: {
       lines.push(
         `| ${inlineCodeCell(r.fileName)} | ${r.size !== undefined ? formatBytes(r.size) : ''} | ${
           r.fileId !== undefined ? inlineCodeCell(r.fileId) : ''
-        } | ${r.sha1 !== undefined && r.sha1 !== null ? `\`${r.sha1.slice(0, 12)}…\`` : ''} | ${
+        } | ${r.sha1 != null ? `\`${r.sha1.slice(0, 12)}…\`` : ''} | ${
           r.status !== undefined ? inlineCodeCell(r.status) : ''
         } |`,
       )

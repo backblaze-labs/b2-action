@@ -102,10 +102,12 @@ function assertSafePnpmInstall(job: WorkflowJob): void {
     expect(install).toContain('--frozen-lockfile')
     expect(install).toContain('--ignore-scripts')
   }
-  expect(runBlocks(job).some((run) => run.includes('for attempt in 1 2 3'))).toBe(true)
-  expect(runBlocks(job).some((run) => run.includes('pnpm install failed after 3 attempts'))).toBe(
-    true,
-  )
+  // Match the retry loop and its give-up message by intent rather than exact
+  // wording, so cosmetic edits to the workflow script don't break this test.
+  const retryLoopPattern = /\bfor\s+\w+\s+in\s+1\s+2\s+3\b/
+  const retryFailurePattern = /\bpnpm\s+install\b[\s\S]*\bfailed\b[\s\S]*\b3\s+attempts?\b/i
+  expect(runBlocks(job).some((run) => retryLoopPattern.test(run))).toBe(true)
+  expect(runBlocks(job).some((run) => retryFailurePattern.test(run))).toBe(true)
 }
 
 function expectNoPackageScripts(jobs: WorkflowJob[], scriptNames: string[]): void {

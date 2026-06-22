@@ -43,6 +43,13 @@ import {
   type TestFixture,
 } from './_helpers.ts'
 
+// Windows: file handles linger briefly after the last write completes, so a bare
+// rm can race with the OS and throw ENOTEMPTY. Retry a few times with a short
+// backoff before giving up.
+async function removeDirWithWindowsRetries(dir: string): Promise<void> {
+  await rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
+}
+
 // =========================================================================
 // inputs.ts: every enum reject + parseBool/parsePositiveInt error path
 // =========================================================================
@@ -232,7 +239,7 @@ describe('verify: multipart file with null remote SHA-1', () => {
   // verify.ts requires the SDK simulator to surface null content-SHA1 on a
   // multipart-finished file. The simulator doesn't yet expose that path
   // organically; restoring this test is queued behind a simulator update.
-  // See DEVELOPMENT.md → "SDK simulator gaps".
+  // Track this simulator limitation in project docs/issues as needed.
 
   it('rejects verify with a destination path that points to a directory', async () => {
     const local = join(fx.workDir, 'asset-dir.txt')
@@ -615,8 +622,8 @@ describe('download: SSE-C decryption', () => {
 
   it('round-trips a file with SSE-C: upload + download with the same customer key', async () => {
     const { parseSse } = await import('../src/sse.ts')
-    // 32 random bytes, base64-encoded.
-    const rawKey = Buffer.from('abcdefghijklmnopqrstuvwxyz123456', 'utf8')
+    // Deterministic 32-byte test key, base64-encoded.
+    const rawKey = Buffer.alloc(32, 0x61)
     const b64 = rawKey.toString('base64')
     const enc = parseSse(`C:${b64}`)
 
@@ -1620,10 +1627,7 @@ describe('download: walks pagination past the 1000-file page boundary', () => {
     fx = await makeFixture('gh-action-dl-real-pagination')
   })
   afterEach(async () => {
-    // Windows: file handles linger briefly after the last write completes,
-    // so a bare rm can race with the OS and throw ENOTEMPTY. Retry a few
-    // times with a short backoff before giving up.
-    await rm(fx.workDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
+    await removeDirWithWindowsRetries(fx.workDir)
   })
 
   // 1001 file uploads + 1001 sequential downloads. Easily fits under the
