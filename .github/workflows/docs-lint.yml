@@ -19,6 +19,7 @@ on:
       - '**/*.yaml'
       - 'action.yml'
       - 'package.json'
+      - 'pnpm-lock.yaml'
       - 'cspell.json'
       - '.cspell/**'
       - 'scripts/check-action-yml-vs-readme.mjs'
@@ -62,9 +63,8 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
-      # We only need markdownlint-cli2 here, not the full dep tree. Install
-      # it directly to keep the job fast.
-      - run: pnpm dlx markdownlint-cli2
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm docs:lint
 
   link-check:
     name: Markdown link check
@@ -111,6 +111,5 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
-      # cspell is self-contained: it does not need our runtime deps. Install
-      # only what's required to keep the job fast.
-      - run: pnpm dlx cspell@9 --no-progress --no-must-find-files
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm spellcheck
