@@ -369,10 +369,8 @@ export function isEntrypoint(metaUrl: string, argv1: string | undefined): boolea
  * Shared output-emission + step-summary for the two deletion verbs.
  * `delete` and `purge` returned-shape and dispatcher-side handling are
  * structurally identical (filter into actually-deleted vs would-delete,
- * set the same outputs, render the same row table); they differ only in
- * the verb label, the per-row status string, and whether to cap the
- * summary at 100 rows (purge wipes everything, including historical
- * versions, so the row count can dwarf delete).
+ * set the same outputs, render the same capped row table); they differ only
+ * in the verb label and the per-row status string.
  */
 async function emitDeletionSummary(
   verb: 'delete' | 'purge',
