@@ -135,6 +135,8 @@ describe('upload + download commands (B2Simulator)', () => {
     const entries = [
       ['bundle/release/bin/deploy_.sh', 'underscore'],
       ['bundle/release/bin/deploy|.sh', 'pipe'],
+      ['bundle/tools/tool*.sh', 'star'],
+      ['bundle/tools/tool?.sh', 'question'],
       ['bundle/slash/a/b.txt', 'slash'],
       ['bundle/slash/a\\b.txt', 'backslash'],
       ['bundle/trailing/archive.', 'dot'],
@@ -177,6 +179,8 @@ describe('upload + download commands (B2Simulator)', () => {
       'underscore',
     )
     await expect(readFile(join(destDir, 'release/bin/deploy|.sh'), 'utf8')).resolves.toBe('pipe')
+    await expect(readFile(join(destDir, 'tools/tool*.sh'), 'utf8')).resolves.toBe('star')
+    await expect(readFile(join(destDir, 'tools/tool?.sh'), 'utf8')).resolves.toBe('question')
     await expect(readFile(join(destDir, 'slash/a/b.txt'), 'utf8')).resolves.toBe('slash')
     await expect(readFile(join(destDir, 'slash/a\\b.txt'), 'utf8')).resolves.toBe('backslash')
     await expect(readFile(join(destDir, 'trailing/archive.'), 'utf8')).resolves.toBe('dot')
@@ -231,12 +235,16 @@ describe('upload + download commands (B2Simulator)', () => {
       ['dot/', 'dot/a/../b.txt'],
       ['del/', 'del/has-del\u007f.txt'],
     ] as const) {
+      const validName = `${prefix}safe.txt`
       const downloadCalls: string[] = []
       const originalListFileNames = fx.bucket.listFileNames.bind(fx.bucket)
       const originalDownload = fx.bucket.download.bind(fx.bucket)
       fx.bucket.listFileNames = async () =>
         ({
-          files: [{ action: 'upload', fileName: unsafeName }],
+          files: [
+            { action: 'upload', fileName: validName },
+            { action: 'upload', fileName: unsafeName },
+          ],
           nextFileName: null,
         }) as unknown as Awaited<ReturnType<typeof fx.bucket.listFileNames>>
       fx.bucket.download = async (...args: Parameters<typeof fx.bucket.download>) => {
@@ -285,6 +293,36 @@ describe('upload + download commands (B2Simulator)', () => {
         destination: destDir,
       }),
     ).rejects.toThrow(/escapes destination directory/)
+  })
+
+  it('does not write through an existing leaf symlink', async () => {
+    if (process.platform === 'win32') return
+
+    const local = join(fx.workDir, 'report.txt')
+    await writeFile(local, 'downloaded report')
+    await uploadCommand(fx.bucket, {
+      ...baseInputs(),
+      source: local,
+      destination: 'bundle/report.txt',
+    })
+
+    const destDir = join(fx.workDir, 'dest-leaf')
+    const outsideDir = join(fx.workDir, 'outside-leaf')
+    const outsideFile = join(outsideDir, 'target.txt')
+    await mkdir(destDir)
+    await mkdir(outsideDir)
+    await writeFile(outsideFile, 'outside original')
+    await symlink(outsideFile, join(destDir, 'report.txt'), 'file')
+
+    await downloadCommand(fx.bucket, {
+      ...baseInputs(),
+      action: 'download',
+      source: 'bundle/',
+      destination: destDir,
+    })
+
+    await expect(readFile(outsideFile, 'utf8')).resolves.toBe('outside original')
+    await expect(readFile(join(destDir, 'report.txt'), 'utf8')).resolves.toBe('downloaded report')
   })
 
   it('uploads glob matches with bounded file-level concurrency', async () => {

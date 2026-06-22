@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { createWriteStream } from 'node:fs'
-import { mkdir, realpath, unlink, writeFile } from 'node:fs/promises'
+import { mkdir, realpath, rename, unlink, writeFile } from 'node:fs/promises'
 import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
 import { Readable, Transform } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
@@ -28,6 +28,16 @@ export interface DownloadResult {
   files: DownloadedFile[]
   /** Total bytes transferred across all files. */
   bytesTransferred: number
+}
+
+interface PathSafetyContext {
+  realRoot: string
+  safeAncestorDirs: Set<string>
+}
+
+interface PlannedDownload {
+  fileName: string
+  localPath: string
 }
 
 /**
@@ -77,11 +87,11 @@ async function downloadPrefix(
 ): Promise<DownloadResult> {
   const destRoot = resolve(destinationDir)
   await mkdir(destRoot, { recursive: true })
+  const pathSafety = await createPathSafetyContext(destRoot)
   const caseInsensitivePaths = await isCaseInsensitiveDirectory(destRoot)
 
-  const files: DownloadedFile[] = []
+  const planned: PlannedDownload[] = []
   const localPathOwners = new Map<string, string>()
-  let total = 0
   let startFileName: string | undefined
 
   for (;;) {
@@ -102,6 +112,7 @@ async function downloadPrefix(
         destRoot,
         safeRemotePathSegments(relName, f.fileName),
         f.fileName,
+        pathSafety,
       )
       const collisionKey = localPathCollisionKey(localPath, caseInsensitivePaths)
       const existingFileName = localPathOwners.get(collisionKey)
@@ -111,20 +122,27 @@ async function downloadPrefix(
         )
       }
       localPathOwners.set(collisionKey, f.fileName)
-      core.startGroup(`download b2://${bucket.name}/${f.fileName} → ${localPath}`)
-      try {
-        const r = await downloadOne(bucket, f.fileName, localPath, sseDownload, signal)
-        files.push(r)
-        total += r.size
-      } finally {
-        core.endGroup()
-      }
+      planned.push({ fileName: f.fileName, localPath })
     }
     // SDK contract: `nextFileName` is `string | null` per `ListFileNamesResponse`.
     // The "not null" arm fires for prefixes with >1000 files (covered by
     // the real-pagination test in coverage-stress).
     if (page.nextFileName === null) break
     startFileName = page.nextFileName
+  }
+
+  const files: DownloadedFile[] = []
+  let total = 0
+  for (const plan of planned) {
+    signal?.throwIfAborted()
+    core.startGroup(`download b2://${bucket.name}/${plan.fileName} → ${plan.localPath}`)
+    try {
+      const r = await downloadOne(bucket, plan.fileName, plan.localPath, sseDownload, signal)
+      files.push(r)
+      total += r.size
+    } finally {
+      core.endGroup()
+    }
   }
 
   return { files, bytesTransferred: total }
@@ -170,19 +188,21 @@ async function downloadOne(
     },
   })
 
-  const writeStream = createWriteStream(localPath)
+  const tempPath = `${localPath}.b2-action-download-${randomUUID()}.tmp`
+  const writeStream = createWriteStream(tempPath, { flags: 'wx' })
   try {
     await pipeline(
       Readable.fromWeb(result.body as unknown as Parameters<typeof Readable.fromWeb>[0]),
       counter,
       writeStream,
     )
+    await rename(tempPath, localPath)
   } catch (err) {
-    // Partial download on disk is worse than no file (a subsequent run
-    // could mistake it for a complete copy). Best-effort unlink and
-    // re-throw; the outer dispatcher reports the original error.
+    // Partial download on disk is worse than no file. Write through a
+    // same-directory temporary file and rename only after the body completes,
+    // which also avoids following an existing symlink at the final leaf.
     try {
-      await unlink(localPath)
+      await unlink(tempPath)
     } catch {
       // ignore: best-effort cleanup, the original error matters more
     }
@@ -209,23 +229,40 @@ export async function resolveLocalPath(
   if (destination.endsWith('/') || destination.endsWith('\\')) {
     const destRoot = resolve(destination)
     await mkdir(destRoot, { recursive: true })
-    return await resolvePathUnderRoot(destRoot, [safeRemotePathTail(fileName)], fileName)
+    const pathSafety = await createPathSafetyContext(destRoot)
+    return await resolvePathUnderRoot(
+      destRoot,
+      [safeRemotePathTail(fileName)],
+      fileName,
+      pathSafety,
+    )
   }
   const s = await tryStat(destination)
   if (s?.isDirectory()) {
     const destRoot = resolve(destination)
-    return await resolvePathUnderRoot(destRoot, [safeRemotePathTail(fileName)], fileName)
+    const pathSafety = await createPathSafetyContext(destRoot)
+    return await resolvePathUnderRoot(
+      destRoot,
+      [safeRemotePathTail(fileName)],
+      fileName,
+      pathSafety,
+    )
   }
   return resolve(destination)
 }
 
-async function resolvePathUnderRoot(root: string, segments: string[], fileName: string) {
+async function resolvePathUnderRoot(
+  root: string,
+  segments: string[],
+  fileName: string,
+  pathSafety: PathSafetyContext,
+) {
   const localPath = resolve(root, ...segments)
   const rel = relative(root, localPath)
   if (!isPathInsideRootRelative(rel)) {
     throw new Error(`download path for B2 file "${fileName}" escapes destination directory`)
   }
-  await assertExistingAncestryInsideRoot(root, localPath, fileName)
+  await assertExistingAncestryInsideRoot(pathSafety, localPath, fileName)
   return localPath
 }
 
@@ -233,19 +270,31 @@ function isPathInsideRootRelative(rel: string): boolean {
   return rel === '' || (!isAbsolute(rel) && rel !== '..' && !rel.startsWith(`..${sep}`))
 }
 
+async function createPathSafetyContext(root: string): Promise<PathSafetyContext> {
+  return { realRoot: await realpath(root), safeAncestorDirs: new Set([root]) }
+}
+
 async function assertExistingAncestryInsideRoot(
-  root: string,
+  pathSafety: PathSafetyContext,
   localPath: string,
   fileName: string,
 ): Promise<void> {
-  const realRoot = await realpath(root)
   let candidate = dirname(localPath)
+  const checkedDirs: string[] = []
 
   for (;;) {
+    if (pathSafety.safeAncestorDirs.has(candidate)) {
+      for (const checked of checkedDirs) pathSafety.safeAncestorDirs.add(checked)
+      return
+    }
+    checkedDirs.push(candidate)
     try {
       const realCandidate = await realpath(candidate)
-      const rel = relative(realRoot, realCandidate)
-      if (isPathInsideRootRelative(rel)) return
+      const rel = relative(pathSafety.realRoot, realCandidate)
+      if (isPathInsideRootRelative(rel)) {
+        for (const checked of checkedDirs) pathSafety.safeAncestorDirs.add(checked)
+        return
+      }
       throw new Error(`download path for B2 file "${fileName}" escapes destination directory`)
     } catch (error) {
       if (!isFileNotFound(error)) throw error
@@ -265,7 +314,14 @@ async function isCaseInsensitiveDirectory(dir: string): Promise<boolean> {
   const lowerPath = resolve(dir, marker.toLowerCase())
   const upperPath = resolve(dir, marker.toUpperCase())
 
-  await writeFile(lowerPath, '')
+  try {
+    await writeFile(lowerPath, '')
+  } catch (error) {
+    core.warning(
+      `Could not probe case sensitivity in ${dir}; treating download collision checks as case-sensitive (${error instanceof Error ? error.message : String(error)})`,
+    )
+    return false
+  }
   try {
     try {
       return (await realpath(lowerPath)) === (await realpath(upperPath))
@@ -276,8 +332,10 @@ async function isCaseInsensitiveDirectory(dir: string): Promise<boolean> {
   } finally {
     try {
       await unlink(lowerPath)
-    } catch {
-      // Best-effort cleanup only.
+    } catch (error) {
+      core.warning(
+        `Could not remove B2 action case-sensitivity probe ${lowerPath}: ${error instanceof Error ? error.message : String(error)}`,
+      )
     }
   }
 }

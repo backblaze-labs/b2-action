@@ -1023,28 +1023,50 @@ describe('main dispatcher', () => {
     })
   })
 
-  it('publishes verify=false without failing when the remote SHA-1 is not comparable', async () => {
-    const ctx = await loadMain()
-    const result = {
-      fileName: 'unverified.bin',
-      remoteSize: 8,
+  it.each([
+    {
+      name: 'missing',
+      remoteSha1: null,
+      reason:
+        'remote SHA-1 is unavailable because B2 does not expose a whole-file SHA-1 for multipart-uploaded files; HEAD-only verify cannot validate this object, even with expected-sha1',
+    },
+    {
+      name: 'none',
+      remoteSha1: 'none',
+      reason:
+        'remote SHA-1 is unavailable because B2 reported "none" instead of a verified 40-character whole-file SHA-1; HEAD-only verify cannot validate this object, even with expected-sha1',
+    },
+    {
+      name: 'unverified',
       remoteSha1: 'unverified:0000000000000000000000000000000000000000',
-      localSha1: null,
-      verified: false,
       reason:
         'remote SHA-1 is unavailable because B2 reported "unverified:0000000000000000000000000000000000000000" instead of a verified 40-character whole-file SHA-1; HEAD-only verify cannot validate this object, even with expected-sha1',
+    },
+  ])('fails verify by default when the remote SHA-1 is $name', async ({ remoteSha1, reason }) => {
+    const ctx = await loadMain()
+    const result = {
+      fileName: 'unverifiable.bin',
+      remoteSize: 8,
+      remoteSha1,
+      localSha1: null,
+      verified: false,
+      reason,
     }
     ctx.parseInputs.mockReturnValue(inputs('verify'))
     ctx.commands.verifyCommand.mockResolvedValue(result)
 
     await ctx.run()
 
-    expect(ctx.core.setFailed).not.toHaveBeenCalled()
+    expect(ctx.core.setFailed).toHaveBeenCalledWith(reason)
     expect(outputs(ctx)).toMatchObject({
       verified: 'false',
-      'file-name': 'unverified.bin',
-      'remote-sha1': 'unverified:0000000000000000000000000000000000000000',
+      'file-name': 'unverifiable.bin',
     })
+    if (remoteSha1 === null) {
+      expect(outputs(ctx)).not.toHaveProperty('remote-sha1')
+    } else {
+      expect(outputs(ctx)).toHaveProperty('remote-sha1', remoteSha1)
+    }
   })
 
   it('reports deletion aggregate errors after publishing deletion outputs', async () => {

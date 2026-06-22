@@ -35484,6 +35484,9 @@ function parseSse(raw) {
             throw new Error(`SSE-C key must decode to exactly 32 bytes (256 bits); got ${keyBytes.byteLength}.`);
         }
         const customerKey = keyBytes.toString('base64');
+        if (customerKey !== base64Key) {
+            throw new Error("SSE-C key must be valid canonical base64. Use 'C:<base64-encoded-32-byte-key>'.");
+        }
         const customerKeyMd5 = (0,external_node_crypto_.createHash)('md5').update(keyBytes).digest('base64');
         return sseCustomer(customerKey, customerKeyMd5);
     }
@@ -36012,10 +36015,10 @@ function sseFromInputs(inputs) {
 async function downloadPrefix(bucket, prefix, destinationDir, sseDownload, signal) {
     const destRoot = (0,external_node_path_.resolve)(destinationDir);
     await (0,promises_.mkdir)(destRoot, { recursive: true });
+    const pathSafety = await createPathSafetyContext(destRoot);
     const caseInsensitivePaths = await isCaseInsensitiveDirectory(destRoot);
-    const files = [];
+    const planned = [];
     const localPathOwners = new Map();
-    let total = 0;
     let startFileName;
     for (;;) {
         signal?.throwIfAborted();
@@ -36032,22 +36035,14 @@ async function downloadPrefix(bucket, prefix, destinationDir, sseDownload, signa
             // SDK / B2 contract, so the slice is always safe. Empty `prefix`
             // leaves the name unchanged.
             const relName = f.fileName.slice(prefix.length);
-            const localPath = await resolvePathUnderRoot(destRoot, safeRemotePathSegments(relName, f.fileName), f.fileName);
+            const localPath = await resolvePathUnderRoot(destRoot, safeRemotePathSegments(relName, f.fileName), f.fileName, pathSafety);
             const collisionKey = localPathCollisionKey(localPath, caseInsensitivePaths);
             const existingFileName = localPathOwners.get(collisionKey);
             if (existingFileName !== undefined && existingFileName !== f.fileName) {
                 throw new Error(`download path collision: B2 files "${existingFileName}" and "${f.fileName}" both map to "${localPath}"`);
             }
             localPathOwners.set(collisionKey, f.fileName);
-            startGroup(`download b2://${bucket.name}/${f.fileName} → ${localPath}`);
-            try {
-                const r = await downloadOne(bucket, f.fileName, localPath, sseDownload, signal);
-                files.push(r);
-                total += r.size;
-            }
-            finally {
-                endGroup();
-            }
+            planned.push({ fileName: f.fileName, localPath });
         }
         // SDK contract: `nextFileName` is `string | null` per `ListFileNamesResponse`.
         // The "not null" arm fires for prefixes with >1000 files (covered by
@@ -36055,6 +36050,20 @@ async function downloadPrefix(bucket, prefix, destinationDir, sseDownload, signa
         if (page.nextFileName === null)
             break;
         startFileName = page.nextFileName;
+    }
+    const files = [];
+    let total = 0;
+    for (const plan of planned) {
+        signal?.throwIfAborted();
+        startGroup(`download b2://${bucket.name}/${plan.fileName} → ${plan.localPath}`);
+        try {
+            const r = await downloadOne(bucket, plan.fileName, plan.localPath, sseDownload, signal);
+            files.push(r);
+            total += r.size;
+        }
+        finally {
+            endGroup();
+        }
     }
     return { files, bytesTransferred: total };
 }
@@ -36089,16 +36098,18 @@ async function downloadOne(bucket, fileName, destination, sseDownload, signal) {
             cb(null, chunk);
         },
     });
-    const writeStream = (0,external_node_fs_namespaceObject.createWriteStream)(localPath);
+    const tempPath = `${localPath}.b2-action-download-${(0,external_node_crypto_.randomUUID)()}.tmp`;
+    const writeStream = (0,external_node_fs_namespaceObject.createWriteStream)(tempPath, { flags: 'wx' });
     try {
         await (0,external_node_stream_promises_namespaceObject.pipeline)(external_node_stream_.Readable.fromWeb(result.body), counter, writeStream);
+        await (0,promises_.rename)(tempPath, localPath);
     }
     catch (err) {
-        // Partial download on disk is worse than no file (a subsequent run
-        // could mistake it for a complete copy). Best-effort unlink and
-        // re-throw; the outer dispatcher reports the original error.
+        // Partial download on disk is worse than no file. Write through a
+        // same-directory temporary file and rename only after the body completes,
+        // which also avoids following an existing symlink at the final leaf.
         try {
-            await (0,promises_.unlink)(localPath);
+            await (0,promises_.unlink)(tempPath);
         }
         catch {
             // ignore: best-effort cleanup, the original error matters more
@@ -36120,36 +36131,50 @@ async function resolveLocalPath(fileName, destination) {
     if (destination.endsWith('/') || destination.endsWith('\\')) {
         const destRoot = (0,external_node_path_.resolve)(destination);
         await (0,promises_.mkdir)(destRoot, { recursive: true });
-        return await resolvePathUnderRoot(destRoot, [safeRemotePathTail(fileName)], fileName);
+        const pathSafety = await createPathSafetyContext(destRoot);
+        return await resolvePathUnderRoot(destRoot, [safeRemotePathTail(fileName)], fileName, pathSafety);
     }
     const s = await tryStat(destination);
     if (s?.isDirectory()) {
         const destRoot = (0,external_node_path_.resolve)(destination);
-        return await resolvePathUnderRoot(destRoot, [safeRemotePathTail(fileName)], fileName);
+        const pathSafety = await createPathSafetyContext(destRoot);
+        return await resolvePathUnderRoot(destRoot, [safeRemotePathTail(fileName)], fileName, pathSafety);
     }
     return (0,external_node_path_.resolve)(destination);
 }
-async function resolvePathUnderRoot(root, segments, fileName) {
+async function resolvePathUnderRoot(root, segments, fileName, pathSafety) {
     const localPath = (0,external_node_path_.resolve)(root, ...segments);
     const rel = (0,external_node_path_.relative)(root, localPath);
     if (!isPathInsideRootRelative(rel)) {
         throw new Error(`download path for B2 file "${fileName}" escapes destination directory`);
     }
-    await assertExistingAncestryInsideRoot(root, localPath, fileName);
+    await assertExistingAncestryInsideRoot(pathSafety, localPath, fileName);
     return localPath;
 }
 function isPathInsideRootRelative(rel) {
     return rel === '' || (!(0,external_node_path_.isAbsolute)(rel) && rel !== '..' && !rel.startsWith(`..${external_node_path_.sep}`));
 }
-async function assertExistingAncestryInsideRoot(root, localPath, fileName) {
-    const realRoot = await (0,promises_.realpath)(root);
+async function createPathSafetyContext(root) {
+    return { realRoot: await (0,promises_.realpath)(root), safeAncestorDirs: new Set([root]) };
+}
+async function assertExistingAncestryInsideRoot(pathSafety, localPath, fileName) {
     let candidate = (0,external_node_path_.dirname)(localPath);
+    const checkedDirs = [];
     for (;;) {
+        if (pathSafety.safeAncestorDirs.has(candidate)) {
+            for (const checked of checkedDirs)
+                pathSafety.safeAncestorDirs.add(checked);
+            return;
+        }
+        checkedDirs.push(candidate);
         try {
             const realCandidate = await (0,promises_.realpath)(candidate);
-            const rel = (0,external_node_path_.relative)(realRoot, realCandidate);
-            if (isPathInsideRootRelative(rel))
+            const rel = (0,external_node_path_.relative)(pathSafety.realRoot, realCandidate);
+            if (isPathInsideRootRelative(rel)) {
+                for (const checked of checkedDirs)
+                    pathSafety.safeAncestorDirs.add(checked);
                 return;
+            }
             throw new Error(`download path for B2 file "${fileName}" escapes destination directory`);
         }
         catch (error) {
@@ -36169,7 +36194,13 @@ async function isCaseInsensitiveDirectory(dir) {
     const marker = `.b2-action-case-check-${(0,external_node_crypto_.randomUUID)()}`;
     const lowerPath = (0,external_node_path_.resolve)(dir, marker.toLowerCase());
     const upperPath = (0,external_node_path_.resolve)(dir, marker.toUpperCase());
-    await (0,promises_.writeFile)(lowerPath, '');
+    try {
+        await (0,promises_.writeFile)(lowerPath, '');
+    }
+    catch (error) {
+        warning(`Could not probe case sensitivity in ${dir}; treating download collision checks as case-sensitive (${error instanceof Error ? error.message : String(error)})`);
+        return false;
+    }
     try {
         try {
             return (await (0,promises_.realpath)(lowerPath)) === (await (0,promises_.realpath)(upperPath));
@@ -36184,8 +36215,8 @@ async function isCaseInsensitiveDirectory(dir) {
         try {
             await (0,promises_.unlink)(lowerPath);
         }
-        catch {
-            // Best-effort cleanup only.
+        catch (error) {
+            warning(`Could not remove B2 action case-sensitivity probe ${lowerPath}: ${error instanceof Error ? error.message : String(error)}`);
         }
     }
 }
@@ -41817,7 +41848,7 @@ async function run() {
                         },
                     ],
                 });
-                if (!result.verified && isComparableRemoteSha1(result.remoteSha1)) {
+                if (!result.verified) {
                     throw new Error(result.reason ?? 'verify failed: SHA-1 mismatch');
                 }
                 return;
@@ -41939,9 +41970,6 @@ async function emitDeletionSummary(verb, result, inputs) {
 }
 function setFileCountOutput(count) {
     setOutput('file-count', String(count));
-}
-function isComparableRemoteSha1(remoteSha1) {
-    return remoteSha1 !== null && /^[a-f0-9]{40}$/.test(remoteSha1);
 }
 function registerSecretValue(secretValues, value) {
     const trimmed = value.trim();

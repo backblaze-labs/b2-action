@@ -36,6 +36,16 @@ describe('parseSse', () => {
     expect(() => parseSse(`C:${tooShort}`)).toThrow(/exactly 32 bytes/)
   })
 
+  it('rejects SSE-C base64 with non-canonical padding bits', () => {
+    const key = Buffer.alloc(32, 0xff)
+    const canonical = key.toString('base64')
+    const nonCanonical = `${canonical.slice(0, -2)}9=`
+
+    expect(Buffer.from(nonCanonical, 'base64').equals(key)).toBe(true)
+    expect(nonCanonical).not.toBe(canonical)
+    expect(() => parseSse(`C:${nonCanonical}`)).toThrow(/valid canonical base64/)
+  })
+
   it('rejects an empty SSE-C key value', () => {
     expect(() => parseSse('C:')).toThrow(/empty/)
   })

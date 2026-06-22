@@ -47,6 +47,11 @@ export function parseSse(raw: string | undefined): EncryptionSetting | undefined
       )
     }
     const customerKey = keyBytes.toString('base64')
+    if (customerKey !== base64Key) {
+      throw new Error(
+        "SSE-C key must be valid canonical base64. Use 'C:<base64-encoded-32-byte-key>'.",
+      )
+    }
     const customerKeyMd5 = createHash('md5').update(keyBytes).digest('base64')
     return sseCustomer(customerKey, customerKeyMd5)
   }

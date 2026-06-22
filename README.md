@@ -245,8 +245,8 @@ in object metadata. Multipart-uploaded objects may have no whole-file SHA-1 in
 B2, so `verify` cannot validate them without downloading and hashing the object;
 supplying `expected-sha1` does not help when the remote digest is unavailable.
 When B2 reports a non-comparable remote SHA-1 such as `none` or
-`unverified:<sha1>`, `verify` publishes `verified=false` outputs without failing
-the step; comparable SHA-1 mismatches still fail.
+`unverified:<sha1>`, `verify` publishes `verified=false` outputs before failing
+the step; comparable SHA-1 mismatches also fail.
 
 ### Presign a download URL
 
@@ -356,7 +356,7 @@ If you don't need customer-managed keys, **`sse: B2`** (SSE-B2, B2-managed) is t
 | `keep-mode` | no | `no-delete` | Sync deletion of orphans: `no-delete` \| `delete` \| `keep-days`. |
 | `direction` | no | `auto` | Sync direction: `auto` \| `up` (local→B2) \| `down` (B2→local). |
 | `max-results` | no | `1000` | `list` upper bound. Must be a positive decimal integer. Truncation is reported in the step summary. |
-| `expected-sha1` | no | | `verify` literal 40-character hexadecimal SHA-1 to compare against; malformed values fail the action before comparison. Non-comparable remote SHA-1 headers such as `none` or `unverified:<sha1>` publish `verified=false` outputs without failing the step. |
+| `expected-sha1` | no | | `verify` literal 40-character hexadecimal SHA-1 to compare against; malformed values fail the action before comparison. Non-comparable remote SHA-1 headers such as `none` or `unverified:<sha1>` publish `verified=false` outputs before failing the step. |
 | `retention-mode` | no | | `retention` mode: `compliance` \| `governance` \| `none`. |
 | `retention-until` | no | | `retention` ISO 8601 expiry (required when mode is compliance/governance). |
 | `legal-hold` | no | | `retention` legal-hold value: `on` \| `off`. |
