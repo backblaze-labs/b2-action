@@ -15,6 +15,12 @@ import type { DownloadedFile } from '../src/commands/download.ts'
 import type { ListedFile } from '../src/commands/list.ts'
 import type { UploadedFile } from '../src/commands/upload.ts'
 import type { ActionName, ParsedInputs } from '../src/inputs.ts'
+import {
+  SUMMARY_JSON_MAX_UTF8_BYTES,
+  SUMMARY_JSON_NOTICE_OUTPUT_NAME,
+  SUMMARY_JSON_PREVIEW_MAX_ENTRIES,
+  SUMMARY_JSON_PREVIEW_OUTPUT_NAME,
+} from '../src/outputs.ts'
 import type * as Summary from '../src/summary.ts'
 import {
   makeParsedInputs,
@@ -29,6 +35,9 @@ const DISPATCH_BUCKET = 'dispatch-bucket'
 const TEST_AUTH_TOKEN = 'auth-token-for-main-tests'
 const RETAIN_UNTIL = Date.parse('2030-01-01T00:00:00Z')
 const FIXTURE_UPLOAD_TS = Date.parse('2026-01-01T00:00:00Z')
+// This file mocks src/summary.ts before importing main.ts, so use a named
+// fixture cap instead of importing the real module as a value here.
+const TEST_STEP_SUMMARY_MAX_ROWS = 100
 
 afterEach(() => {
   vi.restoreAllMocks()
@@ -82,6 +91,31 @@ describe('main dispatcher', () => {
     expect(ctx.core.setFailed).not.toHaveBeenCalled()
     expect(outputs(ctx)).toEqual(expectedOutputs)
     expect(ctx.writeStepSummary).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps large mutating results successful and caps upload summary rows', async () => {
+    const ctx = await loadMain()
+    const files = Array.from({ length: TEST_STEP_SUMMARY_MAX_ROWS + 50 }, (_, i) =>
+      uploadedFile({
+        fileName: `uploaded-${i}.txt`,
+        fileId: `id-uploaded-${i}`,
+        size: 1,
+      }),
+    )
+    ctx.parseInputs.mockReturnValue(inputs('upload'))
+    ctx.commands.uploadCommand.mockResolvedValue({ files, bytesTransferred: files.length })
+
+    await ctx.run()
+
+    const out = outputs(ctx)
+    const summary = firstSummary(ctx)
+    expect(ctx.core.setFailed).not.toHaveBeenCalled()
+    expect(out['files-uploaded']).toBe(String(files.length))
+    expect(out['summary-json-truncated']).toBe('false')
+    expect(JSON.parse(out['summary-json'] ?? '[]')).toHaveLength(files.length)
+    expect(summary?.totalRows).toBe(files.length)
+    expect(summary?.rows).toHaveLength(TEST_STEP_SUMMARY_MAX_ROWS)
+    expect(summary?.rows?.at(-1)?.fileName).toBe('uploaded-99.txt')
   })
 
   it('passes endpoint only when the parsed input supplies one', async () => {
@@ -192,12 +226,14 @@ describe('main dispatcher', () => {
     await ctx.run()
 
     expect(ctx.core.setFailed).not.toHaveBeenCalled()
-    expect(outputs(ctx)).toEqual({
-      'files-uploaded': '0',
-      'file-count': '0',
-      'bytes-transferred': '0',
-      'summary-json': '[]',
-    })
+    expect(outputs(ctx)).toEqual(
+      completeSummaryOutput({
+        'files-uploaded': '0',
+        'file-count': '0',
+        'bytes-transferred': '0',
+        'summary-json': '[]',
+      }),
+    )
   })
 
   it('omits SHA-1 outputs when command results have null SHA-1 values', async () => {
@@ -213,14 +249,16 @@ describe('main dispatcher', () => {
 
     await ctx.run()
 
-    expect(outputs(ctx)).toEqual({
-      'file-id': 'id-multipart',
-      'file-name': 'multipart.txt',
-      'files-uploaded': '1',
-      'file-count': '1',
-      'bytes-transferred': '20',
-      'summary-json': JSON.stringify([file]),
-    })
+    expect(outputs(ctx)).toEqual(
+      completeSummaryOutput({
+        'file-id': 'id-multipart',
+        'file-name': 'multipart.txt',
+        'files-uploaded': '1',
+        'file-count': '1',
+        'bytes-transferred': '20',
+        'summary-json': JSON.stringify([file]),
+      }),
+    )
   })
 
   it('omits per-file outputs when download returns no files', async () => {
@@ -231,12 +269,14 @@ describe('main dispatcher', () => {
     await ctx.run()
 
     expect(ctx.core.setFailed).not.toHaveBeenCalled()
-    expect(outputs(ctx)).toEqual({
-      'files-downloaded': '0',
-      'file-count': '0',
-      'bytes-transferred': '0',
-      'summary-json': '[]',
-    })
+    expect(outputs(ctx)).toEqual(
+      completeSummaryOutput({
+        'files-downloaded': '0',
+        'file-count': '0',
+        'bytes-transferred': '0',
+        'summary-json': '[]',
+      }),
+    )
   })
 
   it('omits download SHA-1 outputs when hashes are unavailable', async () => {
@@ -252,13 +292,15 @@ describe('main dispatcher', () => {
 
     await ctx.run()
 
-    expect(outputs(ctx)).toEqual({
-      'file-name': 'multipart.bin',
-      'files-downloaded': '1',
-      'file-count': '1',
-      'bytes-transferred': '20',
-      'summary-json': JSON.stringify([file]),
-    })
+    expect(outputs(ctx)).toEqual(
+      completeSummaryOutput({
+        'file-name': 'multipart.bin',
+        'files-downloaded': '1',
+        'file-count': '1',
+        'bytes-transferred': '20',
+        'summary-json': JSON.stringify([file]),
+      }),
+    )
   })
 
   it('omits verify SHA-1 outputs when hashes are unavailable', async () => {
@@ -276,12 +318,14 @@ describe('main dispatcher', () => {
 
     await ctx.run()
 
-    expect(outputs(ctx)).toEqual({
-      verified: 'true',
-      'file-name': 'multipart.bin',
-      'file-count': '1',
-      'summary-json': JSON.stringify([result]),
-    })
+    expect(outputs(ctx)).toEqual(
+      completeSummaryOutput({
+        verified: 'true',
+        'file-name': 'multipart.bin',
+        'file-count': '1',
+        'summary-json': JSON.stringify([result]),
+      }),
+    )
   })
 
   it('omits head SHA-1 outputs when hashes are unavailable', async () => {
@@ -297,13 +341,15 @@ describe('main dispatcher', () => {
 
     await ctx.run()
 
-    expect(outputs(ctx)).toEqual({
-      'file-id': 'id-head-multipart',
-      'file-name': 'multipart-head.bin',
-      'file-count': '1',
-      'bytes-transferred': '0',
-      'summary-json': JSON.stringify([result]),
-    })
+    expect(outputs(ctx)).toEqual(
+      completeSummaryOutput({
+        'file-id': 'id-head-multipart',
+        'file-name': 'multipart-head.bin',
+        'file-count': '1',
+        'bytes-transferred': '0',
+        'summary-json': JSON.stringify([result]),
+      }),
+    )
   })
 
   it('marks unhide as a no-op when no hide marker was present', async () => {
@@ -314,11 +360,13 @@ describe('main dispatcher', () => {
 
     await ctx.run()
 
-    expect(outputs(ctx)).toEqual({
-      'file-name': 'visible.txt',
-      'file-count': '1',
-      'summary-json': JSON.stringify([result]),
-    })
+    expect(outputs(ctx)).toEqual(
+      completeSummaryOutput({
+        'file-name': 'visible.txt',
+        'file-count': '1',
+        'summary-json': JSON.stringify([result]),
+      }),
+    )
     expect(ctx.writeStepSummary).toHaveBeenCalledWith({
       title: 'Backblaze B2: unhide',
       rows: [{ fileName: 'visible.txt', fileId: undefined, status: 'no-op (not hidden)' }],
@@ -414,7 +462,7 @@ describe('main dispatcher', () => {
     })
   })
 
-  it('renders every delete row without the purge summary cap', async () => {
+  it('caps delete summary rows while counting every file', async () => {
     const ctx = await loadMain()
     const files = Array.from({ length: 150 }, (_, i) => ({
       fileName: `d${i}.txt`,
@@ -430,11 +478,12 @@ describe('main dispatcher', () => {
     expect(summary).toMatchObject({
       title: 'Backblaze B2: delete',
       totals: { files: 150, bytes: 0 },
+      totalRows: 150,
     })
-    expect(summary?.rows).toHaveLength(150)
+    expect(summary?.rows).toHaveLength(TEST_STEP_SUMMARY_MAX_ROWS)
     expect(summary?.rows?.at(-1)).toEqual({
-      fileName: 'd149.txt',
-      fileId: 'id-149',
+      fileName: 'd99.txt',
+      fileId: 'id-99',
       status: 'deleted',
     })
   })
@@ -446,17 +495,19 @@ describe('main dispatcher', () => {
 
     await ctx.run()
 
-    expect(outputs(ctx)).toEqual({
-      'files-listed': '0',
-      'file-count': '0',
-      'summary-json': '[]',
-    })
+    expect(outputs(ctx)).toEqual(
+      completeSummaryOutput({
+        'files-listed': '0',
+        'file-count': '0',
+        'summary-json': '[]',
+      }),
+    )
   })
 
-  it('caps presign summary rows and renders expiry timestamps', async () => {
+  it('caps presign summary rows with the standard row-count disclosure', async () => {
     const ctx = await loadMain()
     const baseExpiry = 1_900_000_000
-    const files = Array.from({ length: 60 }, (_, i) => ({
+    const files = Array.from({ length: TEST_STEP_SUMMARY_MAX_ROWS + 20 }, (_, i) => ({
       fileName: `signed-${i}.txt`,
       url: `https://signed.example/${i}`,
       expiresAt: baseExpiry + i,
@@ -467,16 +518,70 @@ describe('main dispatcher', () => {
     await ctx.run()
 
     const summary = firstSummary(ctx)
-    expect(summary).toMatchObject({ title: 'Backblaze B2: presign (60)' })
-    expect(summary?.rows).toHaveLength(50)
+    expect(summary).toMatchObject({
+      title: `Backblaze B2: presign (${files.length})`,
+      totalRows: files.length,
+    })
+    expect(summary?.rows).toHaveLength(TEST_STEP_SUMMARY_MAX_ROWS)
     expect(summary?.rows?.[0]).toEqual({
       fileName: 'signed-0.txt',
       status: `expires at ${new Date(baseExpiry * 1000).toISOString()}`,
     })
     expect(summary?.rows?.at(-1)).toEqual({
-      fileName: 'signed-49.txt',
-      status: `expires at ${new Date((baseExpiry + 49) * 1000).toISOString()}`,
+      fileName: 'signed-99.txt',
+      status: `expires at ${new Date((baseExpiry + 99) * 1000).toISOString()}`,
     })
+  })
+
+  it('omits presign URLs from complete summary-json output', async () => {
+    const ctx = await loadMain()
+    const url = 'https://signed.example/file?Authorization=secret-token'
+    const files = [{ fileName: 'signed.txt', url, expiresAt: 1_900_000_000 }]
+    ctx.parseInputs.mockReturnValue(inputs('presign'))
+    ctx.commands.presignCommand.mockResolvedValue({ files })
+
+    await ctx.run()
+
+    const out = outputs(ctx)
+    expect(ctx.core.setFailed).not.toHaveBeenCalled()
+    expect(out['presigned-url']).toBe(url)
+    expect(out['summary-json-truncated']).toBe('false')
+    expect(out['summary-json']).not.toContain(url)
+    expect(out['summary-json']).not.toContain('Authorization')
+    expect(JSON.parse(out['summary-json'] ?? '[]')).toEqual([
+      { fileName: 'signed.txt', expiresAt: 1_900_000_000 },
+    ])
+  })
+
+  it('omits presign URLs from truncated summary-json previews', async () => {
+    const ctx = await loadMain()
+    const longName = `${'s'.repeat(Math.floor(SUMMARY_JSON_MAX_UTF8_BYTES / 2))}.txt`
+    const files = Array.from({ length: 3 }, (_, i) => ({
+      fileName: `signed-${i}-${longName}`,
+      url: `https://signed.example/file-${i}?Authorization=secret-token-${i}`,
+      expiresAt: 1_900_000_000 + i,
+    }))
+    const first = files[0]
+    if (first === undefined) throw new Error('expected presign fixture')
+    ctx.parseInputs.mockReturnValue(inputs('presign'))
+    ctx.commands.presignCommand.mockResolvedValue({ files })
+
+    await ctx.run()
+
+    const out = outputs(ctx)
+    expect(ctx.core.setFailed).not.toHaveBeenCalled()
+    expect(out['presigned-url']).toBe(first.url)
+    expect(out['summary-json-truncated']).toBe('true')
+    expect(out['summary-json']).toBe('[]')
+    expect(out[SUMMARY_JSON_NOTICE_OUTPUT_NAME]).not.toContain('https://signed.example')
+    expect(out[SUMMARY_JSON_NOTICE_OUTPUT_NAME]).not.toContain('Authorization')
+    expect(out['summary-json']).not.toContain('https://signed.example')
+    expect(out['summary-json']).not.toContain('Authorization')
+    expect(out[SUMMARY_JSON_PREVIEW_OUTPUT_NAME]).not.toContain('https://signed.example')
+    expect(out[SUMMARY_JSON_PREVIEW_OUTPUT_NAME]).not.toContain('Authorization')
+    expect(JSON.parse(out[SUMMARY_JSON_PREVIEW_OUTPUT_NAME] ?? '[]')).toEqual([
+      { fileName: first.fileName, expiresAt: first.expiresAt },
+    ])
   })
 
   it('warns when list results are truncated and caps summary rows', async () => {
@@ -500,8 +605,9 @@ describe('main dispatcher', () => {
     expect(summary).toMatchObject({
       title: 'Backblaze B2: list (120+)',
       totals: { files: 120, bytes: 120 },
+      totalRows: 120,
     })
-    expect(summary?.rows).toHaveLength(100)
+    expect(summary?.rows).toHaveLength(TEST_STEP_SUMMARY_MAX_ROWS)
     expect(summary?.rows?.[0]).toMatchObject({
       fileName: 'listed-0.txt',
       fileId: 'id-listed-0',
@@ -512,6 +618,59 @@ describe('main dispatcher', () => {
       fileId: 'id-listed-99',
       status: 'application/octet-stream',
     })
+  })
+
+  it('keeps successful results over the preview count non-fatal when summary-json fits', async () => {
+    const ctx = await loadMain()
+    const files = Array.from({ length: SUMMARY_JSON_PREVIEW_MAX_ENTRIES + 5 }, (_, i) =>
+      listedFile({
+        fileName: `manifest-${i}.txt`,
+        fileId: `id-manifest-${i}`,
+        size: 1,
+      }),
+    )
+    ctx.parseInputs.mockReturnValue(inputs('list'))
+    ctx.commands.listCommand.mockResolvedValue({ files, truncated: false })
+
+    await ctx.run()
+
+    const out = outputs(ctx)
+    expect(ctx.core.setFailed).not.toHaveBeenCalled()
+    expect(out['summary-json-truncated']).toBe('false')
+    expect(JSON.parse(out['summary-json'] ?? '[]')).toHaveLength(
+      SUMMARY_JSON_PREVIEW_MAX_ENTRIES + 5,
+    )
+    expect(out).not.toHaveProperty(SUMMARY_JSON_PREVIEW_OUTPUT_NAME)
+    expect(ctx.writeStepSummary).toHaveBeenCalledTimes(1)
+  })
+
+  it('emits a truncation notice without failing successful oversized results', async () => {
+    const ctx = await loadMain()
+    const files = Array.from({ length: 3 }, (_, i) =>
+      listedFile({
+        fileName: `huge-${i}-${'x'.repeat(SUMMARY_JSON_MAX_UTF8_BYTES)}`,
+        fileId: `id-huge-${i}`,
+        size: 1,
+      }),
+    )
+    ctx.parseInputs.mockReturnValue(inputs('list'))
+    ctx.commands.listCommand.mockResolvedValue({ files, truncated: false })
+
+    await ctx.run()
+
+    const out = outputs(ctx)
+    expect(ctx.core.setFailed).not.toHaveBeenCalled()
+    expect(out['summary-json-truncated']).toBe('true')
+    expect(JSON.parse(out['summary-json'] ?? 'null')).toEqual([])
+    expect(JSON.parse(out[SUMMARY_JSON_NOTICE_OUTPUT_NAME] ?? '{}')).toMatchObject({
+      truncated: true,
+      totalCount: 3,
+      previewOutput: SUMMARY_JSON_PREVIEW_OUTPUT_NAME,
+    })
+    expect(out[SUMMARY_JSON_PREVIEW_OUTPUT_NAME]).toBe('[]')
+    expect(ctx.core.warning).toHaveBeenCalledWith(
+      expect.stringContaining('summary-json-notice describes the truncation'),
+    )
   })
 
   it('omits list truncation markers when results fit', async () => {
@@ -775,6 +934,42 @@ describe('main dispatcher', () => {
     )
   })
 
+  it('preserves sync aggregate errors when summary-json is truncated', async () => {
+    const ctx = await loadMain()
+    const events = Array.from({ length: 3 }, (_, i) => ({
+      type: i === 2 ? 'error' : 'skip',
+      path: `remote-${i}.txt`,
+      message: i === 2 ? `denied-${'x'.repeat(SUMMARY_JSON_MAX_UTF8_BYTES)}` : undefined,
+      size: 0,
+    }))
+    ctx.parseInputs.mockReturnValue(inputs('sync'))
+    ctx.commands.summarizeSyncErrors.mockReturnValue('remote-2.txt: denied')
+    ctx.commands.syncCommand.mockResolvedValue({
+      events,
+      direction: 'b2-to-local',
+      uploaded: 0,
+      downloaded: 0,
+      deleted: 0,
+      skipped: 3,
+      errors: 1,
+      bytesTransferred: 0,
+    })
+
+    await ctx.run()
+
+    const out = outputs(ctx)
+    expect(ctx.core.setFailed).toHaveBeenCalledWith(
+      'Sync completed with 1 error(s): remote-2.txt: denied',
+    )
+    expect(out['summary-json-truncated']).toBe('true')
+    expect(JSON.parse(out['summary-json'] ?? 'null')).toEqual([])
+    expect(JSON.parse(out[SUMMARY_JSON_NOTICE_OUTPUT_NAME] ?? '{}')).toMatchObject({
+      truncated: true,
+      totalCount: events.length,
+    })
+    expect(JSON.parse(out[SUMMARY_JSON_PREVIEW_OUTPUT_NAME] ?? '[]')).toHaveLength(2)
+  })
+
   it('reports failed verify results after publishing diagnostic outputs', async () => {
     const ctx = await loadMain()
     const result = {
@@ -837,11 +1032,13 @@ describe('main dispatcher', () => {
     await ctx.run()
 
     expect(ctx.core.setFailed).toHaveBeenCalledWith('Delete completed with 1 error(s)')
-    expect(outputs(ctx)).toEqual({
-      'files-deleted': '1',
-      'file-count': '1',
-      'summary-json': JSON.stringify(files),
-    })
+    expect(outputs(ctx)).toEqual(
+      completeSummaryOutput({
+        'files-deleted': '1',
+        'file-count': '1',
+        'summary-json': JSON.stringify(files),
+      }),
+    )
     expect(ctx.writeStepSummary).not.toHaveBeenCalled()
   })
 
@@ -854,11 +1051,47 @@ describe('main dispatcher', () => {
     await ctx.run()
 
     expect(ctx.core.setFailed).toHaveBeenCalledWith('Purge completed with 2 error(s)')
-    expect(outputs(ctx)).toEqual({
-      'files-deleted': '1',
-      'file-count': '1',
-      'summary-json': JSON.stringify(files),
+    expect(outputs(ctx)).toEqual(
+      completeSummaryOutput({
+        'files-deleted': '1',
+        'file-count': '1',
+        'summary-json': JSON.stringify(files),
+      }),
+    )
+    expect(ctx.writeStepSummary).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['delete', 'Delete', 1],
+    ['purge', 'Purge', 2],
+  ] as const)('preserves %s aggregate errors when summary-json is truncated', async (action, label, errors) => {
+    const ctx = await loadMain()
+    const files = Array.from({ length: 3 }, (_, i) => ({
+      fileName: `stuck-${i}-${'x'.repeat(SUMMARY_JSON_MAX_UTF8_BYTES)}`,
+      fileId: `id-stuck-${i}`,
+      skipped: false,
+    }))
+    ctx.parseInputs.mockReturnValue(
+      inputs(action, action === 'purge' ? { allowBucketPurge: true } : {}),
+    )
+    const command = action === 'delete' ? ctx.commands.deleteCommand : ctx.commands.purgeCommand
+    command.mockResolvedValue({ files, errors })
+
+    await ctx.run()
+
+    const out = outputs(ctx)
+    expect(ctx.core.setFailed).toHaveBeenCalledWith(`${label} completed with ${errors} error(s)`)
+    expect(out).toMatchObject({
+      'files-deleted': '3',
+      'file-count': '3',
+      'summary-json-truncated': 'true',
     })
+    expect(JSON.parse(out['summary-json'] ?? 'null')).toEqual([])
+    expect(JSON.parse(out[SUMMARY_JSON_NOTICE_OUTPUT_NAME] ?? '{}')).toMatchObject({
+      truncated: true,
+      totalCount: files.length,
+    })
+    expect(out[SUMMARY_JSON_PREVIEW_OUTPUT_NAME]).toBe('[]')
     expect(ctx.writeStepSummary).not.toHaveBeenCalled()
   })
 
@@ -878,8 +1111,9 @@ describe('main dispatcher', () => {
     expect(summary).toMatchObject({
       title: 'Backblaze B2: purge',
       totals: { files: 150, bytes: 0 },
+      totalRows: 150,
     })
-    expect(summary?.rows).toHaveLength(100)
+    expect(summary?.rows).toHaveLength(TEST_STEP_SUMMARY_MAX_ROWS)
     expect(summary?.rows?.[0]).toEqual({
       fileName: 'f0.txt',
       fileId: 'id-0',
@@ -940,7 +1174,10 @@ async function loadMain() {
     parseInputs,
   }))
   vi.doMock('../src/client.ts', () => ({ buildClient, getBucket }))
-  vi.doMock('../src/summary.ts', () => ({ writeStepSummary }))
+  vi.doMock('../src/summary.ts', () => ({
+    STEP_SUMMARY_MAX_ROWS: TEST_STEP_SUMMARY_MAX_ROWS,
+    writeStepSummary,
+  }))
   vi.doMock('../src/commands/upload.ts', () => ({ uploadCommand: commands.uploadCommand }))
   vi.doMock('../src/commands/download.ts', () => ({ downloadCommand: commands.downloadCommand }))
   vi.doMock('../src/commands/sync.ts', () => ({
@@ -1003,7 +1240,7 @@ function setupSuccessfulAction(ctx: LoadedMain, action: ActionName): Record<stri
     case 'upload': {
       const file = uploadedFile({ fileName: 'upload.txt', fileId: 'id-upload', size: 10 })
       ctx.commands.uploadCommand.mockResolvedValue({ files: [file], bytesTransferred: 10 })
-      return {
+      return completeSummaryOutput({
         'file-id': 'id-upload',
         'file-name': 'upload.txt',
         'content-sha1': 'sha-upload.txt',
@@ -1011,7 +1248,7 @@ function setupSuccessfulAction(ctx: LoadedMain, action: ActionName): Record<stri
         'file-count': '1',
         'bytes-transferred': '10',
         'summary-json': JSON.stringify([file]),
-      }
+      })
     }
     case 'download': {
       const file = {
@@ -1021,14 +1258,14 @@ function setupSuccessfulAction(ctx: LoadedMain, action: ActionName): Record<stri
         contentSha1: 'sha-download',
       }
       ctx.commands.downloadCommand.mockResolvedValue({ files: [file], bytesTransferred: 11 })
-      return {
+      return completeSummaryOutput({
         'file-name': 'download.txt',
         'content-sha1': 'sha-download',
         'files-downloaded': '1',
         'file-count': '1',
         'bytes-transferred': '11',
         'summary-json': JSON.stringify([file]),
-      }
+      })
     }
     case 'sync': {
       const events = [{ type: 'upload-done', path: 'sync.txt', size: 12 }]
@@ -1042,14 +1279,14 @@ function setupSuccessfulAction(ctx: LoadedMain, action: ActionName): Record<stri
         errors: 0,
         bytesTransferred: 12,
       })
-      return {
+      return completeSummaryOutput({
         'files-uploaded': '1',
         'files-downloaded': '0',
         'files-deleted': '0',
         'file-count': '3',
         'bytes-transferred': '12',
         'summary-json': JSON.stringify(events),
-      }
+      })
     }
     case 'copy': {
       const result = {
@@ -1061,13 +1298,13 @@ function setupSuccessfulAction(ctx: LoadedMain, action: ActionName): Record<stri
         size: 13,
       }
       ctx.commands.copyCommand.mockResolvedValue(result)
-      return {
+      return completeSummaryOutput({
         'file-id': 'id-copy',
         'file-name': 'copied.txt',
         'file-count': '1',
         'bytes-transferred': '13',
         'summary-json': JSON.stringify([result]),
-      }
+      })
     }
     case 'delete': {
       const files = [
@@ -1075,24 +1312,24 @@ function setupSuccessfulAction(ctx: LoadedMain, action: ActionName): Record<stri
         { fileName: 'dry.txt', fileId: 'id-dry', skipped: true },
       ]
       ctx.commands.deleteCommand.mockResolvedValue({ files, errors: 0 })
-      return {
+      return completeSummaryOutput({
         'files-deleted': '1',
         'file-count': '2',
         'summary-json': JSON.stringify(files),
-      }
+      })
     }
     case 'presign': {
       const files = [
         { fileName: 'signed.txt', url: 'https://signed.example/file', expiresAt: 1_900_000_000 },
       ]
       ctx.commands.presignCommand.mockResolvedValue({ files })
-      return {
+      return completeSummaryOutput({
         'presigned-url': 'https://signed.example/file',
         'file-name': 'signed.txt',
         'files-listed': '1',
         'file-count': '1',
-        'summary-json': JSON.stringify(files),
-      }
+        'summary-json': JSON.stringify([{ fileName: 'signed.txt', expiresAt: 1_900_000_000 }]),
+      })
     }
     case 'list': {
       const files = [
@@ -1104,31 +1341,31 @@ function setupSuccessfulAction(ctx: LoadedMain, action: ActionName): Record<stri
         }),
       ]
       ctx.commands.listCommand.mockResolvedValue({ files, truncated: true })
-      return {
+      return completeSummaryOutput({
         'files-listed': '1',
         'file-count': '1',
         'summary-json': JSON.stringify(files),
-      }
+      })
     }
     case 'hide': {
       const result = { fileName: 'hidden.txt', fileId: 'id-hide' }
       ctx.commands.hideCommand.mockResolvedValue(result)
-      return {
+      return completeSummaryOutput({
         'file-id': 'id-hide',
         'file-name': 'hidden.txt',
         'file-count': '1',
         'summary-json': JSON.stringify([result]),
-      }
+      })
     }
     case 'unhide': {
       const result = { fileName: 'visible.txt', removedMarkerFileId: 'id-marker' }
       ctx.commands.unhideCommand.mockResolvedValue(result)
-      return {
+      return completeSummaryOutput({
         'file-name': 'visible.txt',
         'file-id': 'id-marker',
         'file-count': '1',
         'summary-json': JSON.stringify([result]),
-      }
+      })
     }
     case 'verify': {
       const result = {
@@ -1140,14 +1377,14 @@ function setupSuccessfulAction(ctx: LoadedMain, action: ActionName): Record<stri
         reason: undefined,
       }
       ctx.commands.verifyCommand.mockResolvedValue(result)
-      return {
+      return completeSummaryOutput({
         verified: 'true',
         'file-name': 'verified.txt',
         'file-count': '1',
         'remote-sha1': 'remote-sha',
         'local-sha1': 'local-sha',
         'summary-json': JSON.stringify([result]),
-      }
+      })
     }
     case 'retention': {
       const result = {
@@ -1158,12 +1395,12 @@ function setupSuccessfulAction(ctx: LoadedMain, action: ActionName): Record<stri
         appliedLegalHold: 'on',
       }
       ctx.commands.retentionCommand.mockResolvedValue(result)
-      return {
+      return completeSummaryOutput({
         'file-id': 'id-retention',
         'file-name': 'locked.txt',
         'file-count': '1',
         'summary-json': JSON.stringify([result]),
-      }
+      })
     }
     case 'head': {
       const result = listedFile({
@@ -1173,14 +1410,14 @@ function setupSuccessfulAction(ctx: LoadedMain, action: ActionName): Record<stri
         contentSha1: 'sha-head',
       })
       ctx.commands.headCommand.mockResolvedValue(result)
-      return {
+      return completeSummaryOutput({
         'file-id': 'id-head',
         'file-name': 'head.txt',
         'content-sha1': 'sha-head',
         'file-count': '1',
         'bytes-transferred': '0',
         'summary-json': JSON.stringify([result]),
-      }
+      })
     }
     case 'purge': {
       const files = [
@@ -1188,11 +1425,11 @@ function setupSuccessfulAction(ctx: LoadedMain, action: ActionName): Record<stri
         { fileName: 'would.txt', fileId: 'id-would', action: 'skip', skipped: true },
       ]
       ctx.commands.purgeCommand.mockResolvedValue({ files, errors: 0 })
-      return {
+      return completeSummaryOutput({
         'files-deleted': '1',
         'file-count': '2',
         'summary-json': JSON.stringify(files),
-      }
+      })
     }
   }
   const exhaustive: never = action
@@ -1212,6 +1449,10 @@ function outputs(ctx: LoadedMain): Record<string, string> {
   return Object.fromEntries(
     ctx.core.setOutput.mock.calls.map(([key, value]) => [String(key), String(value)]),
   )
+}
+
+function completeSummaryOutput(outputs: Record<string, string>): Record<string, string> {
+  return { ...outputs, 'summary-json-truncated': 'false' }
 }
 
 function firstSummary(ctx: LoadedMain): Parameters<typeof Summary.writeStepSummary>[0] | undefined {

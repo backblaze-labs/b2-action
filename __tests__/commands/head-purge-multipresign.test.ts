@@ -2,10 +2,11 @@ import { rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { headCommand } from '../../src/commands/head.ts'
-import { presignCommand } from '../../src/commands/presign.ts'
+import { type PresignedFile, presignCommand } from '../../src/commands/presign.ts'
 import { purgeCommand } from '../../src/commands/purge.ts'
 import { uploadCommand } from '../../src/commands/upload.ts'
-import { makeFixture, makeInputs, type TestFixture } from '../_helpers.ts'
+import { setSummaryJsonOutput } from '../../src/outputs.ts'
+import { captureStdout, makeFixture, makeInputs, type TestFixture } from '../_helpers.ts'
 
 function inputs(action: Parameters<typeof makeInputs>[0], over: Record<string, unknown> = {}) {
   return makeInputs(action, { bucket: 'gh-action-hpx', ...over })
@@ -111,6 +112,53 @@ describe('presign command (prefix mode)', () => {
     }
   })
 
+  it('masks and omits presigned URLs before emitting a guarded summary preview', async () => {
+    for (let i = 0; i < 105; i++) {
+      const name = `bulk/${String(i).padStart(3, '0')}.bin`
+      const local = join(fx.workDir, name.replace('/', '_'))
+      await writeFile(local, `body-${i}`)
+      await uploadCommand(fx.bucket, inputs('upload', { source: local, destination: name }))
+    }
+
+    let files: Awaited<ReturnType<typeof presignCommand>>['files'] = []
+    const stdout = await withoutGithubOutput(async () =>
+      captureStdout(async () => {
+        const result = await presignCommand(
+          fx.client,
+          fx.bucket,
+          inputs('presign', { source: 'bulk/', maxResults: 105 }),
+        )
+        files = result.files.map((file) => ({
+          ...file,
+          fileName: `${file.fileName}-${'x'.repeat(3000)}`,
+        }))
+        setSummaryJsonOutput(files, { item: presignSummaryItem })
+      }),
+    )
+
+    expect(files).toHaveLength(105)
+    const previewIndex = stdout.indexOf('::set-output name=summary-json-preview::')
+    expect(previewIndex).toBeGreaterThan(-1)
+
+    for (const f of files) {
+      const urlMaskIndex = stdout.indexOf(`::add-mask::${commandEscaped(f.url)}`)
+      expect(urlMaskIndex).toBeGreaterThan(-1)
+      expect(urlMaskIndex).toBeLessThan(previewIndex)
+
+      const token = new URL(f.url).searchParams.get('Authorization')
+      expect(token).toBeTruthy()
+      const tokenMaskIndex = stdout.indexOf(`::add-mask::${token}`)
+      expect(tokenMaskIndex).toBeGreaterThan(-1)
+      expect(tokenMaskIndex).toBeLessThan(previewIndex)
+    }
+
+    const previewOutput = stdout.slice(previewIndex)
+    for (const f of files) {
+      expect(previewOutput).not.toContain(f.url)
+      expect(previewOutput).not.toContain(commandEscaped(f.url))
+    }
+  })
+
   it('still supports single-file mode', async () => {
     const local = join(fx.workDir, 'single.bin')
     await writeFile(local, 'single')
@@ -125,3 +173,27 @@ describe('presign command (prefix mode)', () => {
     expect(result.files[0]?.fileName).toBe('single.bin')
   })
 })
+
+function commandEscaped(value: string): string {
+  return value.replaceAll('%', '%25').replaceAll('\r', '%0D').replaceAll('\n', '%0A')
+}
+
+// This command-level test cannot import main.ts's private dispatcher helper
+// without executing the action entrypoint; main.test covers the shipped helper.
+function presignSummaryItem(file: PresignedFile): Pick<PresignedFile, 'fileName' | 'expiresAt'> {
+  return { fileName: file.fileName, expiresAt: file.expiresAt }
+}
+
+async function withoutGithubOutput<T>(fn: () => Promise<T>): Promise<T> {
+  const originalGithubOutput = process.env.GITHUB_OUTPUT
+  delete process.env.GITHUB_OUTPUT
+  try {
+    return await fn()
+  } finally {
+    if (originalGithubOutput === undefined) {
+      delete process.env.GITHUB_OUTPUT
+    } else {
+      process.env.GITHUB_OUTPUT = originalGithubOutput
+    }
+  }
+}

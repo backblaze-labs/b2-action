@@ -9,7 +9,7 @@ import { downloadCommand } from './commands/download.ts'
 import { headCommand } from './commands/head.ts'
 import { hideCommand } from './commands/hide.ts'
 import { listCommand } from './commands/list.ts'
-import { presignCommand } from './commands/presign.ts'
+import { type PresignedFile, presignCommand } from './commands/presign.ts'
 import { purgeCommand } from './commands/purge.ts'
 import { retentionCommand } from './commands/retention.ts'
 import { summarizeSyncErrors, syncCommand } from './commands/sync.ts'
@@ -18,7 +18,8 @@ import { uploadCommand } from './commands/upload.ts'
 import { verifyCommand } from './commands/verify.ts'
 import { classifyActionError, formatActionDebugError } from './errors.ts'
 import { collectInputSecretsForScrubbing, type ParsedInputs, parseInputs } from './inputs.ts'
-import { writeStepSummary } from './summary.ts'
+import { setSummaryJsonOutput } from './outputs.ts'
+import { STEP_SUMMARY_MAX_ROWS, type SummaryRow, writeStepSummary } from './summary.ts'
 
 /**
  * Action entrypoint. Parses inputs, builds an authorized B2Client, dispatches
@@ -83,12 +84,11 @@ export async function run(): Promise<void> {
         core.setOutput('files-uploaded', String(result.files.length))
         setFileCountOutput(result.files.length)
         core.setOutput('bytes-transferred', String(result.bytesTransferred))
-        core.setOutput('summary-json', JSON.stringify(result.files))
         core.info(`uploaded ${result.files.length} file(s), ${result.bytesTransferred} bytes`)
         await writeStepSummary({
           title: 'Backblaze B2: upload',
           totals: { files: result.files.length, bytes: result.bytesTransferred },
-          rows: result.files.map((f) => ({
+          ...stepSummaryRows(result.files, (f) => ({
             fileName: f.fileName,
             size: f.size,
             fileId: f.fileId,
@@ -96,6 +96,7 @@ export async function run(): Promise<void> {
             status: 'uploaded',
           })),
         })
+        setSummaryJsonOutput(result.files)
         return
       }
       case 'download': {
@@ -108,18 +109,18 @@ export async function run(): Promise<void> {
         core.setOutput('files-downloaded', String(result.files.length))
         setFileCountOutput(result.files.length)
         core.setOutput('bytes-transferred', String(result.bytesTransferred))
-        core.setOutput('summary-json', JSON.stringify(result.files))
         core.info(`downloaded ${result.files.length} file(s), ${result.bytesTransferred} bytes`)
         await writeStepSummary({
           title: 'Backblaze B2: download',
           totals: { files: result.files.length, bytes: result.bytesTransferred },
-          rows: result.files.map((f) => ({
+          ...stepSummaryRows(result.files, (f) => ({
             fileName: f.fileName,
             size: f.size,
             sha1: f.contentSha1,
             status: 'downloaded',
           })),
         })
+        setSummaryJsonOutput(result.files)
         return
       }
       case 'sync': {
@@ -129,7 +130,7 @@ export async function run(): Promise<void> {
         core.setOutput('files-deleted', String(result.deleted))
         setFileCountOutput(result.uploaded + result.downloaded + result.deleted + result.skipped)
         core.setOutput('bytes-transferred', String(result.bytesTransferred))
-        core.setOutput('summary-json', JSON.stringify(result.events))
+        setSummaryJsonOutput(result.events)
         if (result.errors > 0) {
           const sample = summarizeSyncErrors(result.events)
           throw new Error(`Sync completed with ${result.errors} error(s): ${sample}`)
@@ -166,7 +167,6 @@ export async function run(): Promise<void> {
         core.setOutput('file-name', result.destinationFileName)
         setFileCountOutput(1)
         core.setOutput('bytes-transferred', String(result.size))
-        core.setOutput('summary-json', JSON.stringify([result]))
         await writeStepSummary({
           title: 'Backblaze B2: copy',
           rows: [
@@ -178,6 +178,7 @@ export async function run(): Promise<void> {
             },
           ],
         })
+        setSummaryJsonOutput([result])
         return
       }
       case 'delete': {
@@ -194,21 +195,20 @@ export async function run(): Promise<void> {
         }
         core.setOutput('files-listed', String(result.files.length))
         setFileCountOutput(result.files.length)
-        core.setOutput('summary-json', JSON.stringify(result.files))
         await writeStepSummary({
           title: `Backblaze B2: presign (${result.files.length})`,
-          rows: result.files.slice(0, 50).map((f) => ({
+          ...stepSummaryRows(result.files, (f) => ({
             fileName: f.fileName,
             status: `expires at ${new Date(f.expiresAt * 1000).toISOString()}`,
           })),
         })
+        setSummaryJsonOutput(result.files, { item: presignSummaryItem })
         return
       }
       case 'list': {
         const result = await listCommand(bucket, inputs)
         core.setOutput('files-listed', String(result.files.length))
         setFileCountOutput(result.files.length)
-        core.setOutput('summary-json', JSON.stringify(result.files))
         if (result.truncated) {
           core.warning(
             `list result truncated at max-results=${inputs.maxResults}; raise it to see more`,
@@ -220,7 +220,7 @@ export async function run(): Promise<void> {
             files: result.files.length,
             bytes: result.files.reduce((s, f) => s + f.size, 0),
           },
-          rows: result.files.slice(0, 100).map((f) => ({
+          ...stepSummaryRows(result.files, (f) => ({
             fileName: f.fileName,
             size: f.size,
             fileId: f.fileId,
@@ -228,6 +228,7 @@ export async function run(): Promise<void> {
             status: f.contentType,
           })),
         })
+        setSummaryJsonOutput(result.files)
         return
       }
       case 'hide': {
@@ -235,11 +236,11 @@ export async function run(): Promise<void> {
         core.setOutput('file-id', result.fileId)
         core.setOutput('file-name', result.fileName)
         setFileCountOutput(1)
-        core.setOutput('summary-json', JSON.stringify([result]))
         await writeStepSummary({
           title: 'Backblaze B2: hide',
           rows: [{ fileName: result.fileName, fileId: result.fileId, status: 'hidden' }],
         })
+        setSummaryJsonOutput([result])
         return
       }
       case 'unhide': {
@@ -249,7 +250,6 @@ export async function run(): Promise<void> {
           core.setOutput('file-id', result.removedMarkerFileId)
         }
         setFileCountOutput(1)
-        core.setOutput('summary-json', JSON.stringify([result]))
         await writeStepSummary({
           title: 'Backblaze B2: unhide',
           rows: [
@@ -260,6 +260,7 @@ export async function run(): Promise<void> {
             },
           ],
         })
+        setSummaryJsonOutput([result])
         return
       }
       case 'verify': {
@@ -269,7 +270,6 @@ export async function run(): Promise<void> {
         setFileCountOutput(1)
         if (result.remoteSha1 !== null) core.setOutput('remote-sha1', result.remoteSha1)
         if (result.localSha1 !== null) core.setOutput('local-sha1', result.localSha1)
-        core.setOutput('summary-json', JSON.stringify([result]))
         await writeStepSummary({
           title: result.verified ? 'Backblaze B2: verify ✓' : 'Backblaze B2: verify ✗',
           rows: [
@@ -281,6 +281,7 @@ export async function run(): Promise<void> {
             },
           ],
         })
+        setSummaryJsonOutput([result])
         if (!result.verified) {
           throw new Error(result.reason ?? 'verify failed: SHA-1 mismatch')
         }
@@ -291,7 +292,6 @@ export async function run(): Promise<void> {
         core.setOutput('file-id', result.fileId)
         core.setOutput('file-name', result.fileName)
         setFileCountOutput(1)
-        core.setOutput('summary-json', JSON.stringify([result]))
         await writeStepSummary({
           title: 'Backblaze B2: retention',
           rows: [
@@ -302,6 +302,7 @@ export async function run(): Promise<void> {
             },
           ],
         })
+        setSummaryJsonOutput([result])
         return
       }
       case 'head': {
@@ -311,7 +312,6 @@ export async function run(): Promise<void> {
         if (result.contentSha1 !== null) core.setOutput('content-sha1', result.contentSha1)
         setFileCountOutput(1)
         core.setOutput('bytes-transferred', '0')
-        core.setOutput('summary-json', JSON.stringify([result]))
         await writeStepSummary({
           title: 'Backblaze B2: head',
           rows: [
@@ -324,6 +324,7 @@ export async function run(): Promise<void> {
             },
           ],
         })
+        setSummaryJsonOutput([result])
         return
       }
       case 'purge': {
@@ -368,10 +369,8 @@ export function isEntrypoint(metaUrl: string, argv1: string | undefined): boolea
  * Shared output-emission + step-summary for the two deletion verbs.
  * `delete` and `purge` returned-shape and dispatcher-side handling are
  * structurally identical (filter into actually-deleted vs would-delete,
- * set the same outputs, render the same row table); they differ only in
- * the verb label, the per-row status string, and whether to cap the
- * summary at 100 rows (purge wipes everything, including historical
- * versions, so the row count can dwarf delete).
+ * set the same outputs, render the same capped row table); they differ only
+ * in the verb label and the per-row status string.
  */
 async function emitDeletionSummary(
   verb: 'delete' | 'purge',
@@ -385,23 +384,36 @@ async function emitDeletionSummary(
   const wouldDelete = result.files.filter((f) => f.skipped).length
   core.setOutput('files-deleted', String(actuallyDeleted))
   setFileCountOutput(result.files.length)
-  core.setOutput('summary-json', JSON.stringify(result.files))
+  setSummaryJsonOutput(result.files)
   if (result.errors > 0) {
     const labels = { delete: 'Delete', purge: 'Purge' } as const
     throw new Error(`${labels[verb]} completed with ${result.errors} error(s)`)
   }
   const past = verb === 'delete' ? 'deleted' : 'purged'
   const future = verb === 'delete' ? 'would delete' : 'would purge'
-  const rowsSource = verb === 'purge' ? result.files.slice(0, 100) : result.files
   await writeStepSummary({
     title: inputs.dryRun ? `Backblaze B2: ${verb} (dry-run)` : `Backblaze B2: ${verb}`,
     totals: { files: actuallyDeleted + wouldDelete, bytes: 0 },
-    rows: rowsSource.map((f) => ({
+    ...stepSummaryRows(result.files, (f) => ({
       fileName: f.fileName,
       fileId: f.fileId,
       status: f.skipped ? future : past,
     })),
   })
+}
+
+function stepSummaryRows<T>(
+  items: readonly T[],
+  row: (item: T) => SummaryRow,
+): { rows: SummaryRow[]; totalRows?: number } {
+  // Pre-slice here to avoid mapping very large result sets; writeStepSummary
+  // keeps its own defensive cap for direct callers.
+  const rows = items.slice(0, STEP_SUMMARY_MAX_ROWS).map(row)
+  return rows.length < items.length ? { rows, totalRows: items.length } : { rows }
+}
+
+function presignSummaryItem(file: PresignedFile): Pick<PresignedFile, 'fileName' | 'expiresAt'> {
+  return { fileName: file.fileName, expiresAt: file.expiresAt }
 }
 
 function setFileCountOutput(count: number): void {

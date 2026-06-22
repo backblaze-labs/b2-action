@@ -2,19 +2,9 @@ import { appendFile } from 'node:fs/promises'
 import * as core from '@actions/core'
 import { formatBytes } from './format.ts'
 
-/**
- * Append a markdown summary block to `$GITHUB_STEP_SUMMARY`.
- *
- * The summary file is the standard way for an Action to publish output that
- * shows up in the workflow run's summary page (rather than just the live log).
- * We use it to print a per-file table after upload / download / sync / delete
- * so users can see at-a-glance what happened without scrolling through the
- * `::group::` log lines.
- *
- * If the env var is unset (e.g. running the bundle locally for a smoke test),
- * we no-op. We deliberately do not throw: a missing summary file is never
- * a reason to fail an otherwise-successful step.
- */
+/** Maximum per-file rows rendered in a GitHub Actions step summary table. */
+export const STEP_SUMMARY_MAX_ROWS = 100
+
 /**
  * One row in the `$GITHUB_STEP_SUMMARY` table emitted by a verb. Only
  * `fileName` is required; the other cells render empty when omitted.
@@ -39,15 +29,21 @@ export interface SummaryRow {
  * @param opts.title - Heading rendered as `## {title}`.
  * @param opts.rows - One row per file. Empty rows render an empty table body.
  * @param opts.totals - Optional aggregate line printed above the table.
+ * @param opts.totalRows - Optional source row count when callers pre-slice rows.
  */
 export async function writeStepSummary(opts: {
   title: string
-  rows: SummaryRow[]
+  rows: readonly SummaryRow[]
   totals?: { files: number; bytes: number } | undefined
+  totalRows?: number | undefined
 }): Promise<void> {
   const path = process.env.GITHUB_STEP_SUMMARY
   if (path === undefined || path === '') return
 
+  // Keep the writer defensive for direct callers even though dispatcher
+  // call sites pre-slice rows to avoid mapping very large result sets.
+  const rows = opts.rows.slice(0, STEP_SUMMARY_MAX_ROWS)
+  const totalRows = opts.totalRows ?? opts.rows.length
   const lines: string[] = []
   lines.push(`## ${opts.title}`)
   lines.push('')
@@ -57,15 +53,20 @@ export async function writeStepSummary(opts: {
     lines.push('')
   }
 
-  if (opts.rows.length > 0) {
+  if (totalRows > rows.length) {
+    lines.push(`Showing first ${rows.length} of ${totalRows} rows.`)
+    lines.push('')
+  }
+
+  if (rows.length > 0) {
     lines.push('| File | Size | File ID | SHA-1 | Status |')
     lines.push('|------|------|---------|-------|--------|')
-    for (const r of opts.rows) {
+    for (const r of rows) {
       lines.push(
         `| ${inlineCodeCell(r.fileName)} | ${r.size !== undefined ? formatBytes(r.size) : ''} | ${
           r.fileId !== undefined ? inlineCodeCell(r.fileId) : ''
         } | ${r.sha1 !== undefined && r.sha1 !== null ? `\`${r.sha1.slice(0, 12)}…\`` : ''} | ${
-          r.status ?? ''
+          r.status !== undefined ? inlineCodeCell(r.status) : ''
         } |`,
       )
     }
