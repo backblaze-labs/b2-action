@@ -2,7 +2,7 @@ import { rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { headCommand } from '../../src/commands/head.ts'
-import { presignCommand } from '../../src/commands/presign.ts'
+import { type PresignedFile, presignCommand } from '../../src/commands/presign.ts'
 import { purgeCommand } from '../../src/commands/purge.ts'
 import { uploadCommand } from '../../src/commands/upload.ts'
 import { setSummaryJsonOutput } from '../../src/outputs.ts'
@@ -128,8 +128,11 @@ describe('presign command (prefix mode)', () => {
           fx.bucket,
           inputs('presign', { source: 'bulk/', maxResults: 105 }),
         )
-        files = result.files.map((file) => ({ ...file, padding: 'x'.repeat(3000) }))
-        setSummaryJsonOutput(files, { previewItem: omitUrlField })
+        files = result.files.map((file) => ({
+          ...file,
+          fileName: `${file.fileName}-${'x'.repeat(3000)}`,
+        }))
+        setSummaryJsonOutput(files, { item: presignSummaryItem })
       }),
     )
 
@@ -175,11 +178,8 @@ function commandEscaped(value: string): string {
   return value.replaceAll('%', '%25').replaceAll('\r', '%0D').replaceAll('\n', '%0A')
 }
 
-function omitUrlField(item: unknown): unknown {
-  if (typeof item !== 'object' || item === null || Array.isArray(item)) return item
-  const clone: Record<string, unknown> = { ...(item as Record<string, unknown>) }
-  delete clone.url
-  return clone
+function presignSummaryItem(file: PresignedFile): Pick<PresignedFile, 'fileName' | 'expiresAt'> {
+  return { fileName: file.fileName, expiresAt: file.expiresAt }
 }
 
 async function withoutGithubOutput<T>(fn: () => Promise<T>): Promise<T> {

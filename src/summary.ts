@@ -53,6 +53,8 @@ export async function writeStepSummary(opts: {
   const path = process.env.GITHUB_STEP_SUMMARY
   if (path === undefined || path === '') return
 
+  // Keep the writer defensive for direct callers even though dispatcher
+  // call sites pre-slice rows to avoid mapping very large result sets.
   const rows = opts.rows.slice(0, STEP_SUMMARY_MAX_ROWS)
   const totalRows = opts.totalRows ?? opts.rows.length
   const lines: string[] = []

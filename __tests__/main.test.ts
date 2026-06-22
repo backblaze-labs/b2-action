@@ -15,7 +15,11 @@ import type { DownloadedFile } from '../src/commands/download.ts'
 import type { ListedFile } from '../src/commands/list.ts'
 import type { UploadedFile } from '../src/commands/upload.ts'
 import type { ActionName, ParsedInputs } from '../src/inputs.ts'
-import { SUMMARY_JSON_MAX_UTF8_BYTES, SUMMARY_JSON_PREVIEW_MAX_ENTRIES } from '../src/outputs.ts'
+import {
+  SUMMARY_JSON_MAX_UTF8_BYTES,
+  SUMMARY_JSON_PREVIEW_MAX_ENTRIES,
+  SUMMARY_JSON_PREVIEW_OUTPUT_NAME,
+} from '../src/outputs.ts'
 import type * as Summary from '../src/summary.ts'
 import {
   makeParsedInputs,
@@ -30,6 +34,7 @@ const DISPATCH_BUCKET = 'dispatch-bucket'
 const TEST_AUTH_TOKEN = 'auth-token-for-main-tests'
 const RETAIN_UNTIL = Date.parse('2030-01-01T00:00:00Z')
 const FIXTURE_UPLOAD_TS = Date.parse('2026-01-01T00:00:00Z')
+const TEST_STEP_SUMMARY_MAX_ROWS = 100
 
 afterEach(() => {
   vi.restoreAllMocks()
@@ -87,7 +92,7 @@ describe('main dispatcher', () => {
 
   it('keeps large mutating results successful and caps upload summary rows', async () => {
     const ctx = await loadMain()
-    const files = Array.from({ length: SUMMARY_JSON_PREVIEW_MAX_ENTRIES + 50 }, (_, i) =>
+    const files = Array.from({ length: TEST_STEP_SUMMARY_MAX_ROWS + 50 }, (_, i) =>
       uploadedFile({
         fileName: `uploaded-${i}.txt`,
         fileId: `id-uploaded-${i}`,
@@ -106,7 +111,7 @@ describe('main dispatcher', () => {
     expect(out['summary-json-truncated']).toBe('false')
     expect(JSON.parse(out['summary-json'] ?? '[]')).toHaveLength(files.length)
     expect(summary?.totalRows).toBe(files.length)
-    expect(summary?.rows).toHaveLength(SUMMARY_JSON_PREVIEW_MAX_ENTRIES)
+    expect(summary?.rows).toHaveLength(TEST_STEP_SUMMARY_MAX_ROWS)
     expect(summary?.rows?.at(-1)?.fileName).toBe('uploaded-99.txt')
   })
 
@@ -472,7 +477,7 @@ describe('main dispatcher', () => {
       totals: { files: 150, bytes: 0 },
       totalRows: 150,
     })
-    expect(summary?.rows).toHaveLength(SUMMARY_JSON_PREVIEW_MAX_ENTRIES)
+    expect(summary?.rows).toHaveLength(TEST_STEP_SUMMARY_MAX_ROWS)
     expect(summary?.rows?.at(-1)).toEqual({
       fileName: 'd99.txt',
       fileId: 'id-99',
@@ -496,10 +501,10 @@ describe('main dispatcher', () => {
     )
   })
 
-  it('caps presign summary rows and renders expiry timestamps', async () => {
+  it('caps presign summary rows with the standard row-count disclosure', async () => {
     const ctx = await loadMain()
     const baseExpiry = 1_900_000_000
-    const files = Array.from({ length: 60 }, (_, i) => ({
+    const files = Array.from({ length: TEST_STEP_SUMMARY_MAX_ROWS + 20 }, (_, i) => ({
       fileName: `signed-${i}.txt`,
       url: `https://signed.example/${i}`,
       expiresAt: baseExpiry + i,
@@ -510,21 +515,24 @@ describe('main dispatcher', () => {
     await ctx.run()
 
     const summary = firstSummary(ctx)
-    expect(summary).toMatchObject({ title: 'Backblaze B2: presign (60)' })
-    expect(summary?.rows).toHaveLength(50)
+    expect(summary).toMatchObject({
+      title: `Backblaze B2: presign (${files.length})`,
+      totalRows: files.length,
+    })
+    expect(summary?.rows).toHaveLength(TEST_STEP_SUMMARY_MAX_ROWS)
     expect(summary?.rows?.[0]).toEqual({
       fileName: 'signed-0.txt',
       status: `expires at ${new Date(baseExpiry * 1000).toISOString()}`,
     })
     expect(summary?.rows?.at(-1)).toEqual({
-      fileName: 'signed-49.txt',
-      status: `expires at ${new Date((baseExpiry + 49) * 1000).toISOString()}`,
+      fileName: 'signed-99.txt',
+      status: `expires at ${new Date((baseExpiry + 99) * 1000).toISOString()}`,
     })
   })
 
-  it('omits presign URLs from truncated summary previews', async () => {
+  it('omits presign URLs from complete summary-json output', async () => {
     const ctx = await loadMain()
-    const url = `https://signed.example/${'s'.repeat(SUMMARY_JSON_MAX_UTF8_BYTES)}`
+    const url = 'https://signed.example/file?Authorization=secret-token'
     const files = [{ fileName: 'signed.txt', url, expiresAt: 1_900_000_000 }]
     ctx.parseInputs.mockReturnValue(inputs('presign'))
     ctx.commands.presignCommand.mockResolvedValue({ files })
@@ -534,10 +542,39 @@ describe('main dispatcher', () => {
     const out = outputs(ctx)
     expect(ctx.core.setFailed).not.toHaveBeenCalled()
     expect(out['presigned-url']).toBe(url)
-    expect(out['summary-json-truncated']).toBe('true')
-    expect(out['summary-json-preview']).not.toContain(url)
-    expect(JSON.parse(out['summary-json-preview'] ?? '[]')).toEqual([
+    expect(out['summary-json-truncated']).toBe('false')
+    expect(out['summary-json']).not.toContain(url)
+    expect(out['summary-json']).not.toContain('Authorization')
+    expect(JSON.parse(out['summary-json'] ?? '[]')).toEqual([
       { fileName: 'signed.txt', expiresAt: 1_900_000_000 },
+    ])
+  })
+
+  it('omits presign URLs from truncated summary-json previews', async () => {
+    const ctx = await loadMain()
+    const longName = `${'s'.repeat(Math.floor(SUMMARY_JSON_MAX_UTF8_BYTES / 2))}.txt`
+    const files = Array.from({ length: 3 }, (_, i) => ({
+      fileName: `signed-${i}-${longName}`,
+      url: `https://signed.example/file-${i}?Authorization=secret-token-${i}`,
+      expiresAt: 1_900_000_000 + i,
+    }))
+    const first = files[0]
+    if (first === undefined) throw new Error('expected presign fixture')
+    ctx.parseInputs.mockReturnValue(inputs('presign'))
+    ctx.commands.presignCommand.mockResolvedValue({ files })
+
+    await ctx.run()
+
+    const out = outputs(ctx)
+    expect(ctx.core.setFailed).not.toHaveBeenCalled()
+    expect(out['presigned-url']).toBe(first.url)
+    expect(out['summary-json-truncated']).toBe('true')
+    expect(out['summary-json']).not.toContain('https://signed.example')
+    expect(out['summary-json']).not.toContain('Authorization')
+    expect(out[SUMMARY_JSON_PREVIEW_OUTPUT_NAME]).not.toContain('https://signed.example')
+    expect(out[SUMMARY_JSON_PREVIEW_OUTPUT_NAME]).not.toContain('Authorization')
+    expect(JSON.parse(out[SUMMARY_JSON_PREVIEW_OUTPUT_NAME] ?? '[]')).toEqual([
+      { fileName: first.fileName, expiresAt: first.expiresAt },
     ])
   })
 
@@ -564,7 +601,7 @@ describe('main dispatcher', () => {
       totals: { files: 120, bytes: 120 },
       totalRows: 120,
     })
-    expect(summary?.rows).toHaveLength(100)
+    expect(summary?.rows).toHaveLength(TEST_STEP_SUMMARY_MAX_ROWS)
     expect(summary?.rows?.[0]).toMatchObject({
       fileName: 'listed-0.txt',
       fileId: 'id-listed-0',
@@ -597,7 +634,7 @@ describe('main dispatcher', () => {
     expect(JSON.parse(out['summary-json'] ?? '[]')).toHaveLength(
       SUMMARY_JSON_PREVIEW_MAX_ENTRIES + 5,
     )
-    expect(out).not.toHaveProperty('summary-json-preview')
+    expect(out).not.toHaveProperty(SUMMARY_JSON_PREVIEW_OUTPUT_NAME)
     expect(ctx.writeStepSummary).toHaveBeenCalledTimes(1)
   })
 
@@ -622,9 +659,9 @@ describe('main dispatcher', () => {
     expect(JSON.parse(out['summary-json'] ?? '{}')).toMatchObject({
       truncated: true,
       totalCount: 3,
-      previewOutput: 'summary-json-preview',
+      previewOutput: SUMMARY_JSON_PREVIEW_OUTPUT_NAME,
     })
-    expect(out['summary-json-preview']).toBe('[]')
+    expect(out[SUMMARY_JSON_PREVIEW_OUTPUT_NAME]).toBe('[]')
     expect(ctx.core.warning).toHaveBeenCalledWith(
       expect.stringContaining('summary-json contains a truncation notice'),
     )
@@ -920,7 +957,7 @@ describe('main dispatcher', () => {
     )
     expect(out['summary-json-truncated']).toBe('true')
     expect(Array.isArray(JSON.parse(out['summary-json'] ?? '[]'))).toBe(false)
-    expect(JSON.parse(out['summary-json-preview'] ?? '[]')).toHaveLength(2)
+    expect(JSON.parse(out[SUMMARY_JSON_PREVIEW_OUTPUT_NAME] ?? '[]')).toHaveLength(2)
   })
 
   it('reports failed verify results after publishing diagnostic outputs', async () => {
@@ -1040,7 +1077,7 @@ describe('main dispatcher', () => {
       'summary-json-truncated': 'true',
     })
     expect(Array.isArray(JSON.parse(out['summary-json'] ?? '[]'))).toBe(false)
-    expect(out['summary-json-preview']).toBe('[]')
+    expect(out[SUMMARY_JSON_PREVIEW_OUTPUT_NAME]).toBe('[]')
     expect(ctx.writeStepSummary).not.toHaveBeenCalled()
   })
 
@@ -1062,7 +1099,7 @@ describe('main dispatcher', () => {
       totals: { files: 150, bytes: 0 },
       totalRows: 150,
     })
-    expect(summary?.rows).toHaveLength(100)
+    expect(summary?.rows).toHaveLength(TEST_STEP_SUMMARY_MAX_ROWS)
     expect(summary?.rows?.[0]).toEqual({
       fileName: 'f0.txt',
       fileId: 'id-0',
@@ -1124,7 +1161,7 @@ async function loadMain() {
   }))
   vi.doMock('../src/client.ts', () => ({ buildClient, getBucket }))
   vi.doMock('../src/summary.ts', () => ({
-    STEP_SUMMARY_MAX_ROWS: SUMMARY_JSON_PREVIEW_MAX_ENTRIES,
+    STEP_SUMMARY_MAX_ROWS: TEST_STEP_SUMMARY_MAX_ROWS,
     writeStepSummary,
   }))
   vi.doMock('../src/commands/upload.ts', () => ({ uploadCommand: commands.uploadCommand }))
@@ -1277,7 +1314,7 @@ function setupSuccessfulAction(ctx: LoadedMain, action: ActionName): Record<stri
         'file-name': 'signed.txt',
         'files-listed': '1',
         'file-count': '1',
-        'summary-json': JSON.stringify(files),
+        'summary-json': JSON.stringify([{ fileName: 'signed.txt', expiresAt: 1_900_000_000 }]),
       })
     }
     case 'list': {

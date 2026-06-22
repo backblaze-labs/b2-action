@@ -41324,6 +41324,9 @@ function addUriEncodedSecretVariant(variants, secret) {
 
 const SUMMARY_JSON_PREVIEW_MAX_ENTRIES = 100;
 const SUMMARY_JSON_MAX_UTF8_BYTES = 256 * 1024;
+const SUMMARY_JSON_OUTPUT_NAME = 'summary-json';
+const SUMMARY_JSON_TRUNCATED_OUTPUT_NAME = 'summary-json-truncated';
+const SUMMARY_JSON_PREVIEW_OUTPUT_NAME = 'summary-json-preview';
 /**
  * Serialize per-file command details into the bounded `summary-json` output.
  *
@@ -41340,21 +41343,18 @@ const SUMMARY_JSON_MAX_UTF8_BYTES = 256 * 1024;
  * outputs (`file-count`, `files-listed`, etc.) remain the authoritative totals.
  */
 function buildSummaryJsonPayload(items, options = {}) {
-    try {
-        const fullJson = JSON.stringify(items);
-        if (utf8ByteLength(fullJson) <= SUMMARY_JSON_MAX_UTF8_BYTES) {
-            return {
-                json: fullJson,
-                totalCount: items.length,
-                emittedCount: items.length,
-                truncated: false,
-            };
-        }
+    const serialized = serializeJsonArrayPrefix(items, options, items.length);
+    if (!serialized.byteLimitExceeded && !serialized.serializationFailed) {
+        return {
+            json: serialized.json,
+            totalCount: items.length,
+            emittedCount: items.length,
+            truncated: false,
+        };
     }
-    catch {
-        return buildTruncatedSummaryJsonPayload(items, options, 'summary-json could not be serialized within the supported output contract');
-    }
-    return buildTruncatedSummaryJsonPayload(items, options, 'summary-json exceeded the supported UTF-8 output size cap');
+    return buildTruncatedSummaryJsonPayload(items, options, serialized.serializationFailed
+        ? 'summary-json could not be serialized within the supported output contract'
+        : 'summary-json exceeded the supported UTF-8 output size cap');
 }
 function buildTruncatedSummaryJsonPayload(items, options, reason) {
     const preview = buildSummaryJsonPreview(items, options);
@@ -41364,7 +41364,7 @@ function buildTruncatedSummaryJsonPayload(items, options, reason) {
             reason,
             totalCount: items.length,
             previewCount: preview.emittedCount,
-            previewOutput: 'summary-json-preview',
+            previewOutput: SUMMARY_JSON_PREVIEW_OUTPUT_NAME,
         }),
         previewJson: preview.json,
         totalCount: items.length,
@@ -41373,50 +41373,72 @@ function buildTruncatedSummaryJsonPayload(items, options, reason) {
     };
 }
 function buildSummaryJsonPreview(items, options) {
-    const cappedCount = Math.min(items.length, SUMMARY_JSON_PREVIEW_MAX_ENTRIES);
-    let low = 0;
-    let high = cappedCount;
-    let emittedCount = 0;
-    let json = '[]';
-    // Serialized JSON array length grows monotonically as prefix elements are
-    // appended, so binary search the largest diagnostic prefix that fits.
-    while (low <= high) {
-        const mid = Math.floor((low + high) / 2);
-        let candidate;
-        try {
-            candidate = JSON.stringify(previewItems(items, mid, options.previewItem));
-        }
-        catch {
-            high = mid - 1;
-            continue;
-        }
-        if (utf8ByteLength(candidate) <= SUMMARY_JSON_MAX_UTF8_BYTES) {
-            emittedCount = mid;
-            json = candidate;
-            low = mid + 1;
-        }
-        else {
-            high = mid - 1;
-        }
-    }
-    return { json, emittedCount };
+    const preview = serializeJsonArrayPrefix(items, options, SUMMARY_JSON_PREVIEW_MAX_ENTRIES);
+    return { json: preview.json, emittedCount: preview.emittedCount };
 }
 function setSummaryJsonOutput(items, options = {}) {
     const payload = buildSummaryJsonPayload(items, options);
-    setOutput('summary-json-truncated', String(payload.truncated));
-    setOutput('summary-json', payload.json);
+    setOutput(SUMMARY_JSON_TRUNCATED_OUTPUT_NAME, String(payload.truncated));
+    setOutput(SUMMARY_JSON_OUTPUT_NAME, payload.json);
     if (!payload.truncated) {
         return;
     }
-    setOutput('summary-json-preview', payload.previewJson);
+    setOutput(SUMMARY_JSON_PREVIEW_OUTPUT_NAME, payload.previewJson);
     warning(`summary-json exceeds supported output limits; preview contains ` +
         `${payload.emittedCount} of ${payload.totalCount} item(s). ` +
         `summary-json contains a truncation notice instead of a partial manifest. ` +
         `limit is ${formatKiB(SUMMARY_JSON_MAX_UTF8_BYTES)} of UTF-8 JSON text`);
 }
-function previewItems(items, count, previewItem) {
-    const slice = items.slice(0, count);
-    return previewItem === undefined ? slice : slice.map(previewItem);
+function serializeJsonArrayPrefix(items, options, maxEntries) {
+    const parts = ['['];
+    let bytes = 2;
+    let emittedCount = 0;
+    const count = Math.min(items.length, maxEntries);
+    for (let index = 0; index < count; index++) {
+        let itemJson;
+        try {
+            itemJson = stringifyArrayItem(projectItem(items[index], options));
+        }
+        catch {
+            parts.push(']');
+            return {
+                json: parts.join(''),
+                emittedCount,
+                byteLimitExceeded: false,
+                serializationFailed: true,
+            };
+        }
+        const separator = emittedCount === 0 ? '' : ',';
+        const additionalBytes = utf8ByteLength(separator) + utf8ByteLength(itemJson);
+        if (bytes + additionalBytes > SUMMARY_JSON_MAX_UTF8_BYTES) {
+            parts.push(']');
+            return {
+                json: parts.join(''),
+                emittedCount,
+                byteLimitExceeded: true,
+                serializationFailed: false,
+            };
+        }
+        if (separator !== '')
+            parts.push(separator);
+        parts.push(itemJson);
+        bytes += additionalBytes;
+        emittedCount++;
+    }
+    parts.push(']');
+    return {
+        json: parts.join(''),
+        emittedCount,
+        byteLimitExceeded: false,
+        serializationFailed: false,
+    };
+}
+function projectItem(item, options) {
+    return options.item === undefined ? item : options.item(item);
+}
+function stringifyArrayItem(item) {
+    const json = JSON.stringify(item);
+    return json === undefined ? 'null' : json;
 }
 function utf8ByteLength(value) {
     return external_node_buffer_.Buffer.byteLength(value, 'utf8');
@@ -41444,6 +41466,8 @@ async function writeStepSummary(opts) {
     const path = process.env.GITHUB_STEP_SUMMARY;
     if (path === undefined || path === '')
         return;
+    // Keep the writer defensive for direct callers even though dispatcher
+    // call sites pre-slice rows to avoid mapping very large result sets.
     const rows = opts.rows.slice(0, STEP_SUMMARY_MAX_ROWS);
     const totalRows = opts.totalRows ?? opts.rows.length;
     const lines = [];
@@ -41572,8 +41596,7 @@ async function run() {
                 await writeStepSummary({
                     title: 'Backblaze B2: upload',
                     totals: { files: result.files.length, bytes: result.bytesTransferred },
-                    ...stepSummaryTotalRows(result.files),
-                    rows: stepSummaryItems(result.files).map((f) => ({
+                    ...stepSummaryRows(result.files, (f) => ({
                         fileName: f.fileName,
                         size: f.size,
                         fileId: f.fileId,
@@ -41599,8 +41622,7 @@ async function run() {
                 await writeStepSummary({
                     title: 'Backblaze B2: download',
                     totals: { files: result.files.length, bytes: result.bytesTransferred },
-                    ...stepSummaryTotalRows(result.files),
-                    rows: stepSummaryItems(result.files).map((f) => ({
+                    ...stepSummaryRows(result.files, (f) => ({
                         fileName: f.fileName,
                         size: f.size,
                         sha1: f.contentSha1,
@@ -41617,8 +41639,8 @@ async function run() {
                 setOutput('files-deleted', String(result.deleted));
                 setFileCountOutput(result.uploaded + result.downloaded + result.deleted + result.skipped);
                 setOutput('bytes-transferred', String(result.bytesTransferred));
+                setSummaryJsonOutput(result.events);
                 if (result.errors > 0) {
-                    setSummaryJsonOutput(result.events);
                     const sample = summarizeSyncErrors(result.events);
                     throw new Error(`Sync completed with ${result.errors} error(s): ${sample}`);
                 }
@@ -41646,7 +41668,6 @@ async function run() {
                         { fileName: '(unchanged)', status: String(result.skipped) },
                     ],
                 });
-                setSummaryJsonOutput(result.events);
                 return;
             }
             case 'copy': {
@@ -41685,12 +41706,12 @@ async function run() {
                 setFileCountOutput(result.files.length);
                 await writeStepSummary({
                     title: `Backblaze B2: presign (${result.files.length})`,
-                    rows: result.files.slice(0, 50).map((f) => ({
+                    ...stepSummaryRows(result.files, (f) => ({
                         fileName: f.fileName,
                         status: `expires at ${new Date(f.expiresAt * 1000).toISOString()}`,
                     })),
                 });
-                setSummaryJsonOutput(result.files, { previewItem: omitUrlField });
+                setSummaryJsonOutput(result.files, { item: presignSummaryItem });
                 return;
             }
             case 'list': {
@@ -41706,8 +41727,7 @@ async function run() {
                         files: result.files.length,
                         bytes: result.files.reduce((s, f) => s + f.size, 0),
                     },
-                    ...stepSummaryTotalRows(result.files),
-                    rows: stepSummaryItems(result.files).map((f) => ({
+                    ...stepSummaryRows(result.files, (f) => ({
                         fileName: f.fileName,
                         size: f.size,
                         fileId: f.fileId,
@@ -41873,38 +41893,29 @@ async function emitDeletionSummary(verb, result, inputs) {
     const wouldDelete = result.files.filter((f) => f.skipped).length;
     setOutput('files-deleted', String(actuallyDeleted));
     setFileCountOutput(result.files.length);
+    setSummaryJsonOutput(result.files);
     if (result.errors > 0) {
-        setSummaryJsonOutput(result.files);
         const labels = { delete: 'Delete', purge: 'Purge' };
         throw new Error(`${labels[verb]} completed with ${result.errors} error(s)`);
     }
     const past = verb === 'delete' ? 'deleted' : 'purged';
     const future = verb === 'delete' ? 'would delete' : 'would purge';
-    const rowsSource = stepSummaryItems(result.files);
     await writeStepSummary({
         title: inputs.dryRun ? `Backblaze B2: ${verb} (dry-run)` : `Backblaze B2: ${verb}`,
         totals: { files: actuallyDeleted + wouldDelete, bytes: 0 },
-        ...stepSummaryTotalRows(result.files),
-        rows: rowsSource.map((f) => ({
+        ...stepSummaryRows(result.files, (f) => ({
             fileName: f.fileName,
             fileId: f.fileId,
             status: f.skipped ? future : past,
         })),
     });
-    setSummaryJsonOutput(result.files);
 }
-function stepSummaryItems(items) {
-    return items.slice(0, STEP_SUMMARY_MAX_ROWS);
+function stepSummaryRows(items, row) {
+    const rows = items.slice(0, STEP_SUMMARY_MAX_ROWS).map(row);
+    return rows.length < items.length ? { rows, totalRows: items.length } : { rows };
 }
-function stepSummaryTotalRows(items) {
-    return items.length > STEP_SUMMARY_MAX_ROWS ? { totalRows: items.length } : {};
-}
-function omitUrlField(item) {
-    if (typeof item !== 'object' || item === null || Array.isArray(item))
-        return item;
-    const clone = { ...item };
-    delete clone.url;
-    return clone;
+function presignSummaryItem(file) {
+    return { fileName: file.fileName, expiresAt: file.expiresAt };
 }
 function setFileCountOutput(count) {
     setOutput('file-count', String(count));

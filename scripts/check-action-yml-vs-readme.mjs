@@ -113,8 +113,18 @@ function extractSetOutputKeys(dir) {
   const keys = new Set()
   for (const file of walkTsFiles(dir)) {
     const source = readFileSync(file, 'utf8')
+    const stringConstants = new Map()
+    for (const match of source.matchAll(
+      /(?:export\s+)?const\s+([A-Z][A-Z0-9_]*)\s*=\s*['"]([a-z][a-z0-9-]*)['"]/g,
+    )) {
+      stringConstants.set(match[1], match[2])
+    }
     for (const match of source.matchAll(/core\.setOutput\(\s*['"]([a-z][a-z0-9-]*)['"]/g)) {
       keys.add(match[1])
+    }
+    for (const match of source.matchAll(/core\.setOutput\(\s*([A-Z][A-Z0-9_]*)\b/g)) {
+      const key = stringConstants.get(match[1])
+      if (key !== undefined) keys.add(key)
     }
   }
   return keys

@@ -3,6 +3,9 @@ import * as core from '@actions/core'
 
 export const SUMMARY_JSON_PREVIEW_MAX_ENTRIES = 100
 export const SUMMARY_JSON_MAX_UTF8_BYTES = 256 * 1024
+export const SUMMARY_JSON_OUTPUT_NAME = 'summary-json'
+export const SUMMARY_JSON_TRUNCATED_OUTPUT_NAME = 'summary-json-truncated'
+export const SUMMARY_JSON_PREVIEW_OUTPUT_NAME = 'summary-json-preview'
 
 export type SummaryJsonPayload = CompleteSummaryJsonPayload | TruncatedSummaryJsonPayload
 
@@ -21,8 +24,15 @@ export interface TruncatedSummaryJsonPayload {
   truncated: true
 }
 
-export interface SummaryJsonOutputOptions {
-  previewItem?: (item: unknown) => unknown
+export interface SummaryJsonOutputOptions<T> {
+  item?: (item: T) => unknown
+}
+
+interface BoundedJsonArray {
+  json: string
+  emittedCount: number
+  byteLimitExceeded: boolean
+  serializationFailed: boolean
 }
 
 /**
@@ -40,38 +50,32 @@ export interface SummaryJsonOutputOptions {
  * succeed because the B2 operation itself has already completed. Scalar count
  * outputs (`file-count`, `files-listed`, etc.) remain the authoritative totals.
  */
-export function buildSummaryJsonPayload(
-  items: readonly unknown[],
-  options: SummaryJsonOutputOptions = {},
+export function buildSummaryJsonPayload<T>(
+  items: readonly T[],
+  options: SummaryJsonOutputOptions<T> = {},
 ): SummaryJsonPayload {
-  try {
-    const fullJson = JSON.stringify(items)
-    if (utf8ByteLength(fullJson) <= SUMMARY_JSON_MAX_UTF8_BYTES) {
-      return {
-        json: fullJson,
-        totalCount: items.length,
-        emittedCount: items.length,
-        truncated: false,
-      }
+  const serialized = serializeJsonArrayPrefix(items, options, items.length)
+  if (!serialized.byteLimitExceeded && !serialized.serializationFailed) {
+    return {
+      json: serialized.json,
+      totalCount: items.length,
+      emittedCount: items.length,
+      truncated: false,
     }
-  } catch {
-    return buildTruncatedSummaryJsonPayload(
-      items,
-      options,
-      'summary-json could not be serialized within the supported output contract',
-    )
   }
 
   return buildTruncatedSummaryJsonPayload(
     items,
     options,
-    'summary-json exceeded the supported UTF-8 output size cap',
+    serialized.serializationFailed
+      ? 'summary-json could not be serialized within the supported output contract'
+      : 'summary-json exceeded the supported UTF-8 output size cap',
   )
 }
 
-function buildTruncatedSummaryJsonPayload(
-  items: readonly unknown[],
-  options: SummaryJsonOutputOptions,
+function buildTruncatedSummaryJsonPayload<T>(
+  items: readonly T[],
+  options: SummaryJsonOutputOptions<T>,
   reason: string,
 ): TruncatedSummaryJsonPayload {
   const preview = buildSummaryJsonPreview(items, options)
@@ -82,7 +86,7 @@ function buildTruncatedSummaryJsonPayload(
       reason,
       totalCount: items.length,
       previewCount: preview.emittedCount,
-      previewOutput: 'summary-json-preview',
+      previewOutput: SUMMARY_JSON_PREVIEW_OUTPUT_NAME,
     }),
     previewJson: preview.json,
     totalCount: items.length,
@@ -91,55 +95,30 @@ function buildTruncatedSummaryJsonPayload(
   }
 }
 
-function buildSummaryJsonPreview(
-  items: readonly unknown[],
-  options: SummaryJsonOutputOptions,
+function buildSummaryJsonPreview<T>(
+  items: readonly T[],
+  options: SummaryJsonOutputOptions<T>,
 ): {
   json: string
   emittedCount: number
 } {
-  const cappedCount = Math.min(items.length, SUMMARY_JSON_PREVIEW_MAX_ENTRIES)
-  let low = 0
-  let high = cappedCount
-  let emittedCount = 0
-  let json = '[]'
-
-  // Serialized JSON array length grows monotonically as prefix elements are
-  // appended, so binary search the largest diagnostic prefix that fits.
-  while (low <= high) {
-    const mid = Math.floor((low + high) / 2)
-    let candidate: string
-    try {
-      candidate = JSON.stringify(previewItems(items, mid, options.previewItem))
-    } catch {
-      high = mid - 1
-      continue
-    }
-    if (utf8ByteLength(candidate) <= SUMMARY_JSON_MAX_UTF8_BYTES) {
-      emittedCount = mid
-      json = candidate
-      low = mid + 1
-    } else {
-      high = mid - 1
-    }
-  }
-
-  return { json, emittedCount }
+  const preview = serializeJsonArrayPrefix(items, options, SUMMARY_JSON_PREVIEW_MAX_ENTRIES)
+  return { json: preview.json, emittedCount: preview.emittedCount }
 }
 
-export function setSummaryJsonOutput(
-  items: readonly unknown[],
-  options: SummaryJsonOutputOptions = {},
+export function setSummaryJsonOutput<T>(
+  items: readonly T[],
+  options: SummaryJsonOutputOptions<T> = {},
 ): void {
   const payload = buildSummaryJsonPayload(items, options)
 
-  core.setOutput('summary-json-truncated', String(payload.truncated))
-  core.setOutput('summary-json', payload.json)
+  core.setOutput(SUMMARY_JSON_TRUNCATED_OUTPUT_NAME, String(payload.truncated))
+  core.setOutput(SUMMARY_JSON_OUTPUT_NAME, payload.json)
   if (!payload.truncated) {
     return
   }
 
-  core.setOutput('summary-json-preview', payload.previewJson)
+  core.setOutput(SUMMARY_JSON_PREVIEW_OUTPUT_NAME, payload.previewJson)
   core.warning(
     `summary-json exceeds supported output limits; preview contains ` +
       `${payload.emittedCount} of ${payload.totalCount} item(s). ` +
@@ -148,13 +127,64 @@ export function setSummaryJsonOutput(
   )
 }
 
-function previewItems(
-  items: readonly unknown[],
-  count: number,
-  previewItem: ((item: unknown) => unknown) | undefined,
-): unknown[] {
-  const slice = items.slice(0, count)
-  return previewItem === undefined ? slice : slice.map(previewItem)
+function serializeJsonArrayPrefix<T>(
+  items: readonly T[],
+  options: SummaryJsonOutputOptions<T>,
+  maxEntries: number,
+): BoundedJsonArray {
+  const parts: string[] = ['[']
+  let bytes = 2
+  let emittedCount = 0
+  const count = Math.min(items.length, maxEntries)
+
+  for (let index = 0; index < count; index++) {
+    let itemJson: string
+    try {
+      itemJson = stringifyArrayItem(projectItem(items[index] as T, options))
+    } catch {
+      parts.push(']')
+      return {
+        json: parts.join(''),
+        emittedCount,
+        byteLimitExceeded: false,
+        serializationFailed: true,
+      }
+    }
+
+    const separator = emittedCount === 0 ? '' : ','
+    const additionalBytes = utf8ByteLength(separator) + utf8ByteLength(itemJson)
+    if (bytes + additionalBytes > SUMMARY_JSON_MAX_UTF8_BYTES) {
+      parts.push(']')
+      return {
+        json: parts.join(''),
+        emittedCount,
+        byteLimitExceeded: true,
+        serializationFailed: false,
+      }
+    }
+
+    if (separator !== '') parts.push(separator)
+    parts.push(itemJson)
+    bytes += additionalBytes
+    emittedCount++
+  }
+
+  parts.push(']')
+  return {
+    json: parts.join(''),
+    emittedCount,
+    byteLimitExceeded: false,
+    serializationFailed: false,
+  }
+}
+
+function projectItem<T>(item: T, options: SummaryJsonOutputOptions<T>): unknown {
+  return options.item === undefined ? item : options.item(item)
+}
+
+function stringifyArrayItem(item: unknown): string {
+  const json = JSON.stringify(item)
+  return json === undefined ? 'null' : json
 }
 
 function utf8ByteLength(value: string): number {

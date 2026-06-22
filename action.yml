@@ -123,7 +123,7 @@ outputs:
   files-listed:
     description: 'Number of files returned by `list` or prefix `presign`.'
   presigned-url:
-    description: 'Presigned download URL (presign action).'
+    description: 'Presigned download URL (presign action). This is the only structured output that carries the live presigned URL.'
   verified:
     description: 'true/false: whether `verify` succeeded.'
   remote-sha1:
@@ -131,11 +131,11 @@ outputs:
   local-sha1:
     description: 'Local file SHA-1 computed by `verify`.'
   summary-json:
-    description: 'Complete JSON array with per-file details when the manifest fits within 256 KiB of UTF-8 JSON text. When exceeded, emits a small truncation notice object instead of a partial array.'
+    description: 'Complete JSON array with per-file details when the manifest fits within 256 KiB of UTF-8 JSON text. When exceeded, emits a truncation notice object with truncated, reason, totalCount, previewCount, and previewOutput fields. For presign, entries omit live presigned URLs.'
   summary-json-truncated:
-    description: 'true/false; true when the full manifest exceeded the supported summary-json size cap. When true, file-count and verb-specific count outputs remain the authoritative totals.'
+    description: 'Always-emitted true/false branch key; true when the full manifest exceeded the supported summary-json size cap. When true, file-count and verb-specific count outputs remain the authoritative totals.'
   summary-json-preview:
-    description: 'Bounded partial JSON array emitted only when summary-json-truncated is true. Do not treat it as a complete manifest. For presign, the url field is omitted from preview entries.'
+    description: 'Bounded partial JSON array emitted only when summary-json-truncated is true. Do not treat it as a complete manifest. For presign, entries omit live presigned URLs.'
   retryable:
     description: 'Failure-path signal for classified SDK errors: true only when the action is safe to re-run automatically.'
   retry-after:

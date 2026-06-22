@@ -12,7 +12,7 @@ The **official** Backblaze B2 GitHub Action. TypeScript-native, built on [`@back
 - **Object Lock.** Governance/compliance retention + legal hold via the `retention` verb.
 - **Bi-directional sync.** Local → B2 *and* B2 → local, with auto-detect.
 - **Structured outputs.** `file-id`, `content-sha1`, `bytes-transferred`, `files-listed`, `presigned-url`, `verified`, `summary-json`, more.
-- **Step-summary tables** rendered on every run via `$GITHUB_STEP_SUMMARY`.
+- **Step-summary tables** rendered on every run via `$GITHUB_STEP_SUMMARY`, capped at 100 per-file rows with an omitted-row notice.
 - **Secret-safe.** App keys, auth tokens, and presigned URLs are auto-masked with `::add-mask::`.
 
 > **Live test suite = the examples.** Every workflow under [.github/workflows/example-*.yml](./.github/workflows/README.md) is both a copy-paste-runnable example and an integration test that runs on every PR.
@@ -374,19 +374,23 @@ If you don't need customer-managed keys, **`sse: B2`** (SSE-B2, B2-managed) is t
 | `files-downloaded` | download / sync down | Count. |
 | `files-deleted` | delete / purge / sync | Count. |
 | `files-listed` | list / prefix presign | Count returned (capped by `max-results`). |
-| `presigned-url` | presign | Time-limited download URL. Masked as a secret. |
+| `presigned-url` | presign | Time-limited download URL. Masked as a secret. This is the only structured output that carries the live presigned URL. |
 | `verified` | verify | `true` / `false`. |
 | `remote-sha1` | verify | The remote object's whole-file SHA-1, or empty for multipart objects when B2 does not expose one. |
 | `local-sha1` | verify | Local file SHA-1 (when computed from `destination`). |
-| `summary-json` | every command | Complete JSON array with per-file details when the result fits within 256 KiB of UTF-8 JSON text. When the result exceeds the cap, this output is a small JSON truncation notice object instead of a partial array. |
-| `summary-json-truncated` | every command | `true` / `false`. `true` means the full manifest exceeded the supported `summary-json` size cap. |
-| `summary-json-preview` | every command when truncated | Bounded partial JSON array with the first 100 entries that fit the cap. Do not treat it as a complete manifest. For `presign`, the `url` field is omitted from preview entries. |
+| `summary-json` | every command | Complete JSON array with per-file details when the result fits within 256 KiB of UTF-8 JSON text. When the result exceeds the cap, this output is a small JSON truncation notice object instead of a partial array. For `presign`, entries omit live presigned URLs. |
+| `summary-json-truncated` | every command | `true` / `false`. Always emitted. `true` means the full manifest exceeded the supported `summary-json` size cap. |
+| `summary-json-preview` | every command when truncated | Bounded partial JSON array with the first 100 entries that fit the cap. Do not treat it as a complete manifest. For `presign`, entries omit live presigned URLs. |
 | `retryable` | classified SDK failures | `true` only when the failed action is safe to re-run automatically. Mutating actions with ambiguous transient failures emit `false` so callers inspect B2 state first. |
 | `retry-after` | classified SDK failures | Retry delay in seconds, clamped to 3600. Emitted only with `retryable=true`; network failures use a default backoff. |
 
-`summary-json` is complete-or-truncation-notice: it never carries a silently partial array. If `summary-json-truncated` is `true`, the scalar count outputs (`file-count`, `files-listed`, `files-uploaded`, and the other verb-specific counts) remain the authoritative totals and may exceed the number of entries in `summary-json-preview`. Do not use `summary-json-preview` as an authoritative manifest for security-sensitive checks; branch on `summary-json-truncated` and fail or fetch a complete manifest another way.
+`summary-json` is complete-or-truncation-notice: it never carries a silently partial array. Consumers that parse `summary-json` as an array must first branch on `summary-json-truncated`; otherwise a large production result changes shape from an array to a truncation notice object. If `summary-json-truncated` is `true`, the scalar count outputs (`file-count`, `files-listed`, `files-uploaded`, and the other verb-specific counts) remain the authoritative totals and may exceed the number of entries in `summary-json-preview`. Do not use `summary-json-preview` as an authoritative manifest for security-sensitive checks; fail or fetch a complete manifest another way.
 
-For `presign`, the `presigned-url` and complete `summary-json` outputs can contain live presigned download URLs in plaintext step outputs. The URLs are masked in logs, but downstream workflow steps can read them, so treat those outputs as secrets. When `summary-json-truncated` is `true`, `summary-json-preview` omits the `url` field from presign entries.
+When truncated, `summary-json` contains `{ "truncated": true, "reason": string, "totalCount": number, "previewCount": number, "previewOutput": "summary-json-preview" }`.
+
+For `presign`, `summary-json` and `summary-json-preview` contain only non-secret manifest fields such as `fileName` and `expiresAt`; the dedicated `presigned-url` output is the only structured output that contains the bearer URL. That URL is masked in logs, but downstream workflow steps can read it, so treat it as a secret.
+
+`$GITHUB_STEP_SUMMARY` per-file tables render at most the first 100 rows. When more rows exist, the summary includes a `Showing first 100 of N rows.` notice and the scalar outputs keep reporting the full source count.
 
 `retryable` and `retry-after` are emitted only on the failure path, immediately before the Action calls `core.setFailed`. To consume them, set `continue-on-error: true` on the B2 step and guard the follow-up step explicitly:
 

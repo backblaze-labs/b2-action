@@ -9,7 +9,7 @@ import { downloadCommand } from './commands/download.ts'
 import { headCommand } from './commands/head.ts'
 import { hideCommand } from './commands/hide.ts'
 import { listCommand } from './commands/list.ts'
-import { presignCommand } from './commands/presign.ts'
+import { type PresignedFile, presignCommand } from './commands/presign.ts'
 import { purgeCommand } from './commands/purge.ts'
 import { retentionCommand } from './commands/retention.ts'
 import { summarizeSyncErrors, syncCommand } from './commands/sync.ts'
@@ -19,7 +19,7 @@ import { verifyCommand } from './commands/verify.ts'
 import { classifyActionError, formatActionDebugError } from './errors.ts'
 import { collectInputSecretsForScrubbing, type ParsedInputs, parseInputs } from './inputs.ts'
 import { setSummaryJsonOutput } from './outputs.ts'
-import { STEP_SUMMARY_MAX_ROWS, writeStepSummary } from './summary.ts'
+import { STEP_SUMMARY_MAX_ROWS, type SummaryRow, writeStepSummary } from './summary.ts'
 
 /**
  * Action entrypoint. Parses inputs, builds an authorized B2Client, dispatches
@@ -88,8 +88,7 @@ export async function run(): Promise<void> {
         await writeStepSummary({
           title: 'Backblaze B2: upload',
           totals: { files: result.files.length, bytes: result.bytesTransferred },
-          ...stepSummaryTotalRows(result.files),
-          rows: stepSummaryItems(result.files).map((f) => ({
+          ...stepSummaryRows(result.files, (f) => ({
             fileName: f.fileName,
             size: f.size,
             fileId: f.fileId,
@@ -114,8 +113,7 @@ export async function run(): Promise<void> {
         await writeStepSummary({
           title: 'Backblaze B2: download',
           totals: { files: result.files.length, bytes: result.bytesTransferred },
-          ...stepSummaryTotalRows(result.files),
-          rows: stepSummaryItems(result.files).map((f) => ({
+          ...stepSummaryRows(result.files, (f) => ({
             fileName: f.fileName,
             size: f.size,
             sha1: f.contentSha1,
@@ -132,8 +130,8 @@ export async function run(): Promise<void> {
         core.setOutput('files-deleted', String(result.deleted))
         setFileCountOutput(result.uploaded + result.downloaded + result.deleted + result.skipped)
         core.setOutput('bytes-transferred', String(result.bytesTransferred))
+        setSummaryJsonOutput(result.events)
         if (result.errors > 0) {
-          setSummaryJsonOutput(result.events)
           const sample = summarizeSyncErrors(result.events)
           throw new Error(`Sync completed with ${result.errors} error(s): ${sample}`)
         }
@@ -161,7 +159,6 @@ export async function run(): Promise<void> {
             { fileName: '(unchanged)', status: String(result.skipped) },
           ],
         })
-        setSummaryJsonOutput(result.events)
         return
       }
       case 'copy': {
@@ -200,12 +197,12 @@ export async function run(): Promise<void> {
         setFileCountOutput(result.files.length)
         await writeStepSummary({
           title: `Backblaze B2: presign (${result.files.length})`,
-          rows: result.files.slice(0, 50).map((f) => ({
+          ...stepSummaryRows(result.files, (f) => ({
             fileName: f.fileName,
             status: `expires at ${new Date(f.expiresAt * 1000).toISOString()}`,
           })),
         })
-        setSummaryJsonOutput(result.files, { previewItem: omitUrlField })
+        setSummaryJsonOutput(result.files, { item: presignSummaryItem })
         return
       }
       case 'list': {
@@ -223,8 +220,7 @@ export async function run(): Promise<void> {
             files: result.files.length,
             bytes: result.files.reduce((s, f) => s + f.size, 0),
           },
-          ...stepSummaryTotalRows(result.files),
-          rows: stepSummaryItems(result.files).map((f) => ({
+          ...stepSummaryRows(result.files, (f) => ({
             fileName: f.fileName,
             size: f.size,
             fileId: f.fileId,
@@ -390,42 +386,34 @@ async function emitDeletionSummary(
   const wouldDelete = result.files.filter((f) => f.skipped).length
   core.setOutput('files-deleted', String(actuallyDeleted))
   setFileCountOutput(result.files.length)
+  setSummaryJsonOutput(result.files)
   if (result.errors > 0) {
-    setSummaryJsonOutput(result.files)
     const labels = { delete: 'Delete', purge: 'Purge' } as const
     throw new Error(`${labels[verb]} completed with ${result.errors} error(s)`)
   }
   const past = verb === 'delete' ? 'deleted' : 'purged'
   const future = verb === 'delete' ? 'would delete' : 'would purge'
-  const rowsSource = stepSummaryItems(result.files)
   await writeStepSummary({
     title: inputs.dryRun ? `Backblaze B2: ${verb} (dry-run)` : `Backblaze B2: ${verb}`,
     totals: { files: actuallyDeleted + wouldDelete, bytes: 0 },
-    ...stepSummaryTotalRows(result.files),
-    rows: rowsSource.map((f) => ({
+    ...stepSummaryRows(result.files, (f) => ({
       fileName: f.fileName,
       fileId: f.fileId,
       status: f.skipped ? future : past,
     })),
   })
-  setSummaryJsonOutput(result.files)
 }
 
-function stepSummaryItems<T>(items: readonly T[]): readonly T[] {
-  return items.slice(0, STEP_SUMMARY_MAX_ROWS)
-}
-
-function stepSummaryTotalRows<T>(
+function stepSummaryRows<T>(
   items: readonly T[],
-): { totalRows: number } | Record<string, never> {
-  return items.length > STEP_SUMMARY_MAX_ROWS ? { totalRows: items.length } : {}
+  row: (item: T) => SummaryRow,
+): { rows: SummaryRow[]; totalRows?: number } {
+  const rows = items.slice(0, STEP_SUMMARY_MAX_ROWS).map(row)
+  return rows.length < items.length ? { rows, totalRows: items.length } : { rows }
 }
 
-function omitUrlField(item: unknown): unknown {
-  if (typeof item !== 'object' || item === null || Array.isArray(item)) return item
-  const clone: Record<string, unknown> = { ...(item as Record<string, unknown>) }
-  delete clone.url
-  return clone
+function presignSummaryItem(file: PresignedFile): Pick<PresignedFile, 'fileName' | 'expiresAt'> {
+  return { fileName: file.fileName, expiresAt: file.expiresAt }
 }
 
 function setFileCountOutput(count: number): void {
