@@ -60,7 +60,7 @@ function loadWorkflow(filePath) {
 
 function workflowFiles() {
   return readdirSync(workflowDir)
-    .filter((file) => /\.(ya?ml)$/.test(file))
+    .filter((file) => /\.ya?ml$/.test(file))
     .map((file) => join(workflowDir, file))
 }
 
