@@ -41767,7 +41767,7 @@ const STEP_SUMMARY_MAX_ROWS = 100;
  */
 async function writeStepSummary(opts) {
     const path = process.env.GITHUB_STEP_SUMMARY;
-    if (path === undefined || path === '')
+    if (!path)
         return;
     // Keep the writer defensive for direct callers even though dispatcher
     // call sites pre-slice rows to avoid mapping very large result sets.
@@ -41788,7 +41788,7 @@ async function writeStepSummary(opts) {
         lines.push('| File | Size | File ID | SHA-1 | Status |');
         lines.push('|------|------|---------|-------|--------|');
         for (const r of rows) {
-            lines.push(`| ${inlineCodeCell(r.fileName)} | ${r.size !== undefined ? formatBytes(r.size) : ''} | ${r.fileId !== undefined ? inlineCodeCell(r.fileId) : ''} | ${r.sha1 !== undefined && r.sha1 !== null ? `\`${r.sha1.slice(0, 12)}…\`` : ''} | ${r.status !== undefined ? inlineCodeCell(r.status) : ''} |`);
+            lines.push(`| ${inlineCodeCell(r.fileName)} | ${r.size !== undefined ? formatBytes(r.size) : ''} | ${r.fileId !== undefined ? inlineCodeCell(r.fileId) : ''} | ${r.sha1 != null ? `\`${r.sha1.slice(0, 12)}…\`` : ''} | ${r.status !== undefined ? inlineCodeCell(r.status) : ''} |`);
         }
     }
     lines.push('');

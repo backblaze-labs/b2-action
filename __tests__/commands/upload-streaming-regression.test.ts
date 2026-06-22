@@ -20,7 +20,6 @@ describe('upload streaming regression', () => {
     let observedCanSlice: boolean | undefined
     let observedSourceSize: number | undefined
 
-    vi.resetModules()
     vi.doMock('node:fs', async () => {
       const actual = await vi.importActual<typeof import('node:fs')>('node:fs')
       return {
