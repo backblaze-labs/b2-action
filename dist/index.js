@@ -41807,7 +41807,10 @@ function inlineCodeCell(value) {
     return `<code>${escapeHtml(value).replaceAll('|', '&#124;')}</code>`;
 }
 function escapeHtml(value) {
-    return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+    // Single-pass escape so correctness never depends on replace ordering
+    // (a chained version must escape '&' first or it would re-escape '&lt;').
+    const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;' };
+    return value.replace(/[&<>]/g, (ch) => map[ch] ?? ch);
 }
 
 ;// CONCATENATED MODULE: ./src/main.ts

@@ -92,7 +92,7 @@ function compactExpression(value) {
   if (typeof value !== 'string') return ''
 
   const trimmed = value.trim()
-  const expressionMatch = trimmed.match(/^\${{\s*(.*?)\s*}}$/)
+  const expressionMatch = trimmed.match(/^\$\{\{\s*(.*?)\s*\}\}$/)
   if (expressionMatch) return githubExpression(expressionMatch[1])
 
   return trimmed.replace(/\s+/g, ' ')
@@ -107,7 +107,7 @@ function resolvesToValidateOutput(job, value, outputName) {
   const expression = compactExpression(value)
   if (expression === expected) return true
 
-  const envMatch = expression.match(/^\${{\s*env\.([A-Za-z_][A-Za-z0-9_]*)\s*}}$/)
+  const envMatch = expression.match(/^\$\{\{\s*env\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}$/)
   if (!envMatch) return false
 
   const envValue = asMapping(job.env)[envMatch[1]]

@@ -90,5 +90,8 @@ function inlineCodeCell(value: string): string {
 }
 
 function escapeHtml(value: string): string {
-  return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
+  // Single-pass escape so correctness never depends on replace ordering
+  // (a chained version must escape '&' first or it would re-escape '&lt;').
+  const map: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;' }
+  return value.replace(/[&<>]/g, (ch) => map[ch] ?? ch)
 }
