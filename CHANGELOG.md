@@ -23,7 +23,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Changed
 
 - `upload`: directory/glob uploads now consistently treat `destination` as a prefix even when the source resolves to a single file; only an explicit single-file source treats a non-trailing-slash `destination` as the exact object key.
-- `summary-json` now has an explicit complete-manifest cap: results over 100 entries or 256 KiB of UTF-16 JSON text fail closed instead of emitting an oversized output. The Action sets `summary-json-truncated=true` and a bounded `summary-json-preview` for diagnostics; use `file-count` and verb-specific count outputs for authoritative totals. ([#41](https://github.com/backblaze-labs/b2-action/issues/41))
+- `summary-json` now has an explicit 256 KiB UTF-8 cap. Results that exceed it no longer fail an otherwise successful B2 operation or emit a partial array under `summary-json`; instead the Action sets `summary-json-truncated=true`, writes a small truncation notice object to `summary-json`, and emits a bounded `summary-json-preview` for diagnostics. Use `file-count` and verb-specific count outputs for authoritative totals. ([#41](https://github.com/backblaze-labs/b2-action/issues/41))
 - Stable releases now move the floating major tag (`v1`, `v2`, ...) before publishing the GitHub Release, fail early when `FLOATING_TAG_TOKEN` is absent or unusable, and document the manual `workflow_dispatch` override for emergency releases. ([#28](https://github.com/backblaze-labs/b2-action/issues/28))
 
 ### Fixed

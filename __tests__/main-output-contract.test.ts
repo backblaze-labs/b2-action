@@ -144,7 +144,7 @@ function mockDispatcherPath(action: ActionName) {
     parseInputs,
   }))
   vi.doMock('../src/client.ts', () => ({ buildClient, getBucket }))
-  vi.doMock('../src/summary.ts', () => ({ writeStepSummary }))
+  vi.doMock('../src/summary.ts', () => ({ STEP_SUMMARY_MAX_ROWS: 100, writeStepSummary }))
   vi.doMock('../src/commands/upload.ts', () => ({ uploadCommand: commands.uploadCommand }))
   vi.doMock('../src/commands/download.ts', () => ({ downloadCommand: commands.downloadCommand }))
   vi.doMock('../src/commands/sync.ts', () => ({

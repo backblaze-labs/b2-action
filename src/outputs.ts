@@ -1,8 +1,8 @@
 import { Buffer } from 'node:buffer'
 import * as core from '@actions/core'
 
-export const SUMMARY_JSON_MAX_ENTRIES = 100
-export const SUMMARY_JSON_MAX_UTF16_BYTES = 256 * 1024
+export const SUMMARY_JSON_PREVIEW_MAX_ENTRIES = 100
+export const SUMMARY_JSON_MAX_UTF8_BYTES = 256 * 1024
 
 export type SummaryJsonPayload = CompleteSummaryJsonPayload | TruncatedSummaryJsonPayload
 
@@ -14,6 +14,7 @@ export interface CompleteSummaryJsonPayload {
 }
 
 export interface TruncatedSummaryJsonPayload {
+  json: string
   previewJson: string
   totalCount: number
   emittedCount: number
@@ -21,41 +22,48 @@ export interface TruncatedSummaryJsonPayload {
 }
 
 export interface SummaryJsonOutputOptions {
-  failClosed?: boolean
+  previewItem?: (item: unknown) => unknown
 }
 
 /**
  * Serialize per-file command details into the bounded `summary-json` output.
  *
- * GitHub Actions caps all action outputs for a job at 1 MB, approximated with
- * UTF-16 size. Keep this single structured output well below that job-level
+ * GitHub Actions writes outputs as UTF-8 and caps all action outputs for a job
+ * at 1 MB. Keep this single structured output well below that job-level
  * budget so the scalar outputs and any caller-defined outputs still have room.
  *
- * `summary-json` is complete-or-error: callers never receive a successful,
- * partial value under that legacy output name. When a result exceeds the
- * supported cap, `summary-json-preview` receives the bounded prefix,
- * `summary-json-truncated` is set to `true`, and the action fails so existing
- * manifest consumers cannot silently process an incomplete array. Callers that
- * are already failing may set `failClosed: false` to preserve the primary
- * command error while still emitting truncation diagnostics. Scalar count
+ * `summary-json` remains a complete array when the full manifest fits. When a
+ * result exceeds the supported byte cap, `summary-json` receives a small JSON
+ * object describing the truncation, never a partial array or an empty string.
+ * `summary-json-preview` receives a bounded diagnostic prefix,
+ * `summary-json-truncated` is set to `true`, and the action step may still
+ * succeed because the B2 operation itself has already completed. Scalar count
  * outputs (`file-count`, `files-listed`, etc.) remain the authoritative totals.
  */
-export function buildSummaryJsonPayload(items: readonly unknown[]): SummaryJsonPayload {
-  if (items.length <= SUMMARY_JSON_MAX_ENTRIES) {
-    const fullJson = JSON.stringify(items)
-    if (utf16ByteLength(fullJson) <= SUMMARY_JSON_MAX_UTF16_BYTES) {
-      return {
-        json: fullJson,
-        totalCount: items.length,
-        emittedCount: items.length,
-        truncated: false,
-      }
+export function buildSummaryJsonPayload(
+  items: readonly unknown[],
+  options: SummaryJsonOutputOptions = {},
+): SummaryJsonPayload {
+  const fullJson = JSON.stringify(items)
+  if (utf8ByteLength(fullJson) <= SUMMARY_JSON_MAX_UTF8_BYTES) {
+    return {
+      json: fullJson,
+      totalCount: items.length,
+      emittedCount: items.length,
+      truncated: false,
     }
   }
 
-  const preview = buildSummaryJsonPreview(items)
+  const preview = buildSummaryJsonPreview(items, options)
 
   return {
+    json: JSON.stringify({
+      truncated: true,
+      reason: 'summary-json exceeded the supported UTF-8 output size cap',
+      totalCount: items.length,
+      previewCount: preview.emittedCount,
+      previewOutput: 'summary-json-preview',
+    }),
     previewJson: preview.json,
     totalCount: items.length,
     emittedCount: preview.emittedCount,
@@ -63,20 +71,25 @@ export function buildSummaryJsonPayload(items: readonly unknown[]): SummaryJsonP
   }
 }
 
-function buildSummaryJsonPreview(items: readonly unknown[]): {
+function buildSummaryJsonPreview(
+  items: readonly unknown[],
+  options: SummaryJsonOutputOptions,
+): {
   json: string
   emittedCount: number
 } {
-  const cappedCount = Math.min(items.length, SUMMARY_JSON_MAX_ENTRIES)
+  const cappedCount = Math.min(items.length, SUMMARY_JSON_PREVIEW_MAX_ENTRIES)
   let low = 0
   let high = cappedCount
   let emittedCount = 0
   let json = '[]'
 
+  // Serialized JSON array length grows monotonically as prefix elements are
+  // appended, so binary search the largest diagnostic prefix that fits.
   while (low <= high) {
     const mid = Math.floor((low + high) / 2)
-    const candidate = JSON.stringify(items.slice(0, mid))
-    if (utf16ByteLength(candidate) <= SUMMARY_JSON_MAX_UTF16_BYTES) {
+    const candidate = JSON.stringify(previewItems(items, mid, options.previewItem))
+    if (utf8ByteLength(candidate) <= SUMMARY_JSON_MAX_UTF8_BYTES) {
       emittedCount = mid
       json = candidate
       low = mid + 1
@@ -92,12 +105,11 @@ export function setSummaryJsonOutput(
   items: readonly unknown[],
   options: SummaryJsonOutputOptions = {},
 ): void {
-  const payload = buildSummaryJsonPayload(items)
-  const failClosed = options.failClosed ?? true
+  const payload = buildSummaryJsonPayload(items, options)
 
   core.setOutput('summary-json-truncated', String(payload.truncated))
+  core.setOutput('summary-json', payload.json)
   if (!payload.truncated) {
-    core.setOutput('summary-json', payload.json)
     return
   }
 
@@ -105,24 +117,22 @@ export function setSummaryJsonOutput(
   core.warning(
     `summary-json exceeds supported output limits; preview contains ` +
       `${payload.emittedCount} of ${payload.totalCount} item(s). ` +
-      `limit is ${SUMMARY_JSON_MAX_ENTRIES} entries and ${formatKiB(
-        SUMMARY_JSON_MAX_UTF16_BYTES,
-      )} of UTF-16 JSON text`,
-  )
-  if (!failClosed) return
-
-  throw new Error(
-    `summary-json exceeds supported output limits: ${payload.totalCount} item(s) cannot fit ` +
-      `within ${SUMMARY_JSON_MAX_ENTRIES} entries and ${formatKiB(
-        SUMMARY_JSON_MAX_UTF16_BYTES,
-      )} of UTF-16 JSON text. Refusing to emit a partial summary-json value; ` +
-      `use file-count or verb-specific counts for totals and summary-json-preview only after ` +
-      `checking summary-json-truncated.`,
+      `summary-json contains a truncation notice instead of a partial manifest. ` +
+      `limit is ${formatKiB(SUMMARY_JSON_MAX_UTF8_BYTES)} of UTF-8 JSON text`,
   )
 }
 
-function utf16ByteLength(value: string): number {
-  return Buffer.byteLength(value, 'utf16le')
+function previewItems(
+  items: readonly unknown[],
+  count: number,
+  previewItem: ((item: unknown) => unknown) | undefined,
+): unknown[] {
+  const slice = items.slice(0, count)
+  return previewItem === undefined ? slice : slice.map(previewItem)
+}
+
+function utf8ByteLength(value: string): number {
+  return Buffer.byteLength(value, 'utf8')
 }
 
 function formatKiB(bytes: number): string {

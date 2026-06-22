@@ -19,7 +19,7 @@ import { verifyCommand } from './commands/verify.ts'
 import { classifyActionError, formatActionDebugError } from './errors.ts'
 import { collectInputSecretsForScrubbing, type ParsedInputs, parseInputs } from './inputs.ts'
 import { setSummaryJsonOutput } from './outputs.ts'
-import { writeStepSummary } from './summary.ts'
+import { STEP_SUMMARY_MAX_ROWS, writeStepSummary } from './summary.ts'
 
 /**
  * Action entrypoint. Parses inputs, builds an authorized B2Client, dispatches
@@ -88,7 +88,7 @@ export async function run(): Promise<void> {
         await writeStepSummary({
           title: 'Backblaze B2: upload',
           totals: { files: result.files.length, bytes: result.bytesTransferred },
-          rows: result.files.map((f) => ({
+          rows: stepSummaryItems(result.files).map((f) => ({
             fileName: f.fileName,
             size: f.size,
             fileId: f.fileId,
@@ -113,7 +113,7 @@ export async function run(): Promise<void> {
         await writeStepSummary({
           title: 'Backblaze B2: download',
           totals: { files: result.files.length, bytes: result.bytesTransferred },
-          rows: result.files.map((f) => ({
+          rows: stepSummaryItems(result.files).map((f) => ({
             fileName: f.fileName,
             size: f.size,
             sha1: f.contentSha1,
@@ -131,7 +131,7 @@ export async function run(): Promise<void> {
         setFileCountOutput(result.uploaded + result.downloaded + result.deleted + result.skipped)
         core.setOutput('bytes-transferred', String(result.bytesTransferred))
         if (result.errors > 0) {
-          setSummaryJsonOutput(result.events, { failClosed: false })
+          setSummaryJsonOutput(result.events)
           const sample = summarizeSyncErrors(result.events)
           throw new Error(`Sync completed with ${result.errors} error(s): ${sample}`)
         }
@@ -203,7 +203,7 @@ export async function run(): Promise<void> {
             status: `expires at ${new Date(f.expiresAt * 1000).toISOString()}`,
           })),
         })
-        setSummaryJsonOutput(result.files)
+        setSummaryJsonOutput(result.files, { previewItem: omitUrlField })
         return
       }
       case 'list': {
@@ -388,13 +388,13 @@ async function emitDeletionSummary(
   core.setOutput('files-deleted', String(actuallyDeleted))
   setFileCountOutput(result.files.length)
   if (result.errors > 0) {
-    setSummaryJsonOutput(result.files, { failClosed: false })
+    setSummaryJsonOutput(result.files)
     const labels = { delete: 'Delete', purge: 'Purge' } as const
     throw new Error(`${labels[verb]} completed with ${result.errors} error(s)`)
   }
   const past = verb === 'delete' ? 'deleted' : 'purged'
   const future = verb === 'delete' ? 'would delete' : 'would purge'
-  const rowsSource = verb === 'purge' ? result.files.slice(0, 100) : result.files
+  const rowsSource = stepSummaryItems(result.files)
   await writeStepSummary({
     title: inputs.dryRun ? `Backblaze B2: ${verb} (dry-run)` : `Backblaze B2: ${verb}`,
     totals: { files: actuallyDeleted + wouldDelete, bytes: 0 },
@@ -405,6 +405,17 @@ async function emitDeletionSummary(
     })),
   })
   setSummaryJsonOutput(result.files)
+}
+
+function stepSummaryItems<T>(items: readonly T[]): readonly T[] {
+  return items.slice(0, STEP_SUMMARY_MAX_ROWS)
+}
+
+function omitUrlField(item: unknown): unknown {
+  if (typeof item !== 'object' || item === null || Array.isArray(item)) return item
+  const clone: Record<string, unknown> = { ...(item as Record<string, unknown>) }
+  delete clone.url
+  return clone
 }
 
 function setFileCountOutput(count: number): void {

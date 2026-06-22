@@ -2,8 +2,8 @@ import { Buffer } from 'node:buffer'
 import { describe, expect, it } from 'vitest'
 import {
   buildSummaryJsonPayload,
-  SUMMARY_JSON_MAX_ENTRIES,
-  SUMMARY_JSON_MAX_UTF16_BYTES,
+  SUMMARY_JSON_MAX_UTF8_BYTES,
+  SUMMARY_JSON_PREVIEW_MAX_ENTRIES,
 } from '../src/outputs.ts'
 
 describe('summary-json output guard', () => {
@@ -20,33 +20,87 @@ describe('summary-json output guard', () => {
     })
   })
 
-  it('caps payloads to the supported entry count', () => {
-    const items = Array.from({ length: SUMMARY_JSON_MAX_ENTRIES + 5 }, (_, i) => ({
+  it('keeps payloads over the preview count complete when they fit the byte cap', () => {
+    const items = Array.from({ length: SUMMARY_JSON_PREVIEW_MAX_ENTRIES + 5 }, (_, i) => ({
       fileName: `file-${i}.txt`,
     }))
 
     const payload = buildSummaryJsonPayload(items)
 
-    expect(payload.truncated).toBe(true)
-    if (!payload.truncated) throw new Error('expected truncated payload')
-    expect(payload.totalCount).toBe(SUMMARY_JSON_MAX_ENTRIES + 5)
-    expect(payload.emittedCount).toBe(SUMMARY_JSON_MAX_ENTRIES)
-    expect(JSON.parse(payload.previewJson)).toHaveLength(SUMMARY_JSON_MAX_ENTRIES)
+    expect(payload.truncated).toBe(false)
+    if (payload.truncated) throw new Error('expected complete payload')
+    expect(payload.totalCount).toBe(SUMMARY_JSON_PREVIEW_MAX_ENTRIES + 5)
+    expect(payload.emittedCount).toBe(SUMMARY_JSON_PREVIEW_MAX_ENTRIES + 5)
+    expect(JSON.parse(payload.json)).toHaveLength(SUMMARY_JSON_PREVIEW_MAX_ENTRIES + 5)
   })
 
-  it('trims payloads that exceed the supported UTF-16 size', () => {
+  it('emits a truncation notice and preview for oversized UTF-8 payloads', () => {
     const items = Array.from({ length: 3 }, (_, i) => ({
       fileName: `large-${i}.txt`,
-      metadata: 'x'.repeat(SUMMARY_JSON_MAX_UTF16_BYTES),
+      metadata: 'x'.repeat(SUMMARY_JSON_MAX_UTF8_BYTES),
     }))
 
     const payload = buildSummaryJsonPayload(items)
 
     expect(payload.truncated).toBe(true)
     if (!payload.truncated) throw new Error('expected truncated payload')
+    expect(Array.isArray(JSON.parse(payload.json))).toBe(false)
+    expect(JSON.parse(payload.json)).toMatchObject({
+      truncated: true,
+      totalCount: items.length,
+      previewOutput: 'summary-json-preview',
+    })
     expect(payload.emittedCount).toBeLessThan(items.length)
-    expect(Buffer.byteLength(payload.previewJson, 'utf16le')).toBeLessThanOrEqual(
-      SUMMARY_JSON_MAX_UTF16_BYTES,
+    expect(Buffer.byteLength(payload.previewJson, 'utf8')).toBeLessThanOrEqual(
+      SUMMARY_JSON_MAX_UTF8_BYTES,
     )
+  })
+
+  it('keeps UTF-8 output within the cap for multibyte filenames', () => {
+    const items = Array.from({ length: 200 }, (_, i) => ({
+      fileName: `${'\u4e00'.repeat(2000)}-${i}`,
+    }))
+
+    const payload = buildSummaryJsonPayload(items)
+
+    expect(payload.truncated).toBe(true)
+    if (!payload.truncated) throw new Error('expected truncated payload')
+    expect(Buffer.byteLength(payload.previewJson, 'utf8')).toBeLessThanOrEqual(
+      SUMMARY_JSON_MAX_UTF8_BYTES,
+    )
+  })
+
+  it('handles an oversized first item with an empty preview', () => {
+    const items = [{ fileName: 'huge.txt', metadata: 'x'.repeat(SUMMARY_JSON_MAX_UTF8_BYTES) }]
+
+    const payload = buildSummaryJsonPayload(items)
+
+    expect(payload.truncated).toBe(true)
+    if (!payload.truncated) throw new Error('expected truncated payload')
+    expect(payload.emittedCount).toBe(0)
+    expect(payload.previewJson).toBe('[]')
+    expect(JSON.parse(payload.json)).toMatchObject({ truncated: true, previewCount: 0 })
+  })
+
+  it('can omit secret fields from the bounded preview', () => {
+    const items = [
+      {
+        fileName: 'secret.txt',
+        url: `https://download.example/${'x'.repeat(SUMMARY_JSON_MAX_UTF8_BYTES)}`,
+      },
+    ]
+
+    const payload = buildSummaryJsonPayload(items, {
+      previewItem(item) {
+        const clone = { ...(item as Record<string, unknown>) }
+        delete clone.url
+        return clone
+      },
+    })
+
+    expect(payload.truncated).toBe(true)
+    if (!payload.truncated) throw new Error('expected truncated payload')
+    expect(payload.previewJson).not.toContain('https://download.example')
+    expect(JSON.parse(payload.previewJson)).toEqual([{ fileName: 'secret.txt' }])
   })
 })

@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { writeStepSummary } from '../src/summary.ts'
+import { STEP_SUMMARY_MAX_ROWS, writeStepSummary } from '../src/summary.ts'
 
 const ORIGINAL_GH_SUMMARY = process.env.GITHUB_STEP_SUMMARY
 
@@ -65,6 +65,22 @@ describe('writeStepSummary', () => {
     const out = await readFile(path, 'utf8')
     expect(out).toContain('<code>&lt;unsafe&gt;&amp;file.txt</code>')
     expect(out).toContain('<code>&lt;fid&gt;&amp;1</code>')
+  })
+
+  it('caps rendered rows before appending the markdown summary', async () => {
+    await writeStepSummary({
+      title: 'Large run',
+      rows: Array.from({ length: STEP_SUMMARY_MAX_ROWS + 5 }, (_, i) => ({
+        fileName: `file-${i}.txt`,
+      })),
+    })
+
+    const out = await readFile(path, 'utf8')
+    expect(out).toContain(
+      `Showing first ${STEP_SUMMARY_MAX_ROWS} of ${STEP_SUMMARY_MAX_ROWS + 5} rows.`,
+    )
+    expect(out).toContain('<code>file-99.txt</code>')
+    expect(out).not.toContain('<code>file-100.txt</code>')
   })
 
   it('no-ops when GITHUB_STEP_SUMMARY is unset', async () => {

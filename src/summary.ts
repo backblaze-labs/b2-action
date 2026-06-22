@@ -2,6 +2,8 @@ import { appendFile } from 'node:fs/promises'
 import * as core from '@actions/core'
 import { formatBytes } from './format.ts'
 
+export const STEP_SUMMARY_MAX_ROWS = 100
+
 /**
  * Append a markdown summary block to `$GITHUB_STEP_SUMMARY`.
  *
@@ -42,12 +44,13 @@ export interface SummaryRow {
  */
 export async function writeStepSummary(opts: {
   title: string
-  rows: SummaryRow[]
+  rows: readonly SummaryRow[]
   totals?: { files: number; bytes: number } | undefined
 }): Promise<void> {
   const path = process.env.GITHUB_STEP_SUMMARY
   if (path === undefined || path === '') return
 
+  const rows = opts.rows.slice(0, STEP_SUMMARY_MAX_ROWS)
   const lines: string[] = []
   lines.push(`## ${opts.title}`)
   lines.push('')
@@ -57,10 +60,15 @@ export async function writeStepSummary(opts: {
     lines.push('')
   }
 
-  if (opts.rows.length > 0) {
+  if (opts.rows.length > rows.length) {
+    lines.push(`Showing first ${rows.length} of ${opts.rows.length} rows.`)
+    lines.push('')
+  }
+
+  if (rows.length > 0) {
     lines.push('| File | Size | File ID | SHA-1 | Status |')
     lines.push('|------|------|---------|-------|--------|')
-    for (const r of opts.rows) {
+    for (const r of rows) {
       lines.push(
         `| ${inlineCodeCell(r.fileName)} | ${r.size !== undefined ? formatBytes(r.size) : ''} | ${
           r.fileId !== undefined ? inlineCodeCell(r.fileId) : ''

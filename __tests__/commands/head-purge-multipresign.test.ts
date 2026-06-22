@@ -6,7 +6,7 @@ import { presignCommand } from '../../src/commands/presign.ts'
 import { purgeCommand } from '../../src/commands/purge.ts'
 import { uploadCommand } from '../../src/commands/upload.ts'
 import { setSummaryJsonOutput } from '../../src/outputs.ts'
-import { captureFailure, makeFixture, makeInputs, type TestFixture } from '../_helpers.ts'
+import { captureStdout, makeFixture, makeInputs, type TestFixture } from '../_helpers.ts'
 
 function inputs(action: Parameters<typeof makeInputs>[0], over: Record<string, unknown> = {}) {
   return makeInputs(action, { bucket: 'gh-action-hpx', ...over })
@@ -112,7 +112,7 @@ describe('presign command (prefix mode)', () => {
     }
   })
 
-  it('masks presigned URLs before emitting a guarded summary preview', async () => {
+  it('masks and omits presigned URLs before emitting a guarded summary preview', async () => {
     for (let i = 0; i < 105; i++) {
       const name = `bulk/${String(i).padStart(3, '0')}.bin`
       const local = join(fx.workDir, name.replace('/', '_'))
@@ -121,21 +121,19 @@ describe('presign command (prefix mode)', () => {
     }
 
     let files: Awaited<ReturnType<typeof presignCommand>>['files'] = []
-    const { error, stdout } = await withoutGithubOutput(async () =>
-      captureFailure(async () => {
+    const stdout = await withoutGithubOutput(async () =>
+      captureStdout(async () => {
         const result = await presignCommand(
           fx.client,
           fx.bucket,
           inputs('presign', { source: 'bulk/', maxResults: 105 }),
         )
-        files = result.files
-        setSummaryJsonOutput(result.files)
+        files = result.files.map((file) => ({ ...file, padding: 'x'.repeat(3000) }))
+        setSummaryJsonOutput(files, { previewItem: omitUrlField })
       }),
     )
 
-    expect(error.message).toContain('Refusing to emit a partial summary-json value')
     expect(files).toHaveLength(105)
-    expect(stdout).not.toContain('::set-output name=summary-json::')
     const previewIndex = stdout.indexOf('::set-output name=summary-json-preview::')
     expect(previewIndex).toBeGreaterThan(-1)
 
@@ -152,7 +150,7 @@ describe('presign command (prefix mode)', () => {
     }
 
     const previewOutput = stdout.slice(previewIndex)
-    for (const f of files.slice(100)) {
+    for (const f of files) {
       expect(previewOutput).not.toContain(f.url)
       expect(previewOutput).not.toContain(commandEscaped(f.url))
     }
@@ -175,6 +173,13 @@ describe('presign command (prefix mode)', () => {
 
 function commandEscaped(value: string): string {
   return value.replaceAll('%', '%25').replaceAll('\r', '%0D').replaceAll('\n', '%0A')
+}
+
+function omitUrlField(item: unknown): unknown {
+  if (typeof item !== 'object' || item === null || Array.isArray(item)) return item
+  const clone: Record<string, unknown> = { ...(item as Record<string, unknown>) }
+  delete clone.url
+  return clone
 }
 
 async function withoutGithubOutput<T>(fn: () => Promise<T>): Promise<T> {

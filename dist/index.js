@@ -41322,54 +41322,60 @@ function addUriEncodedSecretVariant(variants, secret) {
 ;// CONCATENATED MODULE: ./src/outputs.ts
 
 
-const SUMMARY_JSON_MAX_ENTRIES = 100;
-const SUMMARY_JSON_MAX_UTF16_BYTES = 256 * 1024;
+const SUMMARY_JSON_PREVIEW_MAX_ENTRIES = 100;
+const SUMMARY_JSON_MAX_UTF8_BYTES = 256 * 1024;
 /**
  * Serialize per-file command details into the bounded `summary-json` output.
  *
- * GitHub Actions caps all action outputs for a job at 1 MB, approximated with
- * UTF-16 size. Keep this single structured output well below that job-level
+ * GitHub Actions writes outputs as UTF-8 and caps all action outputs for a job
+ * at 1 MB. Keep this single structured output well below that job-level
  * budget so the scalar outputs and any caller-defined outputs still have room.
  *
- * `summary-json` is complete-or-error: callers never receive a successful,
- * partial value under that legacy output name. When a result exceeds the
- * supported cap, `summary-json-preview` receives the bounded prefix,
- * `summary-json-truncated` is set to `true`, and the action fails so existing
- * manifest consumers cannot silently process an incomplete array. Callers that
- * are already failing may set `failClosed: false` to preserve the primary
- * command error while still emitting truncation diagnostics. Scalar count
+ * `summary-json` remains a complete array when the full manifest fits. When a
+ * result exceeds the supported byte cap, `summary-json` receives a small JSON
+ * object describing the truncation, never a partial array or an empty string.
+ * `summary-json-preview` receives a bounded diagnostic prefix,
+ * `summary-json-truncated` is set to `true`, and the action step may still
+ * succeed because the B2 operation itself has already completed. Scalar count
  * outputs (`file-count`, `files-listed`, etc.) remain the authoritative totals.
  */
-function buildSummaryJsonPayload(items) {
-    if (items.length <= SUMMARY_JSON_MAX_ENTRIES) {
-        const fullJson = JSON.stringify(items);
-        if (utf16ByteLength(fullJson) <= SUMMARY_JSON_MAX_UTF16_BYTES) {
-            return {
-                json: fullJson,
-                totalCount: items.length,
-                emittedCount: items.length,
-                truncated: false,
-            };
-        }
+function buildSummaryJsonPayload(items, options = {}) {
+    const fullJson = JSON.stringify(items);
+    if (utf8ByteLength(fullJson) <= SUMMARY_JSON_MAX_UTF8_BYTES) {
+        return {
+            json: fullJson,
+            totalCount: items.length,
+            emittedCount: items.length,
+            truncated: false,
+        };
     }
-    const preview = buildSummaryJsonPreview(items);
+    const preview = buildSummaryJsonPreview(items, options);
     return {
+        json: JSON.stringify({
+            truncated: true,
+            reason: 'summary-json exceeded the supported UTF-8 output size cap',
+            totalCount: items.length,
+            previewCount: preview.emittedCount,
+            previewOutput: 'summary-json-preview',
+        }),
         previewJson: preview.json,
         totalCount: items.length,
         emittedCount: preview.emittedCount,
         truncated: true,
     };
 }
-function buildSummaryJsonPreview(items) {
-    const cappedCount = Math.min(items.length, SUMMARY_JSON_MAX_ENTRIES);
+function buildSummaryJsonPreview(items, options) {
+    const cappedCount = Math.min(items.length, SUMMARY_JSON_PREVIEW_MAX_ENTRIES);
     let low = 0;
     let high = cappedCount;
     let emittedCount = 0;
     let json = '[]';
+    // Serialized JSON array length grows monotonically as prefix elements are
+    // appended, so binary search the largest diagnostic prefix that fits.
     while (low <= high) {
         const mid = Math.floor((low + high) / 2);
-        const candidate = JSON.stringify(items.slice(0, mid));
-        if (utf16ByteLength(candidate) <= SUMMARY_JSON_MAX_UTF16_BYTES) {
+        const candidate = JSON.stringify(previewItems(items, mid, options.previewItem));
+        if (utf8ByteLength(candidate) <= SUMMARY_JSON_MAX_UTF8_BYTES) {
             emittedCount = mid;
             json = candidate;
             low = mid + 1;
@@ -41381,26 +41387,24 @@ function buildSummaryJsonPreview(items) {
     return { json, emittedCount };
 }
 function setSummaryJsonOutput(items, options = {}) {
-    const payload = buildSummaryJsonPayload(items);
-    const failClosed = options.failClosed ?? true;
+    const payload = buildSummaryJsonPayload(items, options);
     setOutput('summary-json-truncated', String(payload.truncated));
+    setOutput('summary-json', payload.json);
     if (!payload.truncated) {
-        setOutput('summary-json', payload.json);
         return;
     }
     setOutput('summary-json-preview', payload.previewJson);
     warning(`summary-json exceeds supported output limits; preview contains ` +
         `${payload.emittedCount} of ${payload.totalCount} item(s). ` +
-        `limit is ${SUMMARY_JSON_MAX_ENTRIES} entries and ${formatKiB(SUMMARY_JSON_MAX_UTF16_BYTES)} of UTF-16 JSON text`);
-    if (!failClosed)
-        return;
-    throw new Error(`summary-json exceeds supported output limits: ${payload.totalCount} item(s) cannot fit ` +
-        `within ${SUMMARY_JSON_MAX_ENTRIES} entries and ${formatKiB(SUMMARY_JSON_MAX_UTF16_BYTES)} of UTF-16 JSON text. Refusing to emit a partial summary-json value; ` +
-        `use file-count or verb-specific counts for totals and summary-json-preview only after ` +
-        `checking summary-json-truncated.`);
+        `summary-json contains a truncation notice instead of a partial manifest. ` +
+        `limit is ${formatKiB(SUMMARY_JSON_MAX_UTF8_BYTES)} of UTF-8 JSON text`);
 }
-function utf16ByteLength(value) {
-    return external_node_buffer_.Buffer.byteLength(value, 'utf16le');
+function previewItems(items, count, previewItem) {
+    const slice = items.slice(0, count);
+    return previewItem === undefined ? slice : slice.map(previewItem);
+}
+function utf8ByteLength(value) {
+    return external_node_buffer_.Buffer.byteLength(value, 'utf8');
 }
 function formatKiB(bytes) {
     return `${Math.floor(bytes / 1024)} KiB`;
@@ -41410,6 +41414,7 @@ function formatKiB(bytes) {
 
 
 
+const STEP_SUMMARY_MAX_ROWS = 100;
 /**
  * Append a markdown summary block to `$GITHUB_STEP_SUMMARY`. No-ops when
  * the env var is unset (e.g. running the bundle locally for a smoke test).
@@ -41422,6 +41427,7 @@ async function writeStepSummary(opts) {
     const path = process.env.GITHUB_STEP_SUMMARY;
     if (path === undefined || path === '')
         return;
+    const rows = opts.rows.slice(0, STEP_SUMMARY_MAX_ROWS);
     const lines = [];
     lines.push(`## ${opts.title}`);
     lines.push('');
@@ -41429,10 +41435,14 @@ async function writeStepSummary(opts) {
         lines.push(`**${opts.totals.files}** files, **${formatBytes(opts.totals.bytes)}** total.`);
         lines.push('');
     }
-    if (opts.rows.length > 0) {
+    if (opts.rows.length > rows.length) {
+        lines.push(`Showing first ${rows.length} of ${opts.rows.length} rows.`);
+        lines.push('');
+    }
+    if (rows.length > 0) {
         lines.push('| File | Size | File ID | SHA-1 | Status |');
         lines.push('|------|------|---------|-------|--------|');
-        for (const r of opts.rows) {
+        for (const r of rows) {
             lines.push(`| ${inlineCodeCell(r.fileName)} | ${r.size !== undefined ? formatBytes(r.size) : ''} | ${r.fileId !== undefined ? inlineCodeCell(r.fileId) : ''} | ${r.sha1 !== undefined && r.sha1 !== null ? `\`${r.sha1.slice(0, 12)}…\`` : ''} | ${r.status ?? ''} |`);
         }
     }
@@ -41544,7 +41554,7 @@ async function run() {
                 await writeStepSummary({
                     title: 'Backblaze B2: upload',
                     totals: { files: result.files.length, bytes: result.bytesTransferred },
-                    rows: result.files.map((f) => ({
+                    rows: stepSummaryItems(result.files).map((f) => ({
                         fileName: f.fileName,
                         size: f.size,
                         fileId: f.fileId,
@@ -41570,7 +41580,7 @@ async function run() {
                 await writeStepSummary({
                     title: 'Backblaze B2: download',
                     totals: { files: result.files.length, bytes: result.bytesTransferred },
-                    rows: result.files.map((f) => ({
+                    rows: stepSummaryItems(result.files).map((f) => ({
                         fileName: f.fileName,
                         size: f.size,
                         sha1: f.contentSha1,
@@ -41588,7 +41598,7 @@ async function run() {
                 setFileCountOutput(result.uploaded + result.downloaded + result.deleted + result.skipped);
                 setOutput('bytes-transferred', String(result.bytesTransferred));
                 if (result.errors > 0) {
-                    setSummaryJsonOutput(result.events, { failClosed: false });
+                    setSummaryJsonOutput(result.events);
                     const sample = summarizeSyncErrors(result.events);
                     throw new Error(`Sync completed with ${result.errors} error(s): ${sample}`);
                 }
@@ -41660,7 +41670,7 @@ async function run() {
                         status: `expires at ${new Date(f.expiresAt * 1000).toISOString()}`,
                     })),
                 });
-                setSummaryJsonOutput(result.files);
+                setSummaryJsonOutput(result.files, { previewItem: omitUrlField });
                 return;
             }
             case 'list': {
@@ -41843,13 +41853,13 @@ async function emitDeletionSummary(verb, result, inputs) {
     setOutput('files-deleted', String(actuallyDeleted));
     setFileCountOutput(result.files.length);
     if (result.errors > 0) {
-        setSummaryJsonOutput(result.files, { failClosed: false });
+        setSummaryJsonOutput(result.files);
         const labels = { delete: 'Delete', purge: 'Purge' };
         throw new Error(`${labels[verb]} completed with ${result.errors} error(s)`);
     }
     const past = verb === 'delete' ? 'deleted' : 'purged';
     const future = verb === 'delete' ? 'would delete' : 'would purge';
-    const rowsSource = verb === 'purge' ? result.files.slice(0, 100) : result.files;
+    const rowsSource = stepSummaryItems(result.files);
     await writeStepSummary({
         title: inputs.dryRun ? `Backblaze B2: ${verb} (dry-run)` : `Backblaze B2: ${verb}`,
         totals: { files: actuallyDeleted + wouldDelete, bytes: 0 },
@@ -41860,6 +41870,16 @@ async function emitDeletionSummary(verb, result, inputs) {
         })),
     });
     setSummaryJsonOutput(result.files);
+}
+function stepSummaryItems(items) {
+    return items.slice(0, STEP_SUMMARY_MAX_ROWS);
+}
+function omitUrlField(item) {
+    if (typeof item !== 'object' || item === null || Array.isArray(item))
+        return item;
+    const clone = { ...item };
+    delete clone.url;
+    return clone;
 }
 function setFileCountOutput(count) {
     setOutput('file-count', String(count));

@@ -15,6 +15,7 @@ import type { DownloadedFile } from '../src/commands/download.ts'
 import type { ListedFile } from '../src/commands/list.ts'
 import type { UploadedFile } from '../src/commands/upload.ts'
 import type { ActionName, ParsedInputs } from '../src/inputs.ts'
+import { SUMMARY_JSON_MAX_UTF8_BYTES, SUMMARY_JSON_PREVIEW_MAX_ENTRIES } from '../src/outputs.ts'
 import type * as Summary from '../src/summary.ts'
 import {
   makeParsedInputs,
@@ -82,6 +83,30 @@ describe('main dispatcher', () => {
     expect(ctx.core.setFailed).not.toHaveBeenCalled()
     expect(outputs(ctx)).toEqual(expectedOutputs)
     expect(ctx.writeStepSummary).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps large mutating results successful and caps upload summary rows', async () => {
+    const ctx = await loadMain()
+    const files = Array.from({ length: SUMMARY_JSON_PREVIEW_MAX_ENTRIES + 50 }, (_, i) =>
+      uploadedFile({
+        fileName: `uploaded-${i}.txt`,
+        fileId: `id-uploaded-${i}`,
+        size: 1,
+      }),
+    )
+    ctx.parseInputs.mockReturnValue(inputs('upload'))
+    ctx.commands.uploadCommand.mockResolvedValue({ files, bytesTransferred: files.length })
+
+    await ctx.run()
+
+    const out = outputs(ctx)
+    const summary = firstSummary(ctx)
+    expect(ctx.core.setFailed).not.toHaveBeenCalled()
+    expect(out['files-uploaded']).toBe(String(files.length))
+    expect(out['summary-json-truncated']).toBe('false')
+    expect(JSON.parse(out['summary-json'] ?? '[]')).toHaveLength(files.length)
+    expect(summary?.rows).toHaveLength(SUMMARY_JSON_PREVIEW_MAX_ENTRIES)
+    expect(summary?.rows?.at(-1)?.fileName).toBe('uploaded-99.txt')
   })
 
   it('passes endpoint only when the parsed input supplies one', async () => {
@@ -428,7 +453,7 @@ describe('main dispatcher', () => {
     })
   })
 
-  it('renders every delete row without the purge summary cap', async () => {
+  it('caps delete summary rows while counting every file', async () => {
     const ctx = await loadMain()
     const files = Array.from({ length: 150 }, (_, i) => ({
       fileName: `d${i}.txt`,
@@ -445,10 +470,10 @@ describe('main dispatcher', () => {
       title: 'Backblaze B2: delete',
       totals: { files: 150, bytes: 0 },
     })
-    expect(summary?.rows).toHaveLength(150)
+    expect(summary?.rows).toHaveLength(SUMMARY_JSON_PREVIEW_MAX_ENTRIES)
     expect(summary?.rows?.at(-1)).toEqual({
-      fileName: 'd149.txt',
-      fileId: 'id-149',
+      fileName: 'd99.txt',
+      fileId: 'id-99',
       status: 'deleted',
     })
   })
@@ -495,6 +520,25 @@ describe('main dispatcher', () => {
     })
   })
 
+  it('omits presign URLs from truncated summary previews', async () => {
+    const ctx = await loadMain()
+    const url = `https://signed.example/${'s'.repeat(SUMMARY_JSON_MAX_UTF8_BYTES)}`
+    const files = [{ fileName: 'signed.txt', url, expiresAt: 1_900_000_000 }]
+    ctx.parseInputs.mockReturnValue(inputs('presign'))
+    ctx.commands.presignCommand.mockResolvedValue({ files })
+
+    await ctx.run()
+
+    const out = outputs(ctx)
+    expect(ctx.core.setFailed).not.toHaveBeenCalled()
+    expect(out['presigned-url']).toBe(url)
+    expect(out['summary-json-truncated']).toBe('true')
+    expect(out['summary-json-preview']).not.toContain(url)
+    expect(JSON.parse(out['summary-json-preview'] ?? '[]')).toEqual([
+      { fileName: 'signed.txt', expiresAt: 1_900_000_000 },
+    ])
+  })
+
   it('warns when list results are truncated and caps summary rows', async () => {
     const ctx = await loadMain()
     const files = Array.from({ length: 120 }, (_, i) =>
@@ -530,9 +574,9 @@ describe('main dispatcher', () => {
     })
   })
 
-  it('fails closed instead of emitting partial summary-json outputs', async () => {
+  it('keeps successful results over the preview count non-fatal when summary-json fits', async () => {
     const ctx = await loadMain()
-    const files = Array.from({ length: 105 }, (_, i) =>
+    const files = Array.from({ length: SUMMARY_JSON_PREVIEW_MAX_ENTRIES + 5 }, (_, i) =>
       listedFile({
         fileName: `manifest-${i}.txt`,
         fileId: `id-manifest-${i}`,
@@ -545,16 +589,42 @@ describe('main dispatcher', () => {
     await ctx.run()
 
     const out = outputs(ctx)
-    expect(out).not.toHaveProperty('summary-json')
-    expect(out['summary-json-truncated']).toBe('true')
-    expect(JSON.parse(out['summary-json-preview'] ?? '[]')).toHaveLength(100)
-    expect(ctx.core.warning).toHaveBeenCalledWith(
-      expect.stringContaining('summary-json exceeds supported output limits'),
+    expect(ctx.core.setFailed).not.toHaveBeenCalled()
+    expect(out['summary-json-truncated']).toBe('false')
+    expect(JSON.parse(out['summary-json'] ?? '[]')).toHaveLength(
+      SUMMARY_JSON_PREVIEW_MAX_ENTRIES + 5,
     )
-    expect(ctx.core.setFailed).toHaveBeenCalledWith(
-      expect.stringContaining('Refusing to emit a partial summary-json value'),
-    )
+    expect(out).not.toHaveProperty('summary-json-preview')
     expect(ctx.writeStepSummary).toHaveBeenCalledTimes(1)
+  })
+
+  it('emits a truncation notice without failing successful oversized results', async () => {
+    const ctx = await loadMain()
+    const files = Array.from({ length: 3 }, (_, i) =>
+      listedFile({
+        fileName: `huge-${i}-${'x'.repeat(SUMMARY_JSON_MAX_UTF8_BYTES)}`,
+        fileId: `id-huge-${i}`,
+        size: 1,
+      }),
+    )
+    ctx.parseInputs.mockReturnValue(inputs('list'))
+    ctx.commands.listCommand.mockResolvedValue({ files, truncated: false })
+
+    await ctx.run()
+
+    const out = outputs(ctx)
+    expect(ctx.core.setFailed).not.toHaveBeenCalled()
+    expect(out['summary-json-truncated']).toBe('true')
+    expect(Array.isArray(JSON.parse(out['summary-json'] ?? '[]'))).toBe(false)
+    expect(JSON.parse(out['summary-json'] ?? '{}')).toMatchObject({
+      truncated: true,
+      totalCount: 3,
+      previewOutput: 'summary-json-preview',
+    })
+    expect(out['summary-json-preview']).toBe('[]')
+    expect(ctx.core.warning).toHaveBeenCalledWith(
+      expect.stringContaining('summary-json contains a truncation notice'),
+    )
   })
 
   it('omits list truncation markers when results fit', async () => {
@@ -818,23 +888,23 @@ describe('main dispatcher', () => {
     )
   })
 
-  it('preserves sync aggregate errors when the summary preview is capped', async () => {
+  it('preserves sync aggregate errors when summary-json is truncated', async () => {
     const ctx = await loadMain()
-    const events = Array.from({ length: 105 }, (_, i) => ({
-      type: i === 104 ? 'error' : 'skip',
+    const events = Array.from({ length: 3 }, (_, i) => ({
+      type: i === 2 ? 'error' : 'skip',
       path: `remote-${i}.txt`,
-      message: i === 104 ? 'denied' : undefined,
+      message: i === 2 ? `denied-${'x'.repeat(SUMMARY_JSON_MAX_UTF8_BYTES)}` : undefined,
       size: 0,
     }))
     ctx.parseInputs.mockReturnValue(inputs('sync'))
-    ctx.commands.summarizeSyncErrors.mockReturnValue('remote-104.txt: denied')
+    ctx.commands.summarizeSyncErrors.mockReturnValue('remote-2.txt: denied')
     ctx.commands.syncCommand.mockResolvedValue({
       events,
       direction: 'b2-to-local',
       uploaded: 0,
       downloaded: 0,
       deleted: 0,
-      skipped: 105,
+      skipped: 3,
       errors: 1,
       bytesTransferred: 0,
     })
@@ -843,11 +913,11 @@ describe('main dispatcher', () => {
 
     const out = outputs(ctx)
     expect(ctx.core.setFailed).toHaveBeenCalledWith(
-      'Sync completed with 1 error(s): remote-104.txt: denied',
+      'Sync completed with 1 error(s): remote-2.txt: denied',
     )
-    expect(out).not.toHaveProperty('summary-json')
     expect(out['summary-json-truncated']).toBe('true')
-    expect(JSON.parse(out['summary-json-preview'] ?? '[]')).toHaveLength(100)
+    expect(Array.isArray(JSON.parse(out['summary-json'] ?? '[]'))).toBe(false)
+    expect(JSON.parse(out['summary-json-preview'] ?? '[]')).toHaveLength(2)
   })
 
   it('reports failed verify results after publishing diagnostic outputs', async () => {
@@ -944,10 +1014,10 @@ describe('main dispatcher', () => {
   it.each([
     ['delete', 'Delete', 1],
     ['purge', 'Purge', 2],
-  ] as const)('preserves %s aggregate errors when the summary preview is capped', async (action, label, errors) => {
+  ] as const)('preserves %s aggregate errors when summary-json is truncated', async (action, label, errors) => {
     const ctx = await loadMain()
-    const files = Array.from({ length: 105 }, (_, i) => ({
-      fileName: `stuck-${i}.txt`,
+    const files = Array.from({ length: 3 }, (_, i) => ({
+      fileName: `stuck-${i}-${'x'.repeat(SUMMARY_JSON_MAX_UTF8_BYTES)}`,
       fileId: `id-stuck-${i}`,
       skipped: false,
     }))
@@ -962,12 +1032,12 @@ describe('main dispatcher', () => {
     const out = outputs(ctx)
     expect(ctx.core.setFailed).toHaveBeenCalledWith(`${label} completed with ${errors} error(s)`)
     expect(out).toMatchObject({
-      'files-deleted': '105',
-      'file-count': '105',
+      'files-deleted': '3',
+      'file-count': '3',
       'summary-json-truncated': 'true',
     })
-    expect(out).not.toHaveProperty('summary-json')
-    expect(JSON.parse(out['summary-json-preview'] ?? '[]')).toHaveLength(100)
+    expect(Array.isArray(JSON.parse(out['summary-json'] ?? '[]'))).toBe(false)
+    expect(out['summary-json-preview']).toBe('[]')
     expect(ctx.writeStepSummary).not.toHaveBeenCalled()
   })
 
@@ -1049,7 +1119,10 @@ async function loadMain() {
     parseInputs,
   }))
   vi.doMock('../src/client.ts', () => ({ buildClient, getBucket }))
-  vi.doMock('../src/summary.ts', () => ({ writeStepSummary }))
+  vi.doMock('../src/summary.ts', () => ({
+    STEP_SUMMARY_MAX_ROWS: SUMMARY_JSON_PREVIEW_MAX_ENTRIES,
+    writeStepSummary,
+  }))
   vi.doMock('../src/commands/upload.ts', () => ({ uploadCommand: commands.uploadCommand }))
   vi.doMock('../src/commands/download.ts', () => ({ downloadCommand: commands.downloadCommand }))
   vi.doMock('../src/commands/sync.ts', () => ({
