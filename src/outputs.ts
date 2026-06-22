@@ -44,22 +44,42 @@ export function buildSummaryJsonPayload(
   items: readonly unknown[],
   options: SummaryJsonOutputOptions = {},
 ): SummaryJsonPayload {
-  const fullJson = JSON.stringify(items)
-  if (utf8ByteLength(fullJson) <= SUMMARY_JSON_MAX_UTF8_BYTES) {
-    return {
-      json: fullJson,
-      totalCount: items.length,
-      emittedCount: items.length,
-      truncated: false,
+  try {
+    const fullJson = JSON.stringify(items)
+    if (utf8ByteLength(fullJson) <= SUMMARY_JSON_MAX_UTF8_BYTES) {
+      return {
+        json: fullJson,
+        totalCount: items.length,
+        emittedCount: items.length,
+        truncated: false,
+      }
     }
+  } catch {
+    return buildTruncatedSummaryJsonPayload(
+      items,
+      options,
+      'summary-json could not be serialized within the supported output contract',
+    )
   }
 
+  return buildTruncatedSummaryJsonPayload(
+    items,
+    options,
+    'summary-json exceeded the supported UTF-8 output size cap',
+  )
+}
+
+function buildTruncatedSummaryJsonPayload(
+  items: readonly unknown[],
+  options: SummaryJsonOutputOptions,
+  reason: string,
+): TruncatedSummaryJsonPayload {
   const preview = buildSummaryJsonPreview(items, options)
 
   return {
     json: JSON.stringify({
       truncated: true,
-      reason: 'summary-json exceeded the supported UTF-8 output size cap',
+      reason,
       totalCount: items.length,
       previewCount: preview.emittedCount,
       previewOutput: 'summary-json-preview',
@@ -88,7 +108,13 @@ function buildSummaryJsonPreview(
   // appended, so binary search the largest diagnostic prefix that fits.
   while (low <= high) {
     const mid = Math.floor((low + high) / 2)
-    const candidate = JSON.stringify(previewItems(items, mid, options.previewItem))
+    let candidate: string
+    try {
+      candidate = JSON.stringify(previewItems(items, mid, options.previewItem))
+    } catch {
+      high = mid - 1
+      continue
+    }
     if (utf8ByteLength(candidate) <= SUMMARY_JSON_MAX_UTF8_BYTES) {
       emittedCount = mid
       json = candidate

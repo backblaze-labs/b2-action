@@ -82,6 +82,24 @@ describe('summary-json output guard', () => {
     expect(JSON.parse(payload.json)).toMatchObject({ truncated: true, previewCount: 0 })
   })
 
+  it('emits a truncation notice when the full manifest cannot be serialized', () => {
+    const circular: Record<string, unknown> = { fileName: 'bad.txt' }
+    circular.self = circular
+    const items = [{ fileName: 'safe.txt' }, circular]
+
+    const payload = buildSummaryJsonPayload(items)
+
+    expect(payload.truncated).toBe(true)
+    if (!payload.truncated) throw new Error('expected truncated payload')
+    expect(JSON.parse(payload.json)).toMatchObject({
+      truncated: true,
+      reason: 'summary-json could not be serialized within the supported output contract',
+      totalCount: items.length,
+      previewCount: 1,
+    })
+    expect(JSON.parse(payload.previewJson)).toEqual([{ fileName: 'safe.txt' }])
+  })
+
   it('can omit secret fields from the bounded preview', () => {
     const items = [
       {

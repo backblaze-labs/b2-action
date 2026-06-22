@@ -221,7 +221,7 @@ export async function run(): Promise<void> {
             files: result.files.length,
             bytes: result.files.reduce((s, f) => s + f.size, 0),
           },
-          rows: result.files.slice(0, 100).map((f) => ({
+          rows: stepSummaryItems(result.files).map((f) => ({
             fileName: f.fileName,
             size: f.size,
             fileId: f.fileId,
