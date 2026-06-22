@@ -41437,12 +41437,14 @@ const STEP_SUMMARY_MAX_ROWS = 100;
  * @param opts.title - Heading rendered as `## {title}`.
  * @param opts.rows - One row per file. Empty rows render an empty table body.
  * @param opts.totals - Optional aggregate line printed above the table.
+ * @param opts.totalRows - Optional source row count when callers pre-slice rows.
  */
 async function writeStepSummary(opts) {
     const path = process.env.GITHUB_STEP_SUMMARY;
     if (path === undefined || path === '')
         return;
     const rows = opts.rows.slice(0, STEP_SUMMARY_MAX_ROWS);
+    const totalRows = opts.totalRows ?? opts.rows.length;
     const lines = [];
     lines.push(`## ${opts.title}`);
     lines.push('');
@@ -41450,8 +41452,8 @@ async function writeStepSummary(opts) {
         lines.push(`**${opts.totals.files}** files, **${formatBytes(opts.totals.bytes)}** total.`);
         lines.push('');
     }
-    if (opts.rows.length > rows.length) {
-        lines.push(`Showing first ${rows.length} of ${opts.rows.length} rows.`);
+    if (totalRows > rows.length) {
+        lines.push(`Showing first ${rows.length} of ${totalRows} rows.`);
         lines.push('');
     }
     if (rows.length > 0) {
@@ -41569,6 +41571,7 @@ async function run() {
                 await writeStepSummary({
                     title: 'Backblaze B2: upload',
                     totals: { files: result.files.length, bytes: result.bytesTransferred },
+                    ...stepSummaryTotalRows(result.files),
                     rows: stepSummaryItems(result.files).map((f) => ({
                         fileName: f.fileName,
                         size: f.size,
@@ -41595,6 +41598,7 @@ async function run() {
                 await writeStepSummary({
                     title: 'Backblaze B2: download',
                     totals: { files: result.files.length, bytes: result.bytesTransferred },
+                    ...stepSummaryTotalRows(result.files),
                     rows: stepSummaryItems(result.files).map((f) => ({
                         fileName: f.fileName,
                         size: f.size,
@@ -41701,6 +41705,7 @@ async function run() {
                         files: result.files.length,
                         bytes: result.files.reduce((s, f) => s + f.size, 0),
                     },
+                    ...stepSummaryTotalRows(result.files),
                     rows: stepSummaryItems(result.files).map((f) => ({
                         fileName: f.fileName,
                         size: f.size,
@@ -41878,6 +41883,7 @@ async function emitDeletionSummary(verb, result, inputs) {
     await writeStepSummary({
         title: inputs.dryRun ? `Backblaze B2: ${verb} (dry-run)` : `Backblaze B2: ${verb}`,
         totals: { files: actuallyDeleted + wouldDelete, bytes: 0 },
+        ...stepSummaryTotalRows(result.files),
         rows: rowsSource.map((f) => ({
             fileName: f.fileName,
             fileId: f.fileId,
@@ -41888,6 +41894,9 @@ async function emitDeletionSummary(verb, result, inputs) {
 }
 function stepSummaryItems(items) {
     return items.slice(0, STEP_SUMMARY_MAX_ROWS);
+}
+function stepSummaryTotalRows(items) {
+    return items.length > STEP_SUMMARY_MAX_ROWS ? { totalRows: items.length } : {};
 }
 function omitUrlField(item) {
     if (typeof item !== 'object' || item === null || Array.isArray(item))

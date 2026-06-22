@@ -88,6 +88,7 @@ export async function run(): Promise<void> {
         await writeStepSummary({
           title: 'Backblaze B2: upload',
           totals: { files: result.files.length, bytes: result.bytesTransferred },
+          ...stepSummaryTotalRows(result.files),
           rows: stepSummaryItems(result.files).map((f) => ({
             fileName: f.fileName,
             size: f.size,
@@ -113,6 +114,7 @@ export async function run(): Promise<void> {
         await writeStepSummary({
           title: 'Backblaze B2: download',
           totals: { files: result.files.length, bytes: result.bytesTransferred },
+          ...stepSummaryTotalRows(result.files),
           rows: stepSummaryItems(result.files).map((f) => ({
             fileName: f.fileName,
             size: f.size,
@@ -221,6 +223,7 @@ export async function run(): Promise<void> {
             files: result.files.length,
             bytes: result.files.reduce((s, f) => s + f.size, 0),
           },
+          ...stepSummaryTotalRows(result.files),
           rows: stepSummaryItems(result.files).map((f) => ({
             fileName: f.fileName,
             size: f.size,
@@ -398,6 +401,7 @@ async function emitDeletionSummary(
   await writeStepSummary({
     title: inputs.dryRun ? `Backblaze B2: ${verb} (dry-run)` : `Backblaze B2: ${verb}`,
     totals: { files: actuallyDeleted + wouldDelete, bytes: 0 },
+    ...stepSummaryTotalRows(result.files),
     rows: rowsSource.map((f) => ({
       fileName: f.fileName,
       fileId: f.fileId,
@@ -409,6 +413,12 @@ async function emitDeletionSummary(
 
 function stepSummaryItems<T>(items: readonly T[]): readonly T[] {
   return items.slice(0, STEP_SUMMARY_MAX_ROWS)
+}
+
+function stepSummaryTotalRows<T>(
+  items: readonly T[],
+): { totalRows: number } | Record<string, never> {
+  return items.length > STEP_SUMMARY_MAX_ROWS ? { totalRows: items.length } : {}
 }
 
 function omitUrlField(item: unknown): unknown {

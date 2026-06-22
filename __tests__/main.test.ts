@@ -105,6 +105,7 @@ describe('main dispatcher', () => {
     expect(out['files-uploaded']).toBe(String(files.length))
     expect(out['summary-json-truncated']).toBe('false')
     expect(JSON.parse(out['summary-json'] ?? '[]')).toHaveLength(files.length)
+    expect(summary?.totalRows).toBe(files.length)
     expect(summary?.rows).toHaveLength(SUMMARY_JSON_PREVIEW_MAX_ENTRIES)
     expect(summary?.rows?.at(-1)?.fileName).toBe('uploaded-99.txt')
   })
@@ -469,6 +470,7 @@ describe('main dispatcher', () => {
     expect(summary).toMatchObject({
       title: 'Backblaze B2: delete',
       totals: { files: 150, bytes: 0 },
+      totalRows: 150,
     })
     expect(summary?.rows).toHaveLength(SUMMARY_JSON_PREVIEW_MAX_ENTRIES)
     expect(summary?.rows?.at(-1)).toEqual({
@@ -560,6 +562,7 @@ describe('main dispatcher', () => {
     expect(summary).toMatchObject({
       title: 'Backblaze B2: list (120+)',
       totals: { files: 120, bytes: 120 },
+      totalRows: 120,
     })
     expect(summary?.rows).toHaveLength(100)
     expect(summary?.rows?.[0]).toMatchObject({
@@ -1057,6 +1060,7 @@ describe('main dispatcher', () => {
     expect(summary).toMatchObject({
       title: 'Backblaze B2: purge',
       totals: { files: 150, bytes: 0 },
+      totalRows: 150,
     })
     expect(summary?.rows).toHaveLength(100)
     expect(summary?.rows?.[0]).toEqual({

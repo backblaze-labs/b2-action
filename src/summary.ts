@@ -41,16 +41,19 @@ export interface SummaryRow {
  * @param opts.title - Heading rendered as `## {title}`.
  * @param opts.rows - One row per file. Empty rows render an empty table body.
  * @param opts.totals - Optional aggregate line printed above the table.
+ * @param opts.totalRows - Optional source row count when callers pre-slice rows.
  */
 export async function writeStepSummary(opts: {
   title: string
   rows: readonly SummaryRow[]
   totals?: { files: number; bytes: number } | undefined
+  totalRows?: number | undefined
 }): Promise<void> {
   const path = process.env.GITHUB_STEP_SUMMARY
   if (path === undefined || path === '') return
 
   const rows = opts.rows.slice(0, STEP_SUMMARY_MAX_ROWS)
+  const totalRows = opts.totalRows ?? opts.rows.length
   const lines: string[] = []
   lines.push(`## ${opts.title}`)
   lines.push('')
@@ -60,8 +63,8 @@ export async function writeStepSummary(opts: {
     lines.push('')
   }
 
-  if (opts.rows.length > rows.length) {
-    lines.push(`Showing first ${rows.length} of ${opts.rows.length} rows.`)
+  if (totalRows > rows.length) {
+    lines.push(`Showing first ${rows.length} of ${totalRows} rows.`)
     lines.push('')
   }
 

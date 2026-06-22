@@ -83,6 +83,21 @@ describe('writeStepSummary', () => {
     expect(out).not.toContain('<code>file-100.txt</code>')
   })
 
+  it('reports the source row count when callers pre-slice rows', async () => {
+    await writeStepSummary({
+      title: 'Pre-sliced run',
+      totalRows: STEP_SUMMARY_MAX_ROWS + 25,
+      rows: Array.from({ length: STEP_SUMMARY_MAX_ROWS }, (_, i) => ({
+        fileName: `file-${i}.txt`,
+      })),
+    })
+
+    const out = await readFile(path, 'utf8')
+    expect(out).toContain(
+      `Showing first ${STEP_SUMMARY_MAX_ROWS} of ${STEP_SUMMARY_MAX_ROWS + 25} rows.`,
+    )
+  })
+
   it('no-ops when GITHUB_STEP_SUMMARY is unset', async () => {
     Reflect.deleteProperty(process.env, 'GITHUB_STEP_SUMMARY')
     // Should not throw.
