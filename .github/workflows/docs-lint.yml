@@ -6,7 +6,7 @@ name: Docs lint
 #   3. lychee for broken markdown links (offline + fragment-aware).
 #   4. cspell for spelling across source, markdown, and workflow YAML.
 #
-# Cheap and fast. Runs on every PR + every push to main.
+# Reproducible docs checks. Runs on every PR + every push to main.
 
 on:
   push:
@@ -63,8 +63,11 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm docs:lint
+      # Install lockfile-pinned tools with lifecycle scripts disabled. This
+      # workflow runs on fork PRs, so invoke fixed binaries rather than
+      # PR-defined package scripts.
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: pnpm exec markdownlint-cli2
 
   link-check:
     name: Markdown link check
@@ -111,5 +114,6 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm spellcheck
+      # Same lockfile-pinned, no-lifecycle pattern as markdownlint.
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: pnpm exec cspell --no-progress --no-must-find-files
