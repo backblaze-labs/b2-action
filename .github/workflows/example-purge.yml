@@ -23,7 +23,7 @@ concurrency:
 jobs:
   purge:
     name: purge
-    if: github.event_name == 'workflow_dispatch' || github.event_name == 'push' || github.event.pull_request.head.repo.fork == false
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'push' || (github.event.pull_request.head.repo.fork == false && github.actor != 'dependabot[bot]')
     runs-on: ubuntu-latest
     env:
       PREFIX: examples/purge/${{ github.run_id }}/

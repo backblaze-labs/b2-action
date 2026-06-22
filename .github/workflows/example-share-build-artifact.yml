@@ -22,7 +22,7 @@ jobs:
     permissions:
       contents: read # needed to check out the repository
       pull-requests: write # posts the presigned artifact link as a PR comment
-    if: github.event_name == 'workflow_dispatch' || github.event_name == 'push' || github.event.pull_request.head.repo.fork == false
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'push' || (github.event.pull_request.head.repo.fork == false && github.actor != 'dependabot[bot]')
     runs-on: ubuntu-latest
     env:
       ARTIFACT_KEY: pr-builds/${{ github.run_id }}/build.tar.gz
