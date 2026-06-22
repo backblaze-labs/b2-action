@@ -40,7 +40,7 @@ jobs:
             exit 1
           fi
       - name: Audit full lockfile
-        run: pnpm audit --audit-level high
+        run: node scripts/full-lockfile-audit.mjs
       - run: pnpm install --frozen-lockfile
       - run: pnpm test:mutation
       - name: Upload mutation report
