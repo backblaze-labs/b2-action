@@ -40,6 +40,11 @@ interface PlannedDownload {
   localPath: string
 }
 
+interface LocalPathOwner {
+  fileName: string
+  localPath: string
+}
+
 /**
  * Download from B2 to the local runner.
  *
@@ -91,7 +96,8 @@ async function downloadPrefix(
   const caseInsensitivePaths = await isCaseInsensitiveDirectory(destRoot)
 
   const planned: PlannedDownload[] = []
-  const localPathOwners = new Map<string, string>()
+  const localPathOwners = new Map<string, LocalPathOwner>()
+  const localPathAncestorOwners = new Map<string, LocalPathOwner>()
   let startFileName: string | undefined
 
   for (;;) {
@@ -114,14 +120,13 @@ async function downloadPrefix(
         f.fileName,
         pathSafety,
       )
-      const collisionKey = localPathCollisionKey(localPath, caseInsensitivePaths)
-      const existingFileName = localPathOwners.get(collisionKey)
-      if (existingFileName !== undefined && existingFileName !== f.fileName) {
-        throw new Error(
-          `download path collision: B2 files "${existingFileName}" and "${f.fileName}" both map to "${localPath}"`,
-        )
-      }
-      localPathOwners.set(collisionKey, f.fileName)
+      recordPlannedLocalPath(
+        { fileName: f.fileName, localPath },
+        destRoot,
+        caseInsensitivePaths,
+        localPathOwners,
+        localPathAncestorOwners,
+      )
       planned.push({ fileName: f.fileName, localPath })
     }
     // SDK contract: `nextFileName` is `string | null` per `ListFileNamesResponse`.
@@ -342,6 +347,88 @@ async function isCaseInsensitiveDirectory(dir: string): Promise<boolean> {
 
 function localPathCollisionKey(localPath: string, caseInsensitivePaths: boolean): string {
   return caseInsensitivePaths ? localPath.toLowerCase() : localPath
+}
+
+function recordPlannedLocalPath(
+  owner: LocalPathOwner,
+  root: string,
+  caseInsensitivePaths: boolean,
+  localPathOwners: Map<string, LocalPathOwner>,
+  localPathAncestorOwners: Map<string, LocalPathOwner>,
+): void {
+  const collisionKey = localPathCollisionKey(owner.localPath, caseInsensitivePaths)
+  const existingFile = localPathOwners.get(collisionKey)
+  if (existingFile !== undefined && existingFile.fileName !== owner.fileName) {
+    throw new Error(
+      `download path collision: B2 files "${existingFile.fileName}" and "${owner.fileName}" both map to "${owner.localPath}"`,
+    )
+  }
+
+  const existingDescendant = localPathAncestorOwners.get(collisionKey)
+  if (existingDescendant !== undefined && existingDescendant.fileName !== owner.fileName) {
+    throwFileDirectoryCollision(owner, existingDescendant)
+  }
+
+  const existingAncestor = findLocalPathFileAncestor(
+    root,
+    owner.localPath,
+    caseInsensitivePaths,
+    localPathOwners,
+  )
+  if (existingAncestor !== undefined && existingAncestor.fileName !== owner.fileName) {
+    throwFileDirectoryCollision(existingAncestor, owner)
+  }
+
+  localPathOwners.set(collisionKey, owner)
+  rememberLocalPathAncestors(root, owner, caseInsensitivePaths, localPathAncestorOwners)
+}
+
+function findLocalPathFileAncestor(
+  root: string,
+  localPath: string,
+  caseInsensitivePaths: boolean,
+  localPathOwners: Map<string, LocalPathOwner>,
+): LocalPathOwner | undefined {
+  const rootKey = localPathCollisionKey(root, caseInsensitivePaths)
+  let parent = dirname(localPath)
+
+  for (;;) {
+    const parentKey = localPathCollisionKey(parent, caseInsensitivePaths)
+    if (parentKey === rootKey) return undefined
+    const owner = localPathOwners.get(parentKey)
+    if (owner !== undefined) return owner
+    const next = dirname(parent)
+    if (next === parent) return undefined
+    parent = next
+  }
+}
+
+function rememberLocalPathAncestors(
+  root: string,
+  owner: LocalPathOwner,
+  caseInsensitivePaths: boolean,
+  localPathAncestorOwners: Map<string, LocalPathOwner>,
+): void {
+  const rootKey = localPathCollisionKey(root, caseInsensitivePaths)
+  let parent = dirname(owner.localPath)
+
+  for (;;) {
+    const parentKey = localPathCollisionKey(parent, caseInsensitivePaths)
+    if (parentKey === rootKey) return
+    if (!localPathAncestorOwners.has(parentKey)) localPathAncestorOwners.set(parentKey, owner)
+    const next = dirname(parent)
+    if (next === parent) return
+    parent = next
+  }
+}
+
+function throwFileDirectoryCollision(
+  fileOwner: LocalPathOwner,
+  descendantOwner: LocalPathOwner,
+): never {
+  throw new Error(
+    `download path collision: B2 file "${fileOwner.fileName}" maps to "${fileOwner.localPath}", which must be a file, but B2 file "${descendantOwner.fileName}" maps beneath it at "${descendantOwner.localPath}"`,
+  )
 }
 
 function safeRemotePathSegments(fileName: string, displayName = fileName): string[] {

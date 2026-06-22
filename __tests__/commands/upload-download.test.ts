@@ -270,6 +270,41 @@ describe('upload + download commands (B2Simulator)', () => {
     }
   })
 
+  it('rejects file-directory prefix collisions before downloading', async () => {
+    for (const fileNames of [
+      ['bundle/a', 'bundle/a/b.txt'],
+      ['bundle/c/d.txt', 'bundle/c'],
+    ] as const) {
+      const downloadCalls: string[] = []
+      const originalListFileNames = fx.bucket.listFileNames.bind(fx.bucket)
+      const originalDownload = fx.bucket.download.bind(fx.bucket)
+      fx.bucket.listFileNames = async () =>
+        ({
+          files: fileNames.map((fileName) => ({ action: 'upload', fileName })),
+          nextFileName: null,
+        }) as unknown as Awaited<ReturnType<typeof fx.bucket.listFileNames>>
+      fx.bucket.download = async (...args: Parameters<typeof fx.bucket.download>) => {
+        downloadCalls.push(args[0])
+        return await originalDownload(...args)
+      }
+
+      try {
+        await expect(
+          downloadCommand(fx.bucket, {
+            ...baseInputs(),
+            action: 'download',
+            source: 'bundle/',
+            destination: join(fx.workDir, `file-dir-${downloadCalls.length}`),
+          }),
+        ).rejects.toThrow(/download path collision/)
+        expect(downloadCalls).toEqual([])
+      } finally {
+        fx.bucket.listFileNames = originalListFileNames
+        fx.bucket.download = originalDownload
+      }
+    }
+  })
+
   it('rejects prefix downloads through symlinked destination components', async () => {
     const local = join(fx.workDir, 'escape.txt')
     await writeFile(local, 'escape')
