@@ -5,7 +5,7 @@ export const SUMMARY_JSON_PREVIEW_MAX_ENTRIES = 100
 export const SUMMARY_JSON_MAX_UTF8_BYTES = 256 * 1024
 const SUMMARY_JSON_OUTPUT_NAME = 'summary-json'
 const SUMMARY_JSON_TRUNCATED_OUTPUT_NAME = 'summary-json-truncated'
-const SUMMARY_JSON_NOTICE_OUTPUT_NAME = 'summary-json-notice'
+export const SUMMARY_JSON_NOTICE_OUTPUT_NAME = 'summary-json-notice'
 export const SUMMARY_JSON_PREVIEW_OUTPUT_NAME = 'summary-json-preview'
 
 export type SummaryJsonPayload = CompleteSummaryJsonPayload | TruncatedSummaryJsonPayload
@@ -22,6 +22,7 @@ export interface TruncatedSummaryJsonPayload {
   previewJson: string
   totalCount: number
   previewCount: number
+  reason: string
   truncated: true
 }
 
@@ -52,6 +53,12 @@ interface BoundedJsonArray {
  * `summary-json-truncated` is set to `true`. The action step may still succeed
  * because the B2 operation itself has already completed. Scalar count outputs
  * (`file-count`, `files-listed`, etc.) remain the authoritative totals.
+ *
+ * The serializer also omits credential-bearing field names for every command:
+ * `url`, fields ending in `url`, and fields containing `authorization`,
+ * `signature`, or `token` after case/underscore/hyphen normalization. Commands
+ * that need to expose similarly named non-secret data should project it to an
+ * explicit safe field name before calling this helper.
  */
 export function buildSummaryJsonPayload<T>(
   items: readonly T[],
@@ -94,6 +101,7 @@ function buildTruncatedSummaryJsonPayload<T>(
     previewJson: preview.json,
     totalCount: items.length,
     previewCount: preview.emittedCount,
+    reason,
     truncated: true,
   }
 }
@@ -124,7 +132,7 @@ export function setSummaryJsonOutput<T>(
   core.setOutput(SUMMARY_JSON_NOTICE_OUTPUT_NAME, payload.noticeJson)
   core.setOutput(SUMMARY_JSON_PREVIEW_OUTPUT_NAME, payload.previewJson)
   core.warning(
-    `summary-json exceeds supported output limits; preview contains ` +
+    `summary-json truncated: ${payload.reason}; preview contains ` +
       `${payload.previewCount} of ${payload.totalCount} item(s). ` +
       `summary-json is [] and summary-json-notice describes the truncation. ` +
       `limit is ${formatKiB(SUMMARY_JSON_MAX_UTF8_BYTES)} of UTF-8 JSON text`,

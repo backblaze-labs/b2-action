@@ -127,6 +127,29 @@ describe('summary-json output guard', () => {
     expect(payload.previewJson).toBe('[]')
   })
 
+  it('does not stringify the full items array to detect over-cap manifests', () => {
+    const items = Array.from({ length: 10_000 }, (_, i) => ({
+      fileName: `trap-${i}.txt`,
+      metadata: 'x'.repeat(SUMMARY_JSON_MAX_UTF8_BYTES),
+    }))
+    Object.defineProperty(items, 'toJSON', {
+      value() {
+        throw new Error('full array stringify should not be called')
+      },
+    })
+
+    const payload = buildSummaryJsonPayload(items)
+
+    expect(payload.truncated).toBe(true)
+    if (!payload.truncated) throw new Error('expected truncated payload')
+    expect(payload.json).toBe('[]')
+    expect(JSON.parse(payload.noticeJson)).toMatchObject({
+      truncated: true,
+      reason: 'summary-json exceeded the supported UTF-8 output size cap',
+      totalCount: items.length,
+    })
+  })
+
   it('redacts sensitive fields without requiring a projection for complete payloads', () => {
     const items = [
       {

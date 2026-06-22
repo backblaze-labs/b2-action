@@ -17,6 +17,7 @@ import type { UploadedFile } from '../src/commands/upload.ts'
 import type { ActionName, ParsedInputs } from '../src/inputs.ts'
 import {
   SUMMARY_JSON_MAX_UTF8_BYTES,
+  SUMMARY_JSON_NOTICE_OUTPUT_NAME,
   SUMMARY_JSON_PREVIEW_MAX_ENTRIES,
   SUMMARY_JSON_PREVIEW_OUTPUT_NAME,
 } from '../src/outputs.ts'
@@ -34,8 +35,9 @@ const DISPATCH_BUCKET = 'dispatch-bucket'
 const TEST_AUTH_TOKEN = 'auth-token-for-main-tests'
 const RETAIN_UNTIL = Date.parse('2030-01-01T00:00:00Z')
 const FIXTURE_UPLOAD_TS = Date.parse('2026-01-01T00:00:00Z')
+// This file mocks src/summary.ts before importing main.ts, so use a named
+// fixture cap instead of importing the real module as a value here.
 const TEST_STEP_SUMMARY_MAX_ROWS = 100
-const SUMMARY_JSON_NOTICE_OUTPUT_NAME = 'summary-json-notice'
 
 afterEach(() => {
   vi.restoreAllMocks()

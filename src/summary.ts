@@ -6,19 +6,6 @@ import { formatBytes } from './format.ts'
 export const STEP_SUMMARY_MAX_ROWS = 100
 
 /**
- * Append a markdown summary block to `$GITHUB_STEP_SUMMARY`.
- *
- * The summary file is the standard way for an Action to publish output that
- * shows up in the workflow run's summary page (rather than just the live log).
- * We use it to print a per-file table after upload / download / sync / delete
- * so users can see at-a-glance what happened without scrolling through the
- * `::group::` log lines.
- *
- * If the env var is unset (e.g. running the bundle locally for a smoke test),
- * we no-op. We deliberately do not throw: a missing summary file is never
- * a reason to fail an otherwise-successful step.
- */
-/**
  * One row in the `$GITHUB_STEP_SUMMARY` table emitted by a verb. Only
  * `fileName` is required; the other cells render empty when omitted.
  */

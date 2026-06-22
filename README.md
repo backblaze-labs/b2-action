@@ -378,20 +378,22 @@ If you don't need customer-managed keys, **`sse: B2`** (SSE-B2, B2-managed) is t
 | `verified` | verify | `true` / `false`. |
 | `remote-sha1` | verify | The remote object's whole-file SHA-1, or empty for multipart objects when B2 does not expose one. |
 | `local-sha1` | verify | Local file SHA-1 (when computed from `destination`). |
-| `summary-json` | every command | Complete JSON array with per-file details when the result fits within 256 KiB of UTF-8 JSON text. When the result exceeds the cap, this output is `[]` instead of changing shape or emitting a partial array. For `presign`, entries omit live presigned URLs. |
+| `summary-json` | every command | Complete JSON array with per-file details when the result fits within 256 KiB of UTF-8 JSON text. When the result exceeds the cap, this output is `[]` instead of changing shape or emitting a partial array. Credential-like fields are omitted by name for every command. For `presign`, entries omit live presigned URLs. |
 | `summary-json-truncated` | every command | `true` / `false`. Always emitted. `true` means the full manifest exceeded the supported `summary-json` size cap. |
 | `summary-json-notice` | every command when truncated | Small JSON object describing why `summary-json` was truncated and where to find the bounded preview. |
-| `summary-json-preview` | every command when truncated | Bounded partial JSON array with the first 100 entries that fit the cap. Do not treat it as a complete manifest. For `presign`, entries omit live presigned URLs. |
+| `summary-json-preview` | every command when truncated | Bounded partial JSON array with the first 100 entries that fit the cap. Do not treat it as a complete manifest. Credential-like fields are omitted by name for every command. For `presign`, entries omit live presigned URLs. |
 | `retryable` | classified SDK failures | `true` only when the failed action is safe to re-run automatically. Mutating actions with ambiguous transient failures emit `false` so callers inspect B2 state first. |
 | `retry-after` | classified SDK failures | Retry delay in seconds, clamped to 3600. Emitted only with `retryable=true`; network failures use a default backoff. |
 
-`summary-json` is complete-or-empty-on-truncation: it never changes shape and never carries a silently partial array. Consumers that parse `summary-json` as an array should still first branch on `summary-json-truncated`; when it is `true`, the scalar count outputs (`file-count`, `files-listed`, `files-uploaded`, and the other verb-specific counts) remain the authoritative totals and may exceed the number of entries in `summary-json-preview`. Do not use `summary-json-preview` as an authoritative manifest for security-sensitive checks; fail or fetch a complete manifest another way.
+`summary-json` is complete-or-empty-on-truncation: it never changes shape and never carries a silently partial array. Consumers that parse `summary-json` as an array must first branch on `summary-json-truncated`; when it is `true`, the scalar count outputs (`file-count`, `files-listed`, `files-uploaded`, and the other verb-specific counts) remain the authoritative totals and may exceed the number of entries in `summary-json-preview`. Do not use `summary-json-preview` as an authoritative manifest for security-sensitive checks; fail or fetch a complete manifest another way.
 
 When truncated, `summary-json-notice` contains `{ "truncated": true, "reason": string, "totalCount": number, "previewCount": number, "previewOutput": "summary-json-preview" }`.
 
+For every command, `summary-json` and `summary-json-preview` omit fields with credential-bearing names (`url`, fields ending in `url`, and fields containing `authorization`, `signature`, or `token`, ignoring case, underscores, and hyphens). If a future command needs to expose a similarly named non-secret value, it must project it to an explicit safe field name before emitting the summary.
+
 For `presign`, `summary-json` and `summary-json-preview` contain only non-secret manifest fields such as `fileName` and `expiresAt`; the dedicated `presigned-url` output is the only structured output that contains a bearer URL. In prefix mode, only the first generated URL is exposed through `presigned-url`; bulk URL fan-out through `summary-json` is intentionally unsupported because those URLs are credentials. Generate or handle additional URLs in a trusted step that treats them as secrets.
 
-`$GITHUB_STEP_SUMMARY` per-file tables render at most the first 100 rows. When more rows exist, the summary includes a `Showing first 100 of N rows.` notice and the scalar outputs keep reporting the full source count.
+`$GITHUB_STEP_SUMMARY` per-file tables render at most the first 100 rows. When more rows exist, the summary includes a `Showing first 100 of N rows.` notice and the scalar outputs keep reporting the full source count. Status cells are escaped and rendered as inline code so object metadata cannot break the markdown table.
 
 `retryable` and `retry-after` are emitted only on the failure path, immediately before the Action calls `core.setFailed`. To consume them, set `continue-on-error: true` on the B2 step and guard the follow-up step explicitly:
 
