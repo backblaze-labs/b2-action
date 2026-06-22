@@ -52,6 +52,7 @@ jobs:
   markdownlint:
     name: markdownlint
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
         with:
@@ -63,10 +64,19 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
-      # Install lockfile-pinned tools with lifecycle scripts disabled. This
-      # workflow runs on fork PRs, so invoke fixed binaries rather than
-      # PR-defined package scripts.
-      - run: pnpm install --frozen-lockfile --ignore-scripts
+      # Keep CI on the lockfile-pinned tool version while avoiding lifecycle
+      # scripts from package.json in pull_request runs. The exec command below
+      # intentionally mirrors the docs:lint script without invoking scripts.
+      - run: |
+          for attempt in 1 2 3; do
+            if pnpm install --frozen-lockfile --ignore-scripts; then
+              exit 0
+            fi
+            echo "pnpm install failed on attempt ${attempt}; retrying..." >&2
+            sleep $((attempt * 5))
+          done
+          echo "pnpm install failed after 3 attempts." >&2
+          exit 1
       - run: pnpm exec markdownlint-cli2
 
   link-check:
@@ -88,10 +98,10 @@ jobs:
         with:
           path: ${{ runner.temp }}/lychee-cache
           key: ${{ runner.os }}-${{ runner.arch }}-lychee-0.23.0
-      # Same dependency-free pinned-lychee command contributors run locally.
-      # The offline, fragment-aware, node_modules-excluding flags live in the
-      # lychee runner.
-      - run: pnpm docs:links
+      # Same dependency-free pinned-lychee runner as docs:links, called
+      # directly so this pull_request job does not depend on package scripts.
+      # The offline, fragment-aware, node_modules-excluding flags live there.
+      - run: node scripts/run-lychee.mjs
         env:
           LYCHEE_CACHE_DIR: ${{ runner.temp }}/lychee-cache
       - uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
@@ -103,6 +113,7 @@ jobs:
   spellcheck:
     name: cspell
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
         with:
@@ -114,6 +125,16 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
-      # Same lockfile-pinned, no-lifecycle pattern as markdownlint.
-      - run: pnpm install --frozen-lockfile --ignore-scripts
+      # Same lockfile-pinned, no-lifecycle pattern as markdownlint. Keep the
+      # exec arguments in sync with the spellcheck script without invoking it.
+      - run: |
+          for attempt in 1 2 3; do
+            if pnpm install --frozen-lockfile --ignore-scripts; then
+              exit 0
+            fi
+            echo "pnpm install failed on attempt ${attempt}; retrying..." >&2
+            sleep $((attempt * 5))
+          done
+          echo "pnpm install failed after 3 attempts." >&2
+          exit 1
       - run: pnpm exec cspell --no-progress --no-must-find-files
