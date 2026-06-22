@@ -41810,7 +41810,7 @@ function escapeHtml(value) {
     // Single-pass escape so correctness never depends on replace ordering
     // (a chained version must escape '&' first or it would re-escape '&lt;').
     const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;' };
-    return value.replace(/[&<>]/g, (ch) => map[ch] ?? ch);
+    return value.replace(/[&<>]/g, (ch) => map[ch]);
 }
 
 ;// CONCATENATED MODULE: ./src/main.ts

@@ -92,6 +92,6 @@ function inlineCodeCell(value: string): string {
 function escapeHtml(value: string): string {
   // Single-pass escape so correctness never depends on replace ordering
   // (a chained version must escape '&' first or it would re-escape '&lt;').
-  const map: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;' }
-  return value.replace(/[&<>]/g, (ch) => map[ch] ?? ch)
+  const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;' } as const
+  return value.replace(/[&<>]/g, (ch) => map[ch as keyof typeof map])
 }
