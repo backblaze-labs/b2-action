@@ -29,6 +29,9 @@ describe('upload streaming regression', () => {
       }
     })
 
+    // Import the module under test first, after the fs mock is registered.
+    // _helpers.ts also imports uploadCommand at module scope.
+    const { uploadCommand } = await import('../../src/commands/upload.ts')
     const { makeInputs, makeMultipartFixture, MULTIPART_PART_SIZE } = await import('../_helpers.ts')
     const partSize = MULTIPART_PART_SIZE
     totalSize = partSize * 24 + 123
@@ -39,8 +42,10 @@ describe('upload streaming regression', () => {
       await writeFile(local, '')
       await truncate(local, totalSize)
 
-      const { uploadCommand } = await import('../../src/commands/upload.ts')
       const originalUpload = fx.bucket.upload.bind(fx.bucket)
+      // Intentionally inspect the SDK upload boundary: this is where the
+      // action hands its StreamSource to the SDK, and the non-sliceable source
+      // contract has no higher-level observable signal.
       fx.bucket.upload = async (...args: Parameters<typeof fx.bucket.upload>) => {
         const [options] = args
         observedCanSlice = options.source.canSlice
@@ -49,7 +54,7 @@ describe('upload streaming regression', () => {
           ...options,
           onProgress: (event: ProgressEvent) => {
             options.onProgress?.(event)
-            intake.markUploaded(event.bytesTransferred)
+            intake.markUploadedThrough(event.bytesTransferred)
           },
         })
       }
@@ -93,8 +98,8 @@ class IntakeTracker {
     this.updatePeak()
   }
 
-  markUploaded(bytes: number): void {
-    this.uploaded = Math.max(this.uploaded, bytes)
+  markUploadedThrough(cumulativeBytesTransferred: number): void {
+    this.uploaded = Math.max(this.uploaded, cumulativeBytesTransferred)
     this.updatePeak()
   }
 
