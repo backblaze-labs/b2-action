@@ -100,7 +100,7 @@ async function downloadPrefix(
       const relName = f.fileName.slice(prefix.length)
       const localPath = await resolvePathUnderRoot(
         destRoot,
-        safeRemotePathSegments(relName),
+        safeRemotePathSegments(relName, f.fileName),
         f.fileName,
       )
       const collisionKey = localPathCollisionKey(localPath, caseInsensitivePaths)
@@ -286,10 +286,10 @@ function localPathCollisionKey(localPath: string, caseInsensitivePaths: boolean)
   return caseInsensitivePaths ? localPath.toLowerCase() : localPath
 }
 
-function safeRemotePathSegments(fileName: string): string[] {
+function safeRemotePathSegments(fileName: string, displayName = fileName): string[] {
   const segments = fileName.split('/')
   for (const segment of segments) {
-    validateRemotePathSegment(segment, fileName)
+    validateRemotePathSegment(segment, displayName)
   }
   return segments
 }

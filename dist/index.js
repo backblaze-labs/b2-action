@@ -36032,7 +36032,7 @@ async function downloadPrefix(bucket, prefix, destinationDir, sseDownload, signa
             // SDK / B2 contract, so the slice is always safe. Empty `prefix`
             // leaves the name unchanged.
             const relName = f.fileName.slice(prefix.length);
-            const localPath = await resolvePathUnderRoot(destRoot, safeRemotePathSegments(relName), f.fileName);
+            const localPath = await resolvePathUnderRoot(destRoot, safeRemotePathSegments(relName, f.fileName), f.fileName);
             const collisionKey = localPathCollisionKey(localPath, caseInsensitivePaths);
             const existingFileName = localPathOwners.get(collisionKey);
             if (existingFileName !== undefined && existingFileName !== f.fileName) {
@@ -36192,10 +36192,10 @@ async function isCaseInsensitiveDirectory(dir) {
 function localPathCollisionKey(localPath, caseInsensitivePaths) {
     return caseInsensitivePaths ? localPath.toLowerCase() : localPath;
 }
-function safeRemotePathSegments(fileName) {
+function safeRemotePathSegments(fileName, displayName = fileName) {
     const segments = fileName.split('/');
     for (const segment of segments) {
-        validateRemotePathSegment(segment, fileName);
+        validateRemotePathSegment(segment, displayName);
     }
     return segments;
 }

@@ -252,7 +252,7 @@ describe('upload + download commands (B2Simulator)', () => {
             source: prefix,
             destination: destDir,
           }),
-        ).rejects.toThrow(/cannot be safely mapped/)
+        ).rejects.toThrow(`download path for B2 file "${unsafeName}"`)
         expect(downloadCalls).toEqual([])
       } finally {
         fx.bucket.listFileNames = originalListFileNames
