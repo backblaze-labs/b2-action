@@ -322,8 +322,10 @@ export function requireSource(
  *   const x = parseEnum('compare-mode', raw, VALID_COMPARE)
  *
  * Throws a uniform error message that lists the legal values.
+ *
+ * @internal
  */
-function parseEnum<T extends string>(name: string, raw: string, valid: readonly T[]): T {
+export function parseEnum<T extends string>(name: string, raw: string, valid: readonly T[]): T {
   if ((valid as readonly string[]).includes(raw)) return raw as T
   throw new Error(`Invalid '${name}' input: "${raw}". Must be one of: ${valid.join(', ')}`)
 }
@@ -389,7 +391,12 @@ function resolveCredential(inputName: string, envName: string): string {
   throw new Error(`Missing credential: set input '${inputName}' or env var '${envName}'`)
 }
 
-function splitCsv(value: string | undefined): string[] {
+/**
+ * Parse a comma-separated action input, trimming entries and dropping blanks.
+ *
+ * @internal
+ */
+export function splitCsv(value: string | undefined): string[] {
   if (value === undefined) return []
   return value
     .split(',')
@@ -397,16 +404,27 @@ function splitCsv(value: string | undefined): string[] {
     .filter((s) => s.length > 0)
 }
 
-function parseBool(name: string, raw: string): boolean {
+/**
+ * Parse the documented boolean input spellings accepted by this action.
+ *
+ * @internal
+ */
+export function parseBool(name: string, raw: string): boolean {
   const v = raw.trim().toLowerCase()
   if (v === 'true' || v === '1' || v === 'yes') return true
   if (v === 'false' || v === '0' || v === 'no') return false
   throw new Error(`Invalid boolean for '${name}': "${raw}"`)
 }
 
-function parsePositiveInt(name: string, raw: string): number {
-  const n = Number(raw)
-  if (!Number.isInteger(n) || n <= 0) {
+/**
+ * Parse a strictly positive integer input.
+ *
+ * @internal
+ */
+export function parsePositiveInt(name: string, raw: string): number {
+  const trimmed = raw.trim()
+  const n = Number(trimmed)
+  if (!/^\d+$/.test(trimmed) || n <= 0 || !Number.isSafeInteger(n)) {
     throw new Error(`Invalid positive integer for '${name}': "${raw}"`)
   }
   return n

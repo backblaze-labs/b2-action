@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto'
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { ProgressEvent } from '@backblaze-labs/b2-sdk'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -51,6 +51,19 @@ describe('upload + download commands (B2Simulator)', () => {
     })
 
     expect(result.files[0]?.fileName).toBe('releases/v1/report.csv')
+  })
+
+  it('does not silently normalize SDK-rejected upload keys', async () => {
+    const local = join(fx.workDir, 'opaque.txt')
+    await writeFile(local, 'opaque')
+
+    await expect(
+      uploadCommand(fx.bucket, {
+        ...baseInputs(),
+        source: local,
+        destination: '//archive//opaque.txt',
+      }),
+    ).rejects.toThrow(/fileName/)
   })
 
   it('treats destination as a prefix for a directory resolving to one file', async () => {
@@ -115,6 +128,338 @@ describe('upload + download commands (B2Simulator)', () => {
     for (const name of ['a.txt', 'b.txt', 'c.txt']) {
       const got = await readFile(join(destDir, name), 'utf8')
       expect(got).toBe(`payload-${name}`)
+    }
+  })
+
+  it('does not collapse legal POSIX names during prefix downloads', async () => {
+    const entries = [
+      ['bundle/release/bin/deploy_.sh', 'underscore'],
+      ['bundle/release/bin/deploy|.sh', 'pipe'],
+      ['bundle/tools/tool*.sh', 'star'],
+      ['bundle/tools/tool?.sh', 'question'],
+      ['bundle/slash/a/b.txt', 'slash'],
+      ['bundle/slash/a\\b.txt', 'backslash'],
+      ['bundle/trailing/archive.', 'dot'],
+      ['bundle/trailing/archive ', 'space'],
+      ['bundle/dot-prefix/..foo', 'dot-prefix'],
+      ['bundle/windows/CON', 'reserved'],
+    ] as const
+
+    for (const [fileName, body] of entries) {
+      const local = join(fx.workDir, `${body}.txt`)
+      await writeFile(local, body)
+      await uploadCommand(fx.bucket, {
+        ...baseInputs(),
+        source: local,
+        destination: fileName,
+      })
+    }
+
+    const destDir = join(fx.workDir, 'posix-out')
+    if (process.platform === 'win32') {
+      await expect(
+        downloadCommand(fx.bucket, {
+          ...baseInputs(),
+          action: 'download',
+          source: 'bundle/',
+          destination: destDir,
+        }),
+      ).rejects.toThrow(/cannot be safely mapped/)
+      return
+    }
+
+    await downloadCommand(fx.bucket, {
+      ...baseInputs(),
+      action: 'download',
+      source: 'bundle/',
+      destination: destDir,
+    })
+
+    await expect(readFile(join(destDir, 'release/bin/deploy_.sh'), 'utf8')).resolves.toBe(
+      'underscore',
+    )
+    await expect(readFile(join(destDir, 'release/bin/deploy|.sh'), 'utf8')).resolves.toBe('pipe')
+    await expect(readFile(join(destDir, 'tools/tool*.sh'), 'utf8')).resolves.toBe('star')
+    await expect(readFile(join(destDir, 'tools/tool?.sh'), 'utf8')).resolves.toBe('question')
+    await expect(readFile(join(destDir, 'slash/a/b.txt'), 'utf8')).resolves.toBe('slash')
+    await expect(readFile(join(destDir, 'slash/a\\b.txt'), 'utf8')).resolves.toBe('backslash')
+    await expect(readFile(join(destDir, 'trailing/archive.'), 'utf8')).resolves.toBe('dot')
+    await expect(readFile(join(destDir, 'trailing/archive '), 'utf8')).resolves.toBe('space')
+    await expect(readFile(join(destDir, 'dot-prefix/..foo'), 'utf8')).resolves.toBe('dot-prefix')
+    await expect(readFile(join(destDir, 'windows/CON'), 'utf8')).resolves.toBe('reserved')
+  })
+
+  it('uses actual filesystem case behavior for prefix collision checks', async () => {
+    for (const [fileName, body] of [
+      ['bundle/case/Case.txt', 'upper'],
+      ['bundle/case/case.txt', 'lower'],
+    ] as const) {
+      const local = join(fx.workDir, `${body}.txt`)
+      await writeFile(local, body)
+      await uploadCommand(fx.bucket, {
+        ...baseInputs(),
+        source: local,
+        destination: fileName,
+      })
+    }
+
+    const destDir = join(fx.workDir, 'case-out')
+    await mkdir(destDir)
+
+    if (await isCaseInsensitiveDirectory(destDir)) {
+      await expect(
+        downloadCommand(fx.bucket, {
+          ...baseInputs(),
+          action: 'download',
+          source: 'bundle/case/',
+          destination: destDir,
+        }),
+      ).rejects.toThrow(/download path collision/)
+      return
+    }
+
+    await downloadCommand(fx.bucket, {
+      ...baseInputs(),
+      action: 'download',
+      source: 'bundle/case/',
+      destination: destDir,
+    })
+
+    await expect(readFile(join(destDir, 'Case.txt'), 'utf8')).resolves.toBe('upper')
+    await expect(readFile(join(destDir, 'case.txt'), 'utf8')).resolves.toBe('lower')
+  })
+
+  it('rejects unsafe prefix path segments before they can overwrite files', async () => {
+    for (const [prefix, unsafeName] of [
+      ['dup/', 'dup/a//b.txt'],
+      ['dot/', 'dot/a/../b.txt'],
+      ['del/', 'del/has-del\u007f.txt'],
+    ] as const) {
+      const validName = `${prefix}safe.txt`
+      const downloadCalls: string[] = []
+      const originalListFileNames = fx.bucket.listFileNames.bind(fx.bucket)
+      const originalDownload = fx.bucket.download.bind(fx.bucket)
+      fx.bucket.listFileNames = async () =>
+        ({
+          files: [
+            { action: 'upload', fileName: validName },
+            { action: 'upload', fileName: unsafeName },
+          ],
+          nextFileName: null,
+        }) as unknown as Awaited<ReturnType<typeof fx.bucket.listFileNames>>
+      fx.bucket.download = async (...args: Parameters<typeof fx.bucket.download>) => {
+        downloadCalls.push(args[0])
+        return await originalDownload(...args)
+      }
+
+      const destDir = join(fx.workDir, `${prefix.replace('/', '')}-out`)
+      try {
+        await expect(
+          downloadCommand(fx.bucket, {
+            ...baseInputs(),
+            action: 'download',
+            source: prefix,
+            destination: destDir,
+          }),
+        ).rejects.toThrow(`download path for B2 file "${unsafeName}"`)
+        expect(downloadCalls).toEqual([])
+      } finally {
+        fx.bucket.listFileNames = originalListFileNames
+        fx.bucket.download = originalDownload
+      }
+    }
+  })
+
+  it('rejects file-directory prefix collisions before downloading', async () => {
+    for (const fileNames of [
+      ['bundle/a', 'bundle/a/b.txt'],
+      ['bundle/c/d.txt', 'bundle/c'],
+    ] as const) {
+      const downloadCalls: string[] = []
+      const originalListFileNames = fx.bucket.listFileNames.bind(fx.bucket)
+      const originalDownload = fx.bucket.download.bind(fx.bucket)
+      fx.bucket.listFileNames = async () =>
+        ({
+          files: fileNames.map((fileName) => ({ action: 'upload', fileName })),
+          nextFileName: null,
+        }) as unknown as Awaited<ReturnType<typeof fx.bucket.listFileNames>>
+      fx.bucket.download = async (...args: Parameters<typeof fx.bucket.download>) => {
+        downloadCalls.push(args[0])
+        return await originalDownload(...args)
+      }
+
+      try {
+        await expect(
+          downloadCommand(fx.bucket, {
+            ...baseInputs(),
+            action: 'download',
+            source: 'bundle/',
+            destination: join(fx.workDir, `file-dir-${downloadCalls.length}`),
+          }),
+        ).rejects.toThrow(/download path collision/)
+        expect(downloadCalls).toEqual([])
+      } finally {
+        fx.bucket.listFileNames = originalListFileNames
+        fx.bucket.download = originalDownload
+      }
+    }
+  })
+
+  it('does not reinterpret planned prefix file paths as directories', async () => {
+    const local = join(fx.workDir, 'conflict.txt')
+    await writeFile(local, 'downloaded conflict')
+    await uploadCommand(fx.bucket, {
+      ...baseInputs(),
+      source: local,
+      destination: 'bundle/conflict.txt',
+    })
+
+    const destDir = join(fx.workDir, 'planned-dir-out')
+    const existingDirectoryAtFilePath = join(destDir, 'conflict.txt')
+    await mkdir(existingDirectoryAtFilePath, { recursive: true })
+
+    await expect(
+      downloadCommand(fx.bucket, {
+        ...baseInputs(),
+        action: 'download',
+        source: 'bundle/',
+        destination: destDir,
+      }),
+    ).rejects.toThrow(/directory|EISDIR|ENOTEMPTY|EEXIST|EPERM/u)
+    await expect(
+      readFile(join(existingDirectoryAtFilePath, 'conflict.txt'), 'utf8'),
+    ).rejects.toThrow()
+  })
+
+  it('rejects prefix downloads through symlinked destination components', async () => {
+    const local = join(fx.workDir, 'escape.txt')
+    await writeFile(local, 'escape')
+    await uploadCommand(fx.bucket, {
+      ...baseInputs(),
+      source: local,
+      destination: 'bundle/link/escape.txt',
+    })
+
+    const destDir = join(fx.workDir, 'dest')
+    const outsideDir = join(fx.workDir, 'outside')
+    await mkdir(destDir)
+    await mkdir(outsideDir)
+    await symlink(outsideDir, join(destDir, 'link'), 'dir')
+
+    await expect(
+      downloadCommand(fx.bucket, {
+        ...baseInputs(),
+        action: 'download',
+        source: 'bundle/',
+        destination: destDir,
+      }),
+    ).rejects.toThrow(/escapes destination directory/)
+  })
+
+  it('does not write through an existing leaf symlink', async () => {
+    if (process.platform === 'win32') return
+
+    const local = join(fx.workDir, 'report.txt')
+    await writeFile(local, 'downloaded report')
+    await uploadCommand(fx.bucket, {
+      ...baseInputs(),
+      source: local,
+      destination: 'bundle/report.txt',
+    })
+
+    const destDir = join(fx.workDir, 'dest-leaf')
+    const outsideDir = join(fx.workDir, 'outside-leaf')
+    const outsideFile = join(outsideDir, 'target.txt')
+    await mkdir(destDir)
+    await mkdir(outsideDir)
+    await writeFile(outsideFile, 'outside original')
+    await symlink(outsideFile, join(destDir, 'report.txt'), 'file')
+
+    await downloadCommand(fx.bucket, {
+      ...baseInputs(),
+      action: 'download',
+      source: 'bundle/',
+      destination: destDir,
+    })
+
+    await expect(readFile(outsideFile, 'utf8')).resolves.toBe('outside original')
+    await expect(readFile(join(destDir, 'report.txt'), 'utf8')).resolves.toBe('downloaded report')
+  })
+
+  it('rechecks prefix download ancestry after planning before writing', async () => {
+    if (process.platform === 'win32') return
+
+    const local = join(fx.workDir, 'toctou.txt')
+    await writeFile(local, 'toctou body')
+    await uploadCommand(fx.bucket, {
+      ...baseInputs(),
+      source: local,
+      destination: 'bundle/link/file.txt',
+    })
+
+    const destDir = join(fx.workDir, 'dest-toctou')
+    const outsideDir = join(fx.workDir, 'outside-toctou')
+    const linkPath = join(destDir, 'link')
+    await mkdir(destDir)
+    await mkdir(outsideDir)
+
+    const originalDownload = fx.bucket.download.bind(fx.bucket)
+    fx.bucket.download = async (...args: Parameters<typeof fx.bucket.download>) => {
+      await rm(linkPath, { recursive: true, force: true })
+      await symlink(outsideDir, linkPath, 'dir')
+      return await originalDownload(...args)
+    }
+
+    try {
+      await expect(
+        downloadCommand(fx.bucket, {
+          ...baseInputs(),
+          action: 'download',
+          source: 'bundle/',
+          destination: destDir,
+        }),
+      ).rejects.toThrow(/escapes destination directory/)
+      await expect(readFile(join(outsideDir, 'file.txt'), 'utf8')).rejects.toThrow()
+    } finally {
+      fx.bucket.download = originalDownload
+    }
+  })
+
+  it('rechecks prefix download root ancestry after planning before writing', async () => {
+    if (process.platform === 'win32') return
+
+    const local = join(fx.workDir, 'root-toctou.txt')
+    await writeFile(local, 'root toctou body')
+    await uploadCommand(fx.bucket, {
+      ...baseInputs(),
+      source: local,
+      destination: 'bundle/file.txt',
+    })
+
+    const destDir = join(fx.workDir, 'dest-root-toctou')
+    const outsideDir = join(fx.workDir, 'outside-root-toctou')
+    await mkdir(destDir)
+    await mkdir(outsideDir)
+
+    const originalDownload = fx.bucket.download.bind(fx.bucket)
+    fx.bucket.download = async (...args: Parameters<typeof fx.bucket.download>) => {
+      await rm(destDir, { recursive: true, force: true })
+      await symlink(outsideDir, destDir, 'dir')
+      return await originalDownload(...args)
+    }
+
+    try {
+      await expect(
+        downloadCommand(fx.bucket, {
+          ...baseInputs(),
+          action: 'download',
+          source: 'bundle/',
+          destination: destDir,
+        }),
+      ).rejects.toThrow(/escapes destination directory/)
+      await expect(readFile(join(outsideDir, 'file.txt'), 'utf8')).rejects.toThrow()
+    } finally {
+      fx.bucket.download = originalDownload
     }
   })
 
@@ -287,6 +632,25 @@ describe('upload + download commands (B2Simulator)', () => {
     expect(result.bytesTransferred).toBe(0)
   })
 })
+
+async function isCaseInsensitiveDirectory(dir: string): Promise<boolean> {
+  const marker = `case-check-${randomBytes(8).toString('hex')}`
+  const lowerPath = join(dir, marker.toLowerCase())
+  const upperPath = join(dir, marker.toUpperCase())
+
+  await writeFile(lowerPath, '')
+  try {
+    await readFile(upperPath)
+    return true
+  } catch (error) {
+    if (typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT') {
+      return false
+    }
+    throw error
+  } finally {
+    await rm(lowerPath, { force: true })
+  }
+}
 
 describe('upload: multipart abort cleanup', () => {
   let fx: TestFixture

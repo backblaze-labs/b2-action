@@ -3,6 +3,8 @@ import { createHash } from 'node:crypto'
 import type { EncryptionSetting } from '@backblaze-labs/b2-sdk'
 import { SSE_B2, sseCustomer } from '@backblaze-labs/b2-sdk'
 
+const CANONICAL_BASE64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/
+
 /**
  * Parse the `sse` input into an SDK {@link EncryptionSetting}.
  *
@@ -31,9 +33,13 @@ export function parseSse(raw: string | undefined): EncryptionSetting | undefined
     if (base64Key === '') {
       throw new Error("SSE-C key is empty. Use 'C:<base64-encoded-32-byte-key>'.")
     }
-    // Node's `Buffer.from(str, 'base64')` silently drops invalid chars rather
-    // than throwing; malformed keys surface as wrong-length output and get
-    // caught by the byteLength check below.
+    // Node's `Buffer.from(str, 'base64')` silently drops invalid chars instead
+    // of throwing, so validate the canonical alphabet and padding first.
+    if (!CANONICAL_BASE64.test(base64Key)) {
+      throw new Error(
+        "SSE-C key must be valid canonical base64. Use 'C:<base64-encoded-32-byte-key>'.",
+      )
+    }
     const keyBytes = Buffer.from(base64Key, 'base64')
     if (keyBytes.byteLength !== 32) {
       throw new Error(
@@ -41,6 +47,11 @@ export function parseSse(raw: string | undefined): EncryptionSetting | undefined
       )
     }
     const customerKey = keyBytes.toString('base64')
+    if (customerKey !== base64Key) {
+      throw new Error(
+        "SSE-C key must be valid canonical base64. Use 'C:<base64-encoded-32-byte-key>'.",
+      )
+    }
     const customerKeyMd5 = createHash('md5').update(keyBytes).digest('base64')
     return sseCustomer(customerKey, customerKeyMd5)
   }

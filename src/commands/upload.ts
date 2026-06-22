@@ -137,7 +137,12 @@ interface ResolvedFiles {
   isSingleExplicitFile: boolean
 }
 
-interface ResolvedFile {
+/**
+ * Local file resolved from an upload source.
+ *
+ * @internal
+ */
+export interface ResolvedFile {
   localPath: string
   /** Path relative to the glob root, used when computing the B2 key. */
   fileName: string
@@ -197,7 +202,12 @@ function compareStrings(a: string, b: string): number {
   return 0
 }
 
-function remapFileName(
+/**
+ * Map a local source file to its B2 file name under the requested destination.
+ *
+ * @internal
+ */
+export function remapFileName(
   file: ResolvedFile,
   destination: string | undefined,
   isSingleExplicitFile: boolean,

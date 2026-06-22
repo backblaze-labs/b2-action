@@ -35445,6 +35445,7 @@ var external_node_crypto_ = __nccwpck_require__(7598);
 
 
 
+const CANONICAL_BASE64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
 /**
  * Parse the `sse` input into an SDK {@link EncryptionSetting}.
  *
@@ -35473,14 +35474,19 @@ function parseSse(raw) {
         if (base64Key === '') {
             throw new Error("SSE-C key is empty. Use 'C:<base64-encoded-32-byte-key>'.");
         }
-        // Node's `Buffer.from(str, 'base64')` silently drops invalid chars rather
-        // than throwing; malformed keys surface as wrong-length output and get
-        // caught by the byteLength check below.
+        // Node's `Buffer.from(str, 'base64')` silently drops invalid chars instead
+        // of throwing, so validate the canonical alphabet and padding first.
+        if (!CANONICAL_BASE64.test(base64Key)) {
+            throw new Error("SSE-C key must be valid canonical base64. Use 'C:<base64-encoded-32-byte-key>'.");
+        }
         const keyBytes = external_node_buffer_.Buffer.from(base64Key, 'base64');
         if (keyBytes.byteLength !== 32) {
             throw new Error(`SSE-C key must decode to exactly 32 bytes (256 bits); got ${keyBytes.byteLength}.`);
         }
         const customerKey = keyBytes.toString('base64');
+        if (customerKey !== base64Key) {
+            throw new Error("SSE-C key must be valid canonical base64. Use 'C:<base64-encoded-32-byte-key>'.");
+        }
         const customerKeyMd5 = (0,external_node_crypto_.createHash)('md5').update(keyBytes).digest('base64');
         return sseCustomer(customerKey, customerKeyMd5);
     }
@@ -35649,6 +35655,8 @@ function requireSource(source, verb, description) {
  *   const x = parseEnum('compare-mode', raw, VALID_COMPARE)
  *
  * Throws a uniform error message that lists the legal values.
+ *
+ * @internal
  */
 function parseEnum(name, raw, valid) {
     if (valid.includes(raw))
@@ -35709,6 +35717,11 @@ function resolveCredential(inputName, envName) {
         return fromEnv;
     throw new Error(`Missing credential: set input '${inputName}' or env var '${envName}'`);
 }
+/**
+ * Parse a comma-separated action input, trimming entries and dropping blanks.
+ *
+ * @internal
+ */
 function splitCsv(value) {
     if (value === undefined)
         return [];
@@ -35717,6 +35730,11 @@ function splitCsv(value) {
         .map((s) => s.trim())
         .filter((s) => s.length > 0);
 }
+/**
+ * Parse the documented boolean input spellings accepted by this action.
+ *
+ * @internal
+ */
 function parseBool(name, raw) {
     const v = raw.trim().toLowerCase();
     if (v === 'true' || v === '1' || v === 'yes')
@@ -35725,9 +35743,15 @@ function parseBool(name, raw) {
         return false;
     throw new Error(`Invalid boolean for '${name}': "${raw}"`);
 }
+/**
+ * Parse a strictly positive integer input.
+ *
+ * @internal
+ */
 function parsePositiveInt(name, raw) {
-    const n = Number(raw);
-    if (!Number.isInteger(n) || n <= 0) {
+    const trimmed = raw.trim();
+    const n = Number(trimmed);
+    if (!/^\d+$/.test(trimmed) || n <= 0 || !Number.isSafeInteger(n)) {
         throw new Error(`Invalid positive integer for '${name}': "${raw}"`);
     }
     return n;
@@ -35956,6 +35980,7 @@ function makeProgressListener(label, intervalMs = 1000) {
 
 
 
+
 /**
  * Download from B2 to the local runner.
  *
@@ -35990,8 +36015,12 @@ function sseFromInputs(inputs) {
 async function downloadPrefix(bucket, prefix, destinationDir, sseDownload, signal) {
     const destRoot = (0,external_node_path_.resolve)(destinationDir);
     await (0,promises_.mkdir)(destRoot, { recursive: true });
-    const files = [];
-    let total = 0;
+    const pathSafety = await createPathSafetyContext(destRoot);
+    const downloadPathSafety = { root: destRoot, realRoot: pathSafety.realRoot };
+    const caseInsensitivePaths = await isCaseInsensitiveDirectory(destRoot);
+    const planned = [];
+    const localPathOwners = new Map();
+    const localPathAncestorOwners = new Map();
     let startFileName;
     for (;;) {
         signal?.throwIfAborted();
@@ -36008,16 +36037,9 @@ async function downloadPrefix(bucket, prefix, destinationDir, sseDownload, signa
             // SDK / B2 contract, so the slice is always safe. Empty `prefix`
             // leaves the name unchanged.
             const relName = f.fileName.slice(prefix.length);
-            const localPath = (0,external_node_path_.join)(destRoot, ...relName.split(external_node_path_.posix.sep));
-            startGroup(`download b2://${bucket.name}/${f.fileName} → ${localPath}`);
-            try {
-                const r = await downloadOne(bucket, f.fileName, localPath, sseDownload, signal);
-                files.push(r);
-                total += r.size;
-            }
-            finally {
-                endGroup();
-            }
+            const localPath = await resolvePathUnderRoot(destRoot, safeRemotePathSegments(relName, f.fileName), f.fileName, pathSafety);
+            recordPlannedLocalPath({ fileName: f.fileName, localPath }, destRoot, caseInsensitivePaths, localPathOwners, localPathAncestorOwners);
+            planned.push({ fileName: f.fileName, localPath });
         }
         // SDK contract: `nextFileName` is `string | null` per `ListFileNamesResponse`.
         // The "not null" arm fires for prefixes with >1000 files (covered by
@@ -36026,11 +36048,33 @@ async function downloadPrefix(bucket, prefix, destinationDir, sseDownload, signa
             break;
         startFileName = page.nextFileName;
     }
+    const files = [];
+    let total = 0;
+    for (const plan of planned) {
+        signal?.throwIfAborted();
+        startGroup(`download b2://${bucket.name}/${plan.fileName} → ${plan.localPath}`);
+        try {
+            const r = await downloadOne(bucket, plan.fileName, plan.localPath, sseDownload, signal, downloadPathSafety);
+            files.push(r);
+            total += r.size;
+        }
+        finally {
+            endGroup();
+        }
+    }
     return { files, bytesTransferred: total };
 }
-async function downloadOne(bucket, fileName, destination, sseDownload, signal) {
-    const localPath = await resolveLocalPath(fileName, destination);
+async function downloadOne(bucket, fileName, destination, sseDownload, signal, pathSafety) {
+    const localPath = pathSafety !== undefined && destination !== undefined
+        ? (0,external_node_path_.resolve)(destination)
+        : await resolveLocalPath(fileName, destination);
+    if (pathSafety !== undefined) {
+        await assertFreshAncestryInsideRoot(pathSafety, localPath, fileName);
+    }
     await (0,promises_.mkdir)((0,external_node_path_.dirname)(localPath), { recursive: true });
+    if (pathSafety !== undefined) {
+        await assertFreshAncestryInsideRoot(pathSafety, localPath, fileName);
+    }
     const result = await bucket.download(fileName, {
         ...(sseDownload !== undefined ? { serverSideEncryption: sseDownload } : {}),
         ...(signal !== undefined ? { signal } : {}),
@@ -36059,16 +36103,43 @@ async function downloadOne(bucket, fileName, destination, sseDownload, signal) {
             cb(null, chunk);
         },
     });
-    const writeStream = (0,external_node_fs_namespaceObject.createWriteStream)(localPath);
+    if (pathSafety !== undefined) {
+        await assertFreshAncestryInsideRoot(pathSafety, localPath, fileName);
+    }
+    const tempPath = `${localPath}.b2-action-download-${(0,external_node_crypto_.randomUUID)()}.tmp`;
+    const writeStream = (0,external_node_fs_namespaceObject.createWriteStream)(tempPath, { flags: 'wx' });
     try {
         await (0,external_node_stream_promises_namespaceObject.pipeline)(external_node_stream_.Readable.fromWeb(result.body), counter, writeStream);
+        try {
+            await (0,promises_.rename)(tempPath, localPath);
+        }
+        catch (renameError) {
+            const retryWindowsOverwrite = process.platform === 'win32' &&
+                typeof renameError === 'object' &&
+                renameError !== null &&
+                'code' in renameError &&
+                (renameError.code === 'EEXIST' || renameError.code === 'EPERM');
+            if (!retryWindowsOverwrite)
+                throw renameError;
+            // Windows refuses to rename over an existing leaf. Remove only the leaf
+            // path, which unlinks symlinks instead of following them, then retry the
+            // completed same-directory temp-file move.
+            try {
+                await (0,promises_.unlink)(localPath);
+            }
+            catch (unlinkError) {
+                if (!isFileNotFound(unlinkError))
+                    throw unlinkError;
+            }
+            await (0,promises_.rename)(tempPath, localPath);
+        }
     }
     catch (err) {
-        // Partial download on disk is worse than no file (a subsequent run
-        // could mistake it for a complete copy). Best-effort unlink and
-        // re-throw; the outer dispatcher reports the original error.
+        // Partial download on disk is worse than no file. Write through a
+        // same-directory temporary file and rename only after the body completes,
+        // which also avoids following an existing symlink at the final leaf.
         try {
-            await (0,promises_.unlink)(localPath);
+            await (0,promises_.unlink)(tempPath);
         }
         catch {
             // ignore: best-effort cleanup, the original error matters more
@@ -36078,24 +36149,199 @@ async function downloadOne(bucket, fileName, destination, sseDownload, signal) {
     info(`  wrote ${size} bytes to ${localPath} (sha1=${sha1 ?? 'multipart'})`);
     return { fileName, localPath, size, contentSha1: sha1 };
 }
+/**
+ * Resolve the local target path for a single B2 download.
+ *
+ * @internal
+ */
 async function resolveLocalPath(fileName, destination) {
-    // `fileName` is always non-empty (validated by `requireSource` in the
-    // dispatcher), so `String.split` returns at least one element and `pop`
-    // never returns undefined. The non-null assertion encodes that invariant
-    // without a defensive fallback that v8 would flag as a dead branch.
-    // biome-ignore lint/style/noNonNullAssertion: split on a non-empty string never returns an empty array.
-    const tail = fileName.split(external_node_path_.posix.sep).pop();
     if (destination === undefined || destination === '') {
-        return (0,external_node_path_.resolve)(tail);
+        return (0,external_node_path_.resolve)(safeRemotePathTail(fileName));
     }
     if (destination.endsWith('/') || destination.endsWith('\\')) {
-        return (0,external_node_path_.resolve)(destination, tail);
+        const destRoot = (0,external_node_path_.resolve)(destination);
+        await (0,promises_.mkdir)(destRoot, { recursive: true });
+        const pathSafety = await createPathSafetyContext(destRoot);
+        return await resolvePathUnderRoot(destRoot, [safeRemotePathTail(fileName)], fileName, pathSafety);
     }
     const s = await tryStat(destination);
     if (s?.isDirectory()) {
-        return (0,external_node_path_.resolve)(destination, tail);
+        const destRoot = (0,external_node_path_.resolve)(destination);
+        const pathSafety = await createPathSafetyContext(destRoot);
+        return await resolvePathUnderRoot(destRoot, [safeRemotePathTail(fileName)], fileName, pathSafety);
     }
     return (0,external_node_path_.resolve)(destination);
+}
+async function resolvePathUnderRoot(root, segments, fileName, pathSafety) {
+    const localPath = (0,external_node_path_.resolve)(root, ...segments);
+    const rel = (0,external_node_path_.relative)(root, localPath);
+    if (!isPathInsideRootRelative(rel)) {
+        throw new Error(`download path for B2 file "${fileName}" escapes destination directory`);
+    }
+    await assertExistingAncestryInsideRoot(pathSafety, localPath, fileName);
+    return localPath;
+}
+function isPathInsideRootRelative(rel) {
+    return rel === '' || (!(0,external_node_path_.isAbsolute)(rel) && rel !== '..' && !rel.startsWith(`..${external_node_path_.sep}`));
+}
+async function createPathSafetyContext(root) {
+    return { realRoot: await (0,promises_.realpath)(root), safeAncestorDirs: new Set([root]) };
+}
+async function assertFreshAncestryInsideRoot(pathSafety, localPath, fileName) {
+    await assertExistingAncestryInsideRoot({ realRoot: pathSafety.realRoot, safeAncestorDirs: new Set() }, localPath, fileName);
+}
+async function assertExistingAncestryInsideRoot(pathSafety, localPath, fileName) {
+    let candidate = (0,external_node_path_.dirname)(localPath);
+    const checkedDirs = [];
+    for (;;) {
+        if (pathSafety.safeAncestorDirs.has(candidate)) {
+            for (const checked of checkedDirs)
+                pathSafety.safeAncestorDirs.add(checked);
+            return;
+        }
+        checkedDirs.push(candidate);
+        try {
+            const realCandidate = await (0,promises_.realpath)(candidate);
+            const rel = (0,external_node_path_.relative)(pathSafety.realRoot, realCandidate);
+            if (isPathInsideRootRelative(rel)) {
+                for (const checked of checkedDirs)
+                    pathSafety.safeAncestorDirs.add(checked);
+                return;
+            }
+            throw new Error(`download path for B2 file "${fileName}" escapes destination directory`);
+        }
+        catch (error) {
+            if (!isFileNotFound(error))
+                throw error;
+            const parent = (0,external_node_path_.dirname)(candidate);
+            if (parent === candidate)
+                throw error;
+            candidate = parent;
+        }
+    }
+}
+function isFileNotFound(error) {
+    return typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT';
+}
+async function isCaseInsensitiveDirectory(dir) {
+    const marker = `.b2-action-case-check-${(0,external_node_crypto_.randomUUID)()}`;
+    const lowerPath = (0,external_node_path_.resolve)(dir, marker.toLowerCase());
+    const upperPath = (0,external_node_path_.resolve)(dir, marker.toUpperCase());
+    try {
+        await (0,promises_.writeFile)(lowerPath, '');
+    }
+    catch (error) {
+        warning(`Could not probe case sensitivity in ${dir}; treating download collision checks as case-sensitive (${error instanceof Error ? error.message : String(error)})`);
+        return false;
+    }
+    try {
+        try {
+            return (await (0,promises_.realpath)(lowerPath)) === (await (0,promises_.realpath)(upperPath));
+        }
+        catch (error) {
+            if (isFileNotFound(error))
+                return false;
+            throw error;
+        }
+    }
+    finally {
+        try {
+            await (0,promises_.unlink)(lowerPath);
+        }
+        catch (error) {
+            warning(`Could not remove B2 action case-sensitivity probe ${lowerPath}: ${error instanceof Error ? error.message : String(error)}`);
+        }
+    }
+}
+function localPathCollisionKey(localPath, caseInsensitivePaths) {
+    return caseInsensitivePaths ? localPath.toLowerCase() : localPath;
+}
+function recordPlannedLocalPath(owner, root, caseInsensitivePaths, localPathOwners, localPathAncestorOwners) {
+    const collisionKey = localPathCollisionKey(owner.localPath, caseInsensitivePaths);
+    const existingFile = localPathOwners.get(collisionKey);
+    if (existingFile !== undefined && existingFile.fileName !== owner.fileName) {
+        throw new Error(`download path collision: B2 files "${existingFile.fileName}" and "${owner.fileName}" both map to "${owner.localPath}"`);
+    }
+    const existingDescendant = localPathAncestorOwners.get(collisionKey);
+    if (existingDescendant !== undefined && existingDescendant.fileName !== owner.fileName) {
+        throwFileDirectoryCollision(owner, existingDescendant);
+    }
+    const existingAncestor = findLocalPathFileAncestor(root, owner.localPath, caseInsensitivePaths, localPathOwners);
+    if (existingAncestor !== undefined && existingAncestor.fileName !== owner.fileName) {
+        throwFileDirectoryCollision(existingAncestor, owner);
+    }
+    localPathOwners.set(collisionKey, owner);
+    rememberLocalPathAncestors(root, owner, caseInsensitivePaths, localPathAncestorOwners);
+}
+function findLocalPathFileAncestor(root, localPath, caseInsensitivePaths, localPathOwners) {
+    const rootKey = localPathCollisionKey(root, caseInsensitivePaths);
+    let parent = (0,external_node_path_.dirname)(localPath);
+    for (;;) {
+        const parentKey = localPathCollisionKey(parent, caseInsensitivePaths);
+        if (parentKey === rootKey)
+            return undefined;
+        const owner = localPathOwners.get(parentKey);
+        if (owner !== undefined)
+            return owner;
+        const next = (0,external_node_path_.dirname)(parent);
+        if (next === parent)
+            return undefined;
+        parent = next;
+    }
+}
+function rememberLocalPathAncestors(root, owner, caseInsensitivePaths, localPathAncestorOwners) {
+    const rootKey = localPathCollisionKey(root, caseInsensitivePaths);
+    let parent = (0,external_node_path_.dirname)(owner.localPath);
+    for (;;) {
+        const parentKey = localPathCollisionKey(parent, caseInsensitivePaths);
+        if (parentKey === rootKey)
+            return;
+        if (!localPathAncestorOwners.has(parentKey))
+            localPathAncestorOwners.set(parentKey, owner);
+        const next = (0,external_node_path_.dirname)(parent);
+        if (next === parent)
+            return;
+        parent = next;
+    }
+}
+function throwFileDirectoryCollision(fileOwner, descendantOwner) {
+    throw new Error(`download path collision: B2 file "${fileOwner.fileName}" maps to "${fileOwner.localPath}", which must be a file, but B2 file "${descendantOwner.fileName}" maps beneath it at "${descendantOwner.localPath}"`);
+}
+function safeRemotePathSegments(fileName, displayName = fileName) {
+    const segments = fileName.split('/');
+    for (const segment of segments) {
+        validateRemotePathSegment(segment, displayName);
+    }
+    return segments;
+}
+function safeRemotePathTail(fileName) {
+    const tail = fileName.split('/').at(-1) ?? '';
+    validateRemotePathSegment(tail, fileName);
+    return tail;
+}
+function validateRemotePathSegment(segment, fileName) {
+    if (segment === '' || segment === '.' || segment === '..') {
+        throw new Error(`download path for B2 file "${fileName}" cannot be safely mapped because it contains an empty, "." or ".." path segment`);
+    }
+    for (const char of segment) {
+        const codePoint = char.codePointAt(0);
+        if (codePoint !== undefined && (codePoint <= 0x1f || codePoint === 0x7f)) {
+            throw new Error(`download path for B2 file "${fileName}" cannot be safely mapped because it contains a control character`);
+        }
+    }
+    // B2 keys are opaque, but prefix downloads must project `/`-separated
+    // keys into the runner filesystem without path traversal or lossy rewrites.
+    // POSIX runners can preserve characters such as `:`, `?`, trailing dots,
+    // and Windows device names verbatim. Windows treats several of those as
+    // separators or invalid/reserved filenames, so reject them there instead of
+    // silently changing the on-disk name or risking two B2 keys overwriting one
+    // local path.
+    if (process.platform === 'win32' &&
+        (/[<>:"|?*\\]/u.test(segment) ||
+            /[. ]$/u.test(segment) ||
+            /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/iu.test(segment))) {
+        throw new Error(`download path for B2 file "${fileName}" cannot be safely mapped on Windows because segment "${segment}" is reserved or contains a Windows path character`);
+    }
 }
 
 ;// CONCATENATED MODULE: ./src/commands/head.ts
@@ -41001,6 +41247,11 @@ function compareStrings(a, b) {
         return 1;
     return 0;
 }
+/**
+ * Map a local source file to its B2 file name under the requested destination.
+ *
+ * @internal
+ */
 function remapFileName(file, destination, isSingleExplicitFile) {
     if (destination === undefined || destination === '')
         return file.fileName;
@@ -41087,41 +41338,71 @@ async function verifyCommand(bucket, inputs) {
         const remoteSize = headers.contentLength;
         const remoteSha1 = headers.contentSha1;
         let localSha1 = null;
-        let expected = inputs.expectedSha1 ?? null;
+        let expected = inputs.expectedSha1 !== undefined ? verify_normalizeSha1(inputs.expectedSha1, 'expected-sha1') : null;
         if (expected === null && inputs.destination !== undefined && inputs.destination !== '') {
             localSha1 = await sha1OfFile(inputs.destination);
-            expected = localSha1;
+            expected = verify_normalizeSha1(localSha1, 'destination');
         }
         if (expected === null) {
             throw new Error("verify needs either 'expected-sha1' (literal) or 'destination' (local file path) to compare against");
         }
-        if (remoteSha1 === null) {
-            const reason = 'remote SHA-1 is unavailable because B2 does not expose a whole-file SHA-1 for multipart-uploaded files; HEAD-only verify cannot validate this object, even with expected-sha1';
+        const normalizedRemoteSha1 = remoteSha1 === null ? null : normalizeRemoteSha1(remoteSha1);
+        if (normalizedRemoteSha1 === null) {
+            const reason = unavailableRemoteSha1Reason(remoteSha1);
             warning(`  ${reason}`);
             return {
                 fileName: source,
                 remoteSize,
-                remoteSha1: null,
+                remoteSha1,
                 localSha1,
                 verified: false,
                 reason,
             };
         }
-        const verified = remoteSha1.toLowerCase() === expected.toLowerCase();
+        const verified = normalizedRemoteSha1 === expected;
         const reason = verified
             ? undefined
-            : `SHA-1 mismatch: remote=${remoteSha1} expected=${expected}`;
+            : `SHA-1 mismatch: remote=${normalizedRemoteSha1} expected=${expected}`;
         if (verified) {
-            info(`  ✓ SHA-1 matches (${remoteSha1}), size=${remoteSize}B`);
+            info(`  ✓ SHA-1 matches (${normalizedRemoteSha1}), size=${remoteSize}B`);
         }
         else {
             warning(`  ${reason}`);
         }
-        return { fileName: source, remoteSize, remoteSha1, localSha1, verified, reason };
+        return {
+            fileName: source,
+            remoteSize,
+            remoteSha1: normalizedRemoteSha1,
+            localSha1,
+            verified,
+            reason,
+        };
     }
     finally {
         endGroup();
     }
+}
+/**
+ * Normalize and validate a SHA-1 digest for case-insensitive comparison.
+ *
+ * @internal
+ */
+function verify_normalizeSha1(raw, label = 'SHA-1') {
+    const normalized = raw.trim().toLowerCase();
+    if (!/^[a-f0-9]{40}$/.test(normalized)) {
+        throw new Error(`Invalid ${label}: expected a 40-character hexadecimal SHA-1 digest`);
+    }
+    return normalized;
+}
+function normalizeRemoteSha1(raw) {
+    const normalized = raw.trim().toLowerCase();
+    return /^[a-f0-9]{40}$/.test(normalized) ? normalized : null;
+}
+function unavailableRemoteSha1Reason(remoteSha1) {
+    if (remoteSha1 === null) {
+        return 'remote SHA-1 is unavailable because B2 does not expose a whole-file SHA-1 for multipart-uploaded files; HEAD-only verify cannot validate this object, even with expected-sha1';
+    }
+    return `remote SHA-1 is unavailable because B2 reported ${JSON.stringify(remoteSha1)} instead of a verified 40-character whole-file SHA-1; HEAD-only verify cannot validate this object, even with expected-sha1`;
 }
 async function sha1OfFile(path) {
     const fileStat = await (0,promises_.stat)(path);

@@ -11,7 +11,11 @@ export interface VerifyResult {
   fileName: string
   /** Server-reported byte size of the remote object. */
   remoteSize: number
-  /** Remote whole-file SHA-1, or `null` if the file was multipart-uploaded. */
+  /**
+   * Remote SHA-1 result: normalized lowercase digest when comparable, raw B2
+   * value for non-comparable headers such as `none` or `unverified:<sha1>`,
+   * or `null` when B2 does not expose one.
+   */
   remoteSha1: string | null
   /** Locally-computed SHA-1, or `null` if no local file was provided. */
   localSha1: string | null
@@ -50,11 +54,12 @@ export async function verifyCommand(bucket: Bucket, inputs: ParsedInputs): Promi
     const remoteSha1 = headers.contentSha1
 
     let localSha1: string | null = null
-    let expected: string | null = inputs.expectedSha1 ?? null
+    let expected: string | null =
+      inputs.expectedSha1 !== undefined ? normalizeSha1(inputs.expectedSha1, 'expected-sha1') : null
 
     if (expected === null && inputs.destination !== undefined && inputs.destination !== '') {
       localSha1 = await sha1OfFile(inputs.destination)
-      expected = localSha1
+      expected = normalizeSha1(localSha1, 'destination')
     }
 
     if (expected === null) {
@@ -63,34 +68,66 @@ export async function verifyCommand(bucket: Bucket, inputs: ParsedInputs): Promi
       )
     }
 
-    if (remoteSha1 === null) {
-      const reason =
-        'remote SHA-1 is unavailable because B2 does not expose a whole-file SHA-1 for multipart-uploaded files; HEAD-only verify cannot validate this object, even with expected-sha1'
+    const normalizedRemoteSha1 = remoteSha1 === null ? null : normalizeRemoteSha1(remoteSha1)
+    if (normalizedRemoteSha1 === null) {
+      const reason = unavailableRemoteSha1Reason(remoteSha1)
       core.warning(`  ${reason}`)
       return {
         fileName: source,
         remoteSize,
-        remoteSha1: null,
+        remoteSha1,
         localSha1,
         verified: false,
         reason,
       }
     }
 
-    const verified = remoteSha1.toLowerCase() === expected.toLowerCase()
+    const verified = normalizedRemoteSha1 === expected
     const reason = verified
       ? undefined
-      : `SHA-1 mismatch: remote=${remoteSha1} expected=${expected}`
+      : `SHA-1 mismatch: remote=${normalizedRemoteSha1} expected=${expected}`
     if (verified) {
-      core.info(`  ✓ SHA-1 matches (${remoteSha1}), size=${remoteSize}B`)
+      core.info(`  ✓ SHA-1 matches (${normalizedRemoteSha1}), size=${remoteSize}B`)
     } else {
       core.warning(`  ${reason}`)
     }
 
-    return { fileName: source, remoteSize, remoteSha1, localSha1, verified, reason }
+    return {
+      fileName: source,
+      remoteSize,
+      remoteSha1: normalizedRemoteSha1,
+      localSha1,
+      verified,
+      reason,
+    }
   } finally {
     core.endGroup()
   }
+}
+
+/**
+ * Normalize and validate a SHA-1 digest for case-insensitive comparison.
+ *
+ * @internal
+ */
+export function normalizeSha1(raw: string, label = 'SHA-1'): string {
+  const normalized = raw.trim().toLowerCase()
+  if (!/^[a-f0-9]{40}$/.test(normalized)) {
+    throw new Error(`Invalid ${label}: expected a 40-character hexadecimal SHA-1 digest`)
+  }
+  return normalized
+}
+
+function normalizeRemoteSha1(raw: string): string | null {
+  const normalized = raw.trim().toLowerCase()
+  return /^[a-f0-9]{40}$/.test(normalized) ? normalized : null
+}
+
+function unavailableRemoteSha1Reason(remoteSha1: string | null): string {
+  if (remoteSha1 === null) {
+    return 'remote SHA-1 is unavailable because B2 does not expose a whole-file SHA-1 for multipart-uploaded files; HEAD-only verify cannot validate this object, even with expected-sha1'
+  }
+  return `remote SHA-1 is unavailable because B2 reported ${JSON.stringify(remoteSha1)} instead of a verified 40-character whole-file SHA-1; HEAD-only verify cannot validate this object, even with expected-sha1`
 }
 
 async function sha1OfFile(path: string): Promise<string> {

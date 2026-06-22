@@ -22,10 +22,10 @@ inputs:
     description: 'Source bucket for cross-bucket copy. Defaults to `bucket`.'
     required: false
   source:
-    description: 'Command-dependent. upload/sync (up): local path or glob. download/sync (down)/copy/delete/presign/list/hide/unhide/verify/retention/head/purge: B2 file name or prefix. For whole-bucket purge, omit source or set `/` and set allow-bucket-purge: true.'
+    description: 'Command-dependent. upload/sync (up): local path or glob. download/sync (down)/copy/delete/presign/list/hide/unhide/verify/retention/head/purge: B2 file name or prefix. Prefix downloads reject keys with empty, `.`, `..`, or control-character path segments. For whole-bucket purge, omit source or set `/` and set allow-bucket-purge: true.'
     required: false
   destination:
-    description: 'Command-dependent. upload/sync (up): B2 file name or prefix. download/sync (down): local path or directory. copy: destination B2 file name. verify: local file to compare against the remote SHA-1.'
+    description: 'Command-dependent. upload/sync (up): B2 file name or prefix; SDK/B2 key validation errors are surfaced rather than silently rewriting `/` characters. download/sync (down): local path or directory. copy: destination B2 file name. verify: local file to compare against the remote SHA-1.'
     required: false
   include:
     description: 'Comma-separated globs to include (upload). Patterns are anchored to source.'
@@ -35,11 +35,11 @@ inputs:
     required: false
     default: '.git/**'
   concurrency:
-    description: 'Parallel parts for a large upload, or parallel files for a glob/sync (default 4).'
+    description: 'Parallel parts for a large upload, or parallel files for a glob/sync. Must be a positive decimal integer. Default 4.'
     required: false
     default: '4'
   part-size:
-    description: 'Multipart part size in bytes. Defaults to the SDK-recommended size.'
+    description: 'Multipart part size in bytes. Must be a positive decimal integer. Defaults to the SDK-recommended size.'
     required: false
   resume:
     description: 'Reserved. Accepted for forward compatibility but currently not honored: the action uploads through a streaming source that the SDK cannot slice for resume. Set, but expect a full re-upload on retry.'
@@ -57,7 +57,7 @@ inputs:
     required: false
     default: 'false'
   presign-ttl:
-    description: 'Presigned URL TTL in seconds (presign action). Default 3600.'
+    description: 'Presigned URL TTL in seconds (presign action). Must be a positive decimal integer. Default 3600.'
     required: false
     default: '3600'
   endpoint:
@@ -68,7 +68,7 @@ inputs:
     required: false
     default: 'true'
   sse:
-    description: 'Server-side encryption: "B2" (SSE-B2) or "C:<base64-32-byte-key>" (SSE-C).'
+    description: 'Server-side encryption: "B2" (SSE-B2) or "C:<base64-32-byte-key>" (SSE-C). SSE-C keys must use canonical base64 and decode to exactly 32 bytes.'
     required: false
   compare-mode:
     description: 'Sync comparison: modtime | size | none. Default modtime.'
@@ -83,11 +83,11 @@ inputs:
     required: false
     default: 'auto'
   max-results:
-    description: 'Maximum number of files returned by `list` (default 1000).'
+    description: 'Maximum number of files returned by `list`. Must be a positive decimal integer. Default 1000.'
     required: false
     default: '1000'
   expected-sha1:
-    description: 'Expected SHA-1 hex digest for `verify`. If unset, the SHA-1 is computed from `destination` (a local file). Requires B2 to expose a remote whole-file SHA-1; HEAD-only verify cannot validate multipart objects when that digest is unavailable.'
+    description: 'Expected 40-character hexadecimal SHA-1 digest for `verify`; malformed values fail before comparison. If unset, the SHA-1 is computed from `destination` (a local file). Non-comparable remote SHA-1 headers such as `none` or `unverified:<sha1>` publish `verified=false` outputs before failing the step.'
     required: false
   retention-mode:
     description: 'Object Lock retention mode for `retention`: compliance | governance | none.'
@@ -127,7 +127,7 @@ outputs:
   verified:
     description: 'true/false: whether `verify` succeeded.'
   remote-sha1:
-    description: 'Remote whole-file SHA-1 retrieved by `verify`, or empty when B2 does not expose one for a multipart object.'
+    description: 'Normalized comparable remote SHA-1 from `verify`, raw non-comparable B2 value such as `none` or `unverified:<sha1>`, or empty when B2 does not expose one.'
   local-sha1:
     description: 'Local file SHA-1 computed by `verify`.'
   summary-json:

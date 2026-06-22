@@ -141,6 +141,61 @@ describe('verify command', () => {
     expect(result.reason).toMatch(/SHA-1 mismatch/)
   })
 
+  it('returns verified=false when B2 reports none as the remote SHA-1', async () => {
+    const local = join(fx.workDir, 'remote-none.txt')
+    await writeFile(local, 'remote-none')
+    await uploadCommand(
+      fx.bucket,
+      inputs('upload', { source: local, destination: 'remote-none.txt' }),
+    )
+
+    const originalHead = fx.bucket.head.bind(fx.bucket)
+    fx.bucket.head = async (...args: Parameters<typeof fx.bucket.head>) => {
+      const result = await originalHead(...args)
+      return { ...result, headers: { ...result.headers, contentSha1: 'none' } }
+    }
+
+    const result = await verifyCommand(
+      fx.bucket,
+      inputs('verify', {
+        source: 'remote-none.txt',
+        expectedSha1: '0000000000000000000000000000000000000000',
+      }),
+    )
+
+    expect(result.verified).toBe(false)
+    expect(result.remoteSha1).toBe('none')
+    expect(result.reason).toMatch(/reported "none"/)
+  })
+
+  it('returns verified=false when B2 reports an unverified remote SHA-1', async () => {
+    const local = join(fx.workDir, 'remote-unverified.txt')
+    await writeFile(local, 'remote-unverified')
+    await uploadCommand(
+      fx.bucket,
+      inputs('upload', { source: local, destination: 'remote-unverified.txt' }),
+    )
+
+    const unverifiedSha1 = 'unverified:0000000000000000000000000000000000000000'
+    const originalHead = fx.bucket.head.bind(fx.bucket)
+    fx.bucket.head = async (...args: Parameters<typeof fx.bucket.head>) => {
+      const result = await originalHead(...args)
+      return { ...result, headers: { ...result.headers, contentSha1: unverifiedSha1 } }
+    }
+
+    const result = await verifyCommand(
+      fx.bucket,
+      inputs('verify', {
+        source: 'remote-unverified.txt',
+        expectedSha1: '0000000000000000000000000000000000000000',
+      }),
+    )
+
+    expect(result.verified).toBe(false)
+    expect(result.remoteSha1).toBe(unverifiedSha1)
+    expect(result.reason).toContain(unverifiedSha1)
+  })
+
   it('accepts an expected-sha1 literal without a local file', async () => {
     const local = join(fx.workDir, 'literal.txt')
     await writeFile(local, 'literal')

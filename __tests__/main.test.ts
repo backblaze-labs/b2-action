@@ -975,7 +975,7 @@ describe('main dispatcher', () => {
     const result = {
       fileName: 'bad.bin',
       remoteSize: 8,
-      remoteSha1: 'remote-sha',
+      remoteSha1: '0000000000000000000000000000000000000000',
       localSha1: 'local-sha',
       verified: false,
       reason: 'SHA-1 mismatch',
@@ -989,7 +989,7 @@ describe('main dispatcher', () => {
     expect(outputs(ctx)).toMatchObject({
       verified: 'false',
       'file-name': 'bad.bin',
-      'remote-sha1': 'remote-sha',
+      'remote-sha1': '0000000000000000000000000000000000000000',
       'local-sha1': 'local-sha',
     })
   })
@@ -999,7 +999,7 @@ describe('main dispatcher', () => {
     const result = {
       fileName: 'unknown.bin',
       remoteSize: 9,
-      remoteSha1: 'remote-sha',
+      remoteSha1: '1111111111111111111111111111111111111111',
       localSha1: 'local-sha',
       verified: false,
       reason: undefined,
@@ -1016,11 +1016,57 @@ describe('main dispatcher', () => {
         {
           fileName: 'unknown.bin',
           size: 9,
-          sha1: 'remote-sha',
+          sha1: '1111111111111111111111111111111111111111',
           status: 'mismatch',
         },
       ],
     })
+  })
+
+  it.each([
+    {
+      name: 'missing',
+      remoteSha1: null,
+      reason:
+        'remote SHA-1 is unavailable because B2 does not expose a whole-file SHA-1 for multipart-uploaded files; HEAD-only verify cannot validate this object, even with expected-sha1',
+    },
+    {
+      name: 'none',
+      remoteSha1: 'none',
+      reason:
+        'remote SHA-1 is unavailable because B2 reported "none" instead of a verified 40-character whole-file SHA-1; HEAD-only verify cannot validate this object, even with expected-sha1',
+    },
+    {
+      name: 'unverified',
+      remoteSha1: 'unverified:0000000000000000000000000000000000000000',
+      reason:
+        'remote SHA-1 is unavailable because B2 reported "unverified:0000000000000000000000000000000000000000" instead of a verified 40-character whole-file SHA-1; HEAD-only verify cannot validate this object, even with expected-sha1',
+    },
+  ])('fails verify by default when the remote SHA-1 is $name', async ({ remoteSha1, reason }) => {
+    const ctx = await loadMain()
+    const result = {
+      fileName: 'unverifiable.bin',
+      remoteSize: 8,
+      remoteSha1,
+      localSha1: null,
+      verified: false,
+      reason,
+    }
+    ctx.parseInputs.mockReturnValue(inputs('verify'))
+    ctx.commands.verifyCommand.mockResolvedValue(result)
+
+    await ctx.run()
+
+    expect(ctx.core.setFailed).toHaveBeenCalledWith(reason)
+    expect(outputs(ctx)).toMatchObject({
+      verified: 'false',
+      'file-name': 'unverifiable.bin',
+    })
+    if (remoteSha1 === null) {
+      expect(outputs(ctx)).not.toHaveProperty('remote-sha1')
+    } else {
+      expect(outputs(ctx)).toHaveProperty('remote-sha1', remoteSha1)
+    }
   })
 
   it('reports deletion aggregate errors after publishing deletion outputs', async () => {
