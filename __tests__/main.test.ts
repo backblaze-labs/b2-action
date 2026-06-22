@@ -192,12 +192,14 @@ describe('main dispatcher', () => {
     await ctx.run()
 
     expect(ctx.core.setFailed).not.toHaveBeenCalled()
-    expect(outputs(ctx)).toEqual({
-      'files-uploaded': '0',
-      'file-count': '0',
-      'bytes-transferred': '0',
-      'summary-json': '[]',
-    })
+    expect(outputs(ctx)).toEqual(
+      completeSummaryOutput({
+        'files-uploaded': '0',
+        'file-count': '0',
+        'bytes-transferred': '0',
+        'summary-json': '[]',
+      }),
+    )
   })
 
   it('omits SHA-1 outputs when command results have null SHA-1 values', async () => {
@@ -213,14 +215,16 @@ describe('main dispatcher', () => {
 
     await ctx.run()
 
-    expect(outputs(ctx)).toEqual({
-      'file-id': 'id-multipart',
-      'file-name': 'multipart.txt',
-      'files-uploaded': '1',
-      'file-count': '1',
-      'bytes-transferred': '20',
-      'summary-json': JSON.stringify([file]),
-    })
+    expect(outputs(ctx)).toEqual(
+      completeSummaryOutput({
+        'file-id': 'id-multipart',
+        'file-name': 'multipart.txt',
+        'files-uploaded': '1',
+        'file-count': '1',
+        'bytes-transferred': '20',
+        'summary-json': JSON.stringify([file]),
+      }),
+    )
   })
 
   it('omits per-file outputs when download returns no files', async () => {
@@ -231,12 +235,14 @@ describe('main dispatcher', () => {
     await ctx.run()
 
     expect(ctx.core.setFailed).not.toHaveBeenCalled()
-    expect(outputs(ctx)).toEqual({
-      'files-downloaded': '0',
-      'file-count': '0',
-      'bytes-transferred': '0',
-      'summary-json': '[]',
-    })
+    expect(outputs(ctx)).toEqual(
+      completeSummaryOutput({
+        'files-downloaded': '0',
+        'file-count': '0',
+        'bytes-transferred': '0',
+        'summary-json': '[]',
+      }),
+    )
   })
 
   it('omits download SHA-1 outputs when hashes are unavailable', async () => {
@@ -252,13 +258,15 @@ describe('main dispatcher', () => {
 
     await ctx.run()
 
-    expect(outputs(ctx)).toEqual({
-      'file-name': 'multipart.bin',
-      'files-downloaded': '1',
-      'file-count': '1',
-      'bytes-transferred': '20',
-      'summary-json': JSON.stringify([file]),
-    })
+    expect(outputs(ctx)).toEqual(
+      completeSummaryOutput({
+        'file-name': 'multipart.bin',
+        'files-downloaded': '1',
+        'file-count': '1',
+        'bytes-transferred': '20',
+        'summary-json': JSON.stringify([file]),
+      }),
+    )
   })
 
   it('omits verify SHA-1 outputs when hashes are unavailable', async () => {
@@ -276,12 +284,14 @@ describe('main dispatcher', () => {
 
     await ctx.run()
 
-    expect(outputs(ctx)).toEqual({
-      verified: 'true',
-      'file-name': 'multipart.bin',
-      'file-count': '1',
-      'summary-json': JSON.stringify([result]),
-    })
+    expect(outputs(ctx)).toEqual(
+      completeSummaryOutput({
+        verified: 'true',
+        'file-name': 'multipart.bin',
+        'file-count': '1',
+        'summary-json': JSON.stringify([result]),
+      }),
+    )
   })
 
   it('omits head SHA-1 outputs when hashes are unavailable', async () => {
@@ -297,13 +307,15 @@ describe('main dispatcher', () => {
 
     await ctx.run()
 
-    expect(outputs(ctx)).toEqual({
-      'file-id': 'id-head-multipart',
-      'file-name': 'multipart-head.bin',
-      'file-count': '1',
-      'bytes-transferred': '0',
-      'summary-json': JSON.stringify([result]),
-    })
+    expect(outputs(ctx)).toEqual(
+      completeSummaryOutput({
+        'file-id': 'id-head-multipart',
+        'file-name': 'multipart-head.bin',
+        'file-count': '1',
+        'bytes-transferred': '0',
+        'summary-json': JSON.stringify([result]),
+      }),
+    )
   })
 
   it('marks unhide as a no-op when no hide marker was present', async () => {
@@ -314,11 +326,13 @@ describe('main dispatcher', () => {
 
     await ctx.run()
 
-    expect(outputs(ctx)).toEqual({
-      'file-name': 'visible.txt',
-      'file-count': '1',
-      'summary-json': JSON.stringify([result]),
-    })
+    expect(outputs(ctx)).toEqual(
+      completeSummaryOutput({
+        'file-name': 'visible.txt',
+        'file-count': '1',
+        'summary-json': JSON.stringify([result]),
+      }),
+    )
     expect(ctx.writeStepSummary).toHaveBeenCalledWith({
       title: 'Backblaze B2: unhide',
       rows: [{ fileName: 'visible.txt', fileId: undefined, status: 'no-op (not hidden)' }],
@@ -446,11 +460,13 @@ describe('main dispatcher', () => {
 
     await ctx.run()
 
-    expect(outputs(ctx)).toEqual({
-      'files-listed': '0',
-      'file-count': '0',
-      'summary-json': '[]',
-    })
+    expect(outputs(ctx)).toEqual(
+      completeSummaryOutput({
+        'files-listed': '0',
+        'file-count': '0',
+        'summary-json': '[]',
+      }),
+    )
   })
 
   it('caps presign summary rows and renders expiry timestamps', async () => {
@@ -514,7 +530,7 @@ describe('main dispatcher', () => {
     })
   })
 
-  it('truncates large summary-json outputs and emits a flag', async () => {
+  it('fails closed instead of emitting partial summary-json outputs', async () => {
     const ctx = await loadMain()
     const files = Array.from({ length: 105 }, (_, i) =>
       listedFile({
@@ -529,11 +545,16 @@ describe('main dispatcher', () => {
     await ctx.run()
 
     const out = outputs(ctx)
-    expect(JSON.parse(out['summary-json'] ?? '[]')).toHaveLength(100)
+    expect(out).not.toHaveProperty('summary-json')
     expect(out['summary-json-truncated']).toBe('true')
+    expect(JSON.parse(out['summary-json-preview'] ?? '[]')).toHaveLength(100)
     expect(ctx.core.warning).toHaveBeenCalledWith(
-      expect.stringContaining('summary-json truncated to 100 of 105 item(s)'),
+      expect.stringContaining('summary-json exceeds supported output limits'),
     )
+    expect(ctx.core.setFailed).toHaveBeenCalledWith(
+      expect.stringContaining('Refusing to emit a partial summary-json value'),
+    )
+    expect(ctx.writeStepSummary).toHaveBeenCalledTimes(1)
   })
 
   it('omits list truncation markers when results fit', async () => {
@@ -859,11 +880,13 @@ describe('main dispatcher', () => {
     await ctx.run()
 
     expect(ctx.core.setFailed).toHaveBeenCalledWith('Delete completed with 1 error(s)')
-    expect(outputs(ctx)).toEqual({
-      'files-deleted': '1',
-      'file-count': '1',
-      'summary-json': JSON.stringify(files),
-    })
+    expect(outputs(ctx)).toEqual(
+      completeSummaryOutput({
+        'files-deleted': '1',
+        'file-count': '1',
+        'summary-json': JSON.stringify(files),
+      }),
+    )
     expect(ctx.writeStepSummary).not.toHaveBeenCalled()
   })
 
@@ -876,11 +899,13 @@ describe('main dispatcher', () => {
     await ctx.run()
 
     expect(ctx.core.setFailed).toHaveBeenCalledWith('Purge completed with 2 error(s)')
-    expect(outputs(ctx)).toEqual({
-      'files-deleted': '1',
-      'file-count': '1',
-      'summary-json': JSON.stringify(files),
-    })
+    expect(outputs(ctx)).toEqual(
+      completeSummaryOutput({
+        'files-deleted': '1',
+        'file-count': '1',
+        'summary-json': JSON.stringify(files),
+      }),
+    )
     expect(ctx.writeStepSummary).not.toHaveBeenCalled()
   })
 
@@ -1025,7 +1050,7 @@ function setupSuccessfulAction(ctx: LoadedMain, action: ActionName): Record<stri
     case 'upload': {
       const file = uploadedFile({ fileName: 'upload.txt', fileId: 'id-upload', size: 10 })
       ctx.commands.uploadCommand.mockResolvedValue({ files: [file], bytesTransferred: 10 })
-      return {
+      return completeSummaryOutput({
         'file-id': 'id-upload',
         'file-name': 'upload.txt',
         'content-sha1': 'sha-upload.txt',
@@ -1033,7 +1058,7 @@ function setupSuccessfulAction(ctx: LoadedMain, action: ActionName): Record<stri
         'file-count': '1',
         'bytes-transferred': '10',
         'summary-json': JSON.stringify([file]),
-      }
+      })
     }
     case 'download': {
       const file = {
@@ -1043,14 +1068,14 @@ function setupSuccessfulAction(ctx: LoadedMain, action: ActionName): Record<stri
         contentSha1: 'sha-download',
       }
       ctx.commands.downloadCommand.mockResolvedValue({ files: [file], bytesTransferred: 11 })
-      return {
+      return completeSummaryOutput({
         'file-name': 'download.txt',
         'content-sha1': 'sha-download',
         'files-downloaded': '1',
         'file-count': '1',
         'bytes-transferred': '11',
         'summary-json': JSON.stringify([file]),
-      }
+      })
     }
     case 'sync': {
       const events = [{ type: 'upload-done', path: 'sync.txt', size: 12 }]
@@ -1064,14 +1089,14 @@ function setupSuccessfulAction(ctx: LoadedMain, action: ActionName): Record<stri
         errors: 0,
         bytesTransferred: 12,
       })
-      return {
+      return completeSummaryOutput({
         'files-uploaded': '1',
         'files-downloaded': '0',
         'files-deleted': '0',
         'file-count': '3',
         'bytes-transferred': '12',
         'summary-json': JSON.stringify(events),
-      }
+      })
     }
     case 'copy': {
       const result = {
@@ -1083,13 +1108,13 @@ function setupSuccessfulAction(ctx: LoadedMain, action: ActionName): Record<stri
         size: 13,
       }
       ctx.commands.copyCommand.mockResolvedValue(result)
-      return {
+      return completeSummaryOutput({
         'file-id': 'id-copy',
         'file-name': 'copied.txt',
         'file-count': '1',
         'bytes-transferred': '13',
         'summary-json': JSON.stringify([result]),
-      }
+      })
     }
     case 'delete': {
       const files = [
@@ -1097,24 +1122,24 @@ function setupSuccessfulAction(ctx: LoadedMain, action: ActionName): Record<stri
         { fileName: 'dry.txt', fileId: 'id-dry', skipped: true },
       ]
       ctx.commands.deleteCommand.mockResolvedValue({ files, errors: 0 })
-      return {
+      return completeSummaryOutput({
         'files-deleted': '1',
         'file-count': '2',
         'summary-json': JSON.stringify(files),
-      }
+      })
     }
     case 'presign': {
       const files = [
         { fileName: 'signed.txt', url: 'https://signed.example/file', expiresAt: 1_900_000_000 },
       ]
       ctx.commands.presignCommand.mockResolvedValue({ files })
-      return {
+      return completeSummaryOutput({
         'presigned-url': 'https://signed.example/file',
         'file-name': 'signed.txt',
         'files-listed': '1',
         'file-count': '1',
         'summary-json': JSON.stringify(files),
-      }
+      })
     }
     case 'list': {
       const files = [
@@ -1126,31 +1151,31 @@ function setupSuccessfulAction(ctx: LoadedMain, action: ActionName): Record<stri
         }),
       ]
       ctx.commands.listCommand.mockResolvedValue({ files, truncated: true })
-      return {
+      return completeSummaryOutput({
         'files-listed': '1',
         'file-count': '1',
         'summary-json': JSON.stringify(files),
-      }
+      })
     }
     case 'hide': {
       const result = { fileName: 'hidden.txt', fileId: 'id-hide' }
       ctx.commands.hideCommand.mockResolvedValue(result)
-      return {
+      return completeSummaryOutput({
         'file-id': 'id-hide',
         'file-name': 'hidden.txt',
         'file-count': '1',
         'summary-json': JSON.stringify([result]),
-      }
+      })
     }
     case 'unhide': {
       const result = { fileName: 'visible.txt', removedMarkerFileId: 'id-marker' }
       ctx.commands.unhideCommand.mockResolvedValue(result)
-      return {
+      return completeSummaryOutput({
         'file-name': 'visible.txt',
         'file-id': 'id-marker',
         'file-count': '1',
         'summary-json': JSON.stringify([result]),
-      }
+      })
     }
     case 'verify': {
       const result = {
@@ -1162,14 +1187,14 @@ function setupSuccessfulAction(ctx: LoadedMain, action: ActionName): Record<stri
         reason: undefined,
       }
       ctx.commands.verifyCommand.mockResolvedValue(result)
-      return {
+      return completeSummaryOutput({
         verified: 'true',
         'file-name': 'verified.txt',
         'file-count': '1',
         'remote-sha1': 'remote-sha',
         'local-sha1': 'local-sha',
         'summary-json': JSON.stringify([result]),
-      }
+      })
     }
     case 'retention': {
       const result = {
@@ -1180,12 +1205,12 @@ function setupSuccessfulAction(ctx: LoadedMain, action: ActionName): Record<stri
         appliedLegalHold: 'on',
       }
       ctx.commands.retentionCommand.mockResolvedValue(result)
-      return {
+      return completeSummaryOutput({
         'file-id': 'id-retention',
         'file-name': 'locked.txt',
         'file-count': '1',
         'summary-json': JSON.stringify([result]),
-      }
+      })
     }
     case 'head': {
       const result = listedFile({
@@ -1195,14 +1220,14 @@ function setupSuccessfulAction(ctx: LoadedMain, action: ActionName): Record<stri
         contentSha1: 'sha-head',
       })
       ctx.commands.headCommand.mockResolvedValue(result)
-      return {
+      return completeSummaryOutput({
         'file-id': 'id-head',
         'file-name': 'head.txt',
         'content-sha1': 'sha-head',
         'file-count': '1',
         'bytes-transferred': '0',
         'summary-json': JSON.stringify([result]),
-      }
+      })
     }
     case 'purge': {
       const files = [
@@ -1210,11 +1235,11 @@ function setupSuccessfulAction(ctx: LoadedMain, action: ActionName): Record<stri
         { fileName: 'would.txt', fileId: 'id-would', action: 'skip', skipped: true },
       ]
       ctx.commands.purgeCommand.mockResolvedValue({ files, errors: 0 })
-      return {
+      return completeSummaryOutput({
         'files-deleted': '1',
         'file-count': '2',
         'summary-json': JSON.stringify(files),
-      }
+      })
     }
   }
   const exhaustive: never = action
@@ -1234,6 +1259,10 @@ function outputs(ctx: LoadedMain): Record<string, string> {
   return Object.fromEntries(
     ctx.core.setOutput.mock.calls.map(([key, value]) => [String(key), String(value)]),
   )
+}
+
+function completeSummaryOutput(outputs: Record<string, string>): Record<string, string> {
+  return { ...outputs, 'summary-json-truncated': 'false' }
 }
 
 function firstSummary(ctx: LoadedMain): Parameters<typeof Summary.writeStepSummary>[0] | undefined {

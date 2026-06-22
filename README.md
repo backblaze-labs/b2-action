@@ -378,10 +378,15 @@ If you don't need customer-managed keys, **`sse: B2`** (SSE-B2, B2-managed) is t
 | `verified` | verify | `true` / `false`. |
 | `remote-sha1` | verify | The remote object's whole-file SHA-1, or empty for multipart objects when B2 does not expose one. |
 | `local-sha1` | verify | Local file SHA-1 (when computed from `destination`). |
-| `summary-json` | every command | JSON array with per-file details, capped at the first 100 entries and 256 KiB of UTF-16 JSON text. |
-| `summary-json-truncated` | every command when truncated | `true` when `summary-json` omitted entries because it exceeded the supported count or size cap. |
+| `summary-json` | every command when the manifest fits | Complete JSON array with per-file details. Emitted only when the result fits within 100 entries and 256 KiB of UTF-16 JSON text; otherwise the Action fails closed and emits `summary-json-preview`. |
+| `summary-json-truncated` | every command | `true` / `false`. `true` means the full manifest exceeded the supported `summary-json` count or size cap. |
+| `summary-json-preview` | every command when truncated | Bounded partial JSON array with the first entries that fit the cap. Do not treat it as a complete manifest. |
 | `retryable` | classified SDK failures | `true` only when the failed action is safe to re-run automatically. Mutating actions with ambiguous transient failures emit `false` so callers inspect B2 state first. |
 | `retry-after` | classified SDK failures | Retry delay in seconds, clamped to 3600. Emitted only with `retryable=true`; network failures use a default backoff. |
+
+`summary-json` is complete-or-error. If `summary-json-truncated` is `true`, the scalar count outputs (`file-count`, `files-listed`, `files-uploaded`, and the other verb-specific counts) remain the authoritative totals and may exceed the number of entries in `summary-json-preview`. Do not use `summary-json-preview` as an authoritative manifest for security-sensitive checks; branch on `summary-json-truncated` and fail or fetch a complete manifest another way.
+
+For `presign`, `presigned-url`, `summary-json`, and `summary-json-preview` can contain live presigned download URLs in plaintext step outputs. The URLs are masked in logs, but downstream workflow steps can read them, so treat those outputs as secrets.
 
 `retryable` and `retry-after` are emitted only on the failure path, immediately before the Action calls `core.setFailed`. To consume them, set `continue-on-error: true` on the B2 step and guard the follow-up step explicitly:
 

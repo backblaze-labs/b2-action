@@ -28,9 +28,10 @@ describe('summary-json output guard', () => {
     const payload = buildSummaryJsonPayload(items)
 
     expect(payload.truncated).toBe(true)
+    if (!payload.truncated) throw new Error('expected truncated payload')
     expect(payload.totalCount).toBe(SUMMARY_JSON_MAX_ENTRIES + 5)
     expect(payload.emittedCount).toBe(SUMMARY_JSON_MAX_ENTRIES)
-    expect(JSON.parse(payload.json)).toHaveLength(SUMMARY_JSON_MAX_ENTRIES)
+    expect(JSON.parse(payload.previewJson)).toHaveLength(SUMMARY_JSON_MAX_ENTRIES)
   })
 
   it('trims payloads that exceed the supported UTF-16 size', () => {
@@ -42,8 +43,9 @@ describe('summary-json output guard', () => {
     const payload = buildSummaryJsonPayload(items)
 
     expect(payload.truncated).toBe(true)
+    if (!payload.truncated) throw new Error('expected truncated payload')
     expect(payload.emittedCount).toBeLessThan(items.length)
-    expect(Buffer.byteLength(payload.json, 'utf16le')).toBeLessThanOrEqual(
+    expect(Buffer.byteLength(payload.previewJson, 'utf16le')).toBeLessThanOrEqual(
       SUMMARY_JSON_MAX_UTF16_BYTES,
     )
   })
