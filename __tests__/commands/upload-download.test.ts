@@ -305,6 +305,32 @@ describe('upload + download commands (B2Simulator)', () => {
     }
   })
 
+  it('does not reinterpret planned prefix file paths as directories', async () => {
+    const local = join(fx.workDir, 'conflict.txt')
+    await writeFile(local, 'downloaded conflict')
+    await uploadCommand(fx.bucket, {
+      ...baseInputs(),
+      source: local,
+      destination: 'bundle/conflict.txt',
+    })
+
+    const destDir = join(fx.workDir, 'planned-dir-out')
+    const existingDirectoryAtFilePath = join(destDir, 'conflict.txt')
+    await mkdir(existingDirectoryAtFilePath, { recursive: true })
+
+    await expect(
+      downloadCommand(fx.bucket, {
+        ...baseInputs(),
+        action: 'download',
+        source: 'bundle/',
+        destination: destDir,
+      }),
+    ).rejects.toThrow(/directory|EISDIR|ENOTEMPTY|EEXIST|EPERM/u)
+    await expect(
+      readFile(join(existingDirectoryAtFilePath, 'conflict.txt'), 'utf8'),
+    ).rejects.toThrow()
+  })
+
   it('rejects prefix downloads through symlinked destination components', async () => {
     const local = join(fx.workDir, 'escape.txt')
     await writeFile(local, 'escape')

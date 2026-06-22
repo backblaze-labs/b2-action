@@ -174,7 +174,10 @@ async function downloadOne(
   signal?: AbortSignal,
   pathSafety?: DownloadPathSafety,
 ): Promise<DownloadedFile> {
-  const localPath = await resolveLocalPath(fileName, destination)
+  const localPath =
+    pathSafety !== undefined && destination !== undefined
+      ? resolve(destination)
+      : await resolveLocalPath(fileName, destination)
   if (pathSafety !== undefined) {
     await assertFreshAncestryInsideRoot(pathSafety, localPath, fileName)
   }
