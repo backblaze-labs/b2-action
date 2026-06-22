@@ -399,6 +399,44 @@ describe('upload + download commands (B2Simulator)', () => {
     }
   })
 
+  it('rechecks prefix download root ancestry after planning before writing', async () => {
+    if (process.platform === 'win32') return
+
+    const local = join(fx.workDir, 'root-toctou.txt')
+    await writeFile(local, 'root toctou body')
+    await uploadCommand(fx.bucket, {
+      ...baseInputs(),
+      source: local,
+      destination: 'bundle/file.txt',
+    })
+
+    const destDir = join(fx.workDir, 'dest-root-toctou')
+    const outsideDir = join(fx.workDir, 'outside-root-toctou')
+    await mkdir(destDir)
+    await mkdir(outsideDir)
+
+    const originalDownload = fx.bucket.download.bind(fx.bucket)
+    fx.bucket.download = async (...args: Parameters<typeof fx.bucket.download>) => {
+      await rm(destDir, { recursive: true, force: true })
+      await symlink(outsideDir, destDir, 'dir')
+      return await originalDownload(...args)
+    }
+
+    try {
+      await expect(
+        downloadCommand(fx.bucket, {
+          ...baseInputs(),
+          action: 'download',
+          source: 'bundle/',
+          destination: destDir,
+        }),
+      ).rejects.toThrow(/escapes destination directory/)
+      await expect(readFile(join(outsideDir, 'file.txt'), 'utf8')).rejects.toThrow()
+    } finally {
+      fx.bucket.download = originalDownload
+    }
+  })
+
   it('uploads glob matches with bounded file-level concurrency', async () => {
     const srcDir = join(fx.workDir, 'bundle')
     await mkdir(srcDir)

@@ -36164,7 +36164,7 @@ async function createPathSafetyContext(root) {
     return { realRoot: await (0,promises_.realpath)(root), safeAncestorDirs: new Set([root]) };
 }
 async function assertFreshAncestryInsideRoot(pathSafety, localPath, fileName) {
-    await assertExistingAncestryInsideRoot({ realRoot: pathSafety.realRoot, safeAncestorDirs: new Set([pathSafety.root]) }, localPath, fileName);
+    await assertExistingAncestryInsideRoot({ realRoot: pathSafety.realRoot, safeAncestorDirs: new Set() }, localPath, fileName);
 }
 async function assertExistingAncestryInsideRoot(pathSafety, localPath, fileName) {
     let candidate = (0,external_node_path_.dirname)(localPath);

@@ -308,7 +308,7 @@ async function assertFreshAncestryInsideRoot(
   fileName: string,
 ): Promise<void> {
   await assertExistingAncestryInsideRoot(
-    { realRoot: pathSafety.realRoot, safeAncestorDirs: new Set([pathSafety.root]) },
+    { realRoot: pathSafety.realRoot, safeAncestorDirs: new Set<string>() },
     localPath,
     fileName,
   )
