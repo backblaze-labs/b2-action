@@ -36112,20 +36112,18 @@ async function downloadOne(bucket, fileName, destination, sseDownload, signal) {
  * @internal
  */
 async function resolveLocalPath(fileName, destination) {
-    const segments = safeRemotePathSegments(fileName);
-    const tail = segments.at(-1) ?? '_';
     if (destination === undefined || destination === '') {
-        return (0,external_node_path_.resolve)(tail);
+        return (0,external_node_path_.resolve)(safeRemotePathTail(fileName));
     }
     if (destination.endsWith('/') || destination.endsWith('\\')) {
         const destRoot = (0,external_node_path_.resolve)(destination);
         await (0,promises_.mkdir)(destRoot, { recursive: true });
-        return await resolvePathUnderRoot(destRoot, [tail], fileName);
+        return await resolvePathUnderRoot(destRoot, [safeRemotePathTail(fileName)], fileName);
     }
     const s = await tryStat(destination);
     if (s?.isDirectory()) {
         const destRoot = (0,external_node_path_.resolve)(destination);
-        return await resolvePathUnderRoot(destRoot, [tail], fileName);
+        return await resolvePathUnderRoot(destRoot, [safeRemotePathTail(fileName)], fileName);
     }
     return (0,external_node_path_.resolve)(destination);
 }
@@ -36176,6 +36174,11 @@ function safeRemotePathSegments(fileName) {
         validateRemotePathSegment(segment, fileName);
     }
     return segments;
+}
+function safeRemotePathTail(fileName) {
+    const tail = fileName.split('/').at(-1) ?? '';
+    validateRemotePathSegment(tail, fileName);
+    return tail;
 }
 function validateRemotePathSegment(segment, fileName) {
     if (segment === '' || segment === '.' || segment === '..') {

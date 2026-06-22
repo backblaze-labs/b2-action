@@ -232,7 +232,7 @@ describe('path and checksum properties', () => {
 
     await fc.assert(
       fc.asyncProperty(fc.string({ maxLength: 160 }), async (key) => {
-        if (isMappableDownloadKey(key)) {
+        if (isMappableSingleFileDownloadKey(key)) {
           const localPath = await resolveLocalPath(key, `${destRoot}${sep}`)
           expectPathInside(destRoot, localPath)
         } else {
@@ -245,12 +245,31 @@ describe('path and checksum properties', () => {
     )
   })
 
+  it('single-file downloads validate only the basename used as the local file', async () => {
+    const destRoot = resolve(join(tmpdir(), 'b2-action-single-download-root'))
+
+    await expect(resolveLocalPath('a//b.txt', `${destRoot}${sep}`)).resolves.toBe(
+      resolve(destRoot, 'b.txt'),
+    )
+    await expect(resolveLocalPath('a/../b.txt', `${destRoot}${sep}`)).resolves.toBe(
+      resolve(destRoot, 'b.txt'),
+    )
+    await expect(resolveLocalPath('bad-parent\u0000/good.txt', `${destRoot}${sep}`)).resolves.toBe(
+      resolve(destRoot, 'good.txt'),
+    )
+    await expect(resolveLocalPath('a//', `${destRoot}${sep}`)).rejects.toThrow(
+      /cannot be safely mapped/,
+    )
+  })
+
   it('keeps adversarial B2 keys inside the destination directory', async () => {
     const destRoot = resolve(join(tmpdir(), 'b2-action-adversarial-download-root'))
     const keys = [
       '../escape.txt',
       '..',
       './dot.txt',
+      'a//b.txt',
+      'a/../b.txt',
       'a/../../escape.txt',
       'a\\..\\escape.txt',
       'nested//name.txt',
@@ -259,7 +278,7 @@ describe('path and checksum properties', () => {
     ]
 
     for (const key of keys) {
-      if (isMappableDownloadKey(key)) {
+      if (isMappableSingleFileDownloadKey(key)) {
         const localPath = await resolveLocalPath(key, `${destRoot}${sep}`)
         expectPathInside(destRoot, localPath)
       } else {
@@ -288,7 +307,7 @@ describe('path and checksum properties', () => {
     ]
 
     for (const key of keys) {
-      if (process.platform === 'win32' && !isMappableDownloadKey(key)) {
+      if (process.platform === 'win32' && !isMappableSingleFileDownloadKey(key)) {
         await expect(resolveLocalPath(key, `${destRoot}${sep}`)).rejects.toThrow(
           /cannot be safely mapped/,
         )
@@ -344,15 +363,11 @@ function hasB2Prefix(value: string, prefix: string): boolean {
   return value === prefix || value.startsWith(`${prefix}/`)
 }
 
-function isMappableDownloadKey(key: string): boolean {
-  const segments = key.split('/')
-  if (segments.some((segment) => segment === '' || segment === '.' || segment === '..')) {
-    return false
-  }
-  if ([...key].some((char) => (char.codePointAt(0) ?? 0) <= 0x1f)) return false
-  return (
-    process.platform !== 'win32' || segments.every((segment) => !isUnsafeWindowsSegment(segment))
-  )
+function isMappableSingleFileDownloadKey(key: string): boolean {
+  const tail = key.split('/').at(-1) ?? ''
+  if (tail === '' || tail === '.' || tail === '..') return false
+  if ([...tail].some((char) => (char.codePointAt(0) ?? 0) <= 0x1f)) return false
+  return process.platform !== 'win32' || !isUnsafeWindowsSegment(tail)
 }
 
 function isUnsafeWindowsSegment(segment: string): boolean {

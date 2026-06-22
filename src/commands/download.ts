@@ -201,20 +201,18 @@ export async function resolveLocalPath(
   fileName: string,
   destination: string | undefined,
 ): Promise<string> {
-  const segments = safeRemotePathSegments(fileName)
-  const tail = segments.at(-1) ?? '_'
   if (destination === undefined || destination === '') {
-    return resolve(tail)
+    return resolve(safeRemotePathTail(fileName))
   }
   if (destination.endsWith('/') || destination.endsWith('\\')) {
     const destRoot = resolve(destination)
     await mkdir(destRoot, { recursive: true })
-    return await resolvePathUnderRoot(destRoot, [tail], fileName)
+    return await resolvePathUnderRoot(destRoot, [safeRemotePathTail(fileName)], fileName)
   }
   const s = await tryStat(destination)
   if (s?.isDirectory()) {
     const destRoot = resolve(destination)
-    return await resolvePathUnderRoot(destRoot, [tail], fileName)
+    return await resolvePathUnderRoot(destRoot, [safeRemotePathTail(fileName)], fileName)
   }
   return resolve(destination)
 }
@@ -272,6 +270,12 @@ function safeRemotePathSegments(fileName: string): string[] {
     validateRemotePathSegment(segment, fileName)
   }
   return segments
+}
+
+function safeRemotePathTail(fileName: string): string {
+  const tail = fileName.split('/').at(-1) ?? ''
+  validateRemotePathSegment(tail, fileName)
+  return tail
 }
 
 function validateRemotePathSegment(segment: string, fileName: string): void {
