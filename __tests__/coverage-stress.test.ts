@@ -176,8 +176,7 @@ describe('download: destination resolution edge cases', () => {
       }),
     )
 
-    const cwd = process.cwd()
-    process.chdir(fx.workDir)
+    const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(fx.workDir)
     try {
       const result = await downloadCommand(
         fx.bucket,
@@ -185,7 +184,7 @@ describe('download: destination resolution edge cases', () => {
       )
       expect(result.files[0]?.localPath.endsWith('no-dest.txt')).toBe(true)
     } finally {
-      process.chdir(cwd)
+      cwdSpy.mockRestore()
     }
   })
 
@@ -985,13 +984,12 @@ describe('download: prefix mode defaults destination to cwd', () => {
   it('uses "." when destination is undefined', async () => {
     await seedFile(fx, 'dd/d.txt', 'dl-default-dest')
 
-    const cwd = process.cwd()
-    process.chdir(fx.workDir)
+    const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(fx.workDir)
     try {
       const result = await downloadCommand(fx.bucket, makeInputs('download', fx, { source: 'dd/' }))
       expect(result.files.length).toBeGreaterThanOrEqual(1)
     } finally {
-      process.chdir(cwd)
+      cwdSpy.mockRestore()
     }
   })
 })
@@ -1583,7 +1581,7 @@ describe('sync: down with no destination defaults to cwd', () => {
 
   it('downloads to the current working directory when destination is omitted', async () => {
     await seedFile(fx, 'r.txt', 'root-down-cwd')
-    // chdir to a fresh empty subdir so the cwd-equals-default-destination
+    // Mock cwd to a fresh empty subdir so the cwd-equals-default-destination
     // path doesn't already contain `r.txt` from the seed. If the local
     // copy is present, the simulator's `Date.now()`-based uploadTimestamp
     // can collide with the local file's mtime millisecond-for-millisecond,
@@ -1591,8 +1589,7 @@ describe('sync: down with no destination defaults to cwd', () => {
     // intermittently.
     const cwdSubdir = join(fx.workDir, 'cwd-only')
     await mkdir(cwdSubdir, { recursive: true })
-    const cwd = process.cwd()
-    process.chdir(cwdSubdir)
+    const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(cwdSubdir)
     try {
       const result = await syncCommand(
         fx.bucket,
@@ -1602,7 +1599,7 @@ describe('sync: down with no destination defaults to cwd', () => {
       expect(result.direction).toBe('b2-to-local')
       expect(result.downloaded).toBeGreaterThanOrEqual(1)
     } finally {
-      process.chdir(cwd)
+      cwdSpy.mockRestore()
     }
   })
 })

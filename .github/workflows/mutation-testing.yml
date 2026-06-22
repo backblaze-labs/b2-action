@@ -1,0 +1,108 @@
+name: Mutation testing
+
+on:
+  schedule:
+    # Weekly, Tuesday 05:17 UTC. This is intentionally outside PR gating while
+    # the baseline and survivor triage mature.
+    - cron: '17 5 * * 2'
+  workflow_dispatch:
+
+permissions:
+  contents: read # default read-only repository access for scheduled jobs
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  stryker:
+    name: stryker
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read # check out source and read the committed lockfile
+    steps:
+      - uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@0e279bb959325dab635dd2c09392533439d90093 # v6.0.8
+        with:
+          version: 11.5.3
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Reject blocked dependency names
+        run: |
+          set -euo pipefail
+          if grep -nE 'fast-wrap-ansi|fast-string-width|fast-string-truncated-width' pnpm-lock.yaml; then
+            echo "::error::Blocked lookalike text-width dependency found in pnpm-lock.yaml"
+            exit 1
+          fi
+      - name: Audit full lockfile
+        run: node scripts/full-lockfile-audit.mjs
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test:mutation
+      - name: Upload mutation report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: mutation-report
+          path: reports/mutation
+          if-no-files-found: warn
+          retention-days: 7
+
+  mutation-tracking:
+    name: mutation failure tracking
+    needs: stryker
+    if: always() && github.repository == 'backblaze-labs/b2-action' && github.ref_name == github.event.repository.default_branch
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # check out the local tracking-issue action
+      issues: write # open, update, and close mutation tracking issues
+    steps:
+      - uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
+        with:
+          persist-credentials: false
+      - name: Close mutation tracking issue on recovery
+        if: needs.stryker.result == 'success'
+        uses: ./.github/actions/tracking-issue
+        with:
+          mode: close
+          title: Mutation testing failure
+          label: mutation-testing-failure
+          recovery-message: 'Mutation testing recovered and passed: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'
+          repo: ${{ github.repository }}
+          github-token: ${{ github.token }}
+      - name: Prepare mutation tracking issue
+        id: mutation_issue
+        if: needs.stryker.result != 'success'
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          STRYKER_RESULT: ${{ needs.stryker.result }}
+        run: |
+          set -euo pipefail
+          body="$(mktemp)"
+          {
+            echo '<!-- mutation-testing-failure -->'
+            echo 'The scheduled or manually dispatched mutation-testing workflow failed.'
+            echo ''
+            echo "Run: $RUN_URL"
+            echo ''
+            echo "Result: $STRYKER_RESULT"
+            echo ''
+            echo 'Check the job log and the mutation-report artifact if one was produced.'
+          } > "$body"
+          echo "body_file=$body" >> "$GITHUB_OUTPUT"
+      - name: Open or update mutation tracking issue
+        if: needs.stryker.result != 'success'
+        uses: ./.github/actions/tracking-issue
+        with:
+          mode: open-or-update
+          title: Mutation testing failure
+          label: mutation-testing-failure
+          label-color: D93F0B
+          label-description: Workflow-owned mutation testing failure tracking
+          body-file: ${{ steps.mutation_issue.outputs.body_file }}
+          repo: ${{ github.repository }}
+          github-token: ${{ github.token }}

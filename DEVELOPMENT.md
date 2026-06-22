@@ -72,6 +72,7 @@ pnpm lint:fix
 pnpm typecheck      # tsc --noEmit (strict + exactOptionalPropertyTypes)
 pnpm test           # vitest run: drives against the SDK's in-memory B2Simulator
 pnpm test:coverage  # same + the 95/85/100/95 coverage gate
+pnpm test:mutation  # Stryker mutation run against the Vitest suite
 pnpm build          # ncc build src/main.ts -o dist
 pnpm run audit      # pnpm audit --prod --audit-level high (CI gate; needs network)
 pnpm spellcheck     # cspell across src/, __tests__/, *.md, *.yml, action.yml
@@ -114,6 +115,63 @@ On every cold cache (new version, fresh runner, or cache eviction), `pnpm docs:l
 
 Interrupted local installs can leave a cache lock directory behind. The next run waits for the derived install-lock timeout before printing the lock path to remove. That long wait is intentional so a concurrent live install is not deleted; remove the named lock only after confirming no `docs:links` process is running.
 
+## Mutation testing
+
+`pnpm test:mutation` runs Stryker with the Vitest runner. It mutates the
+action-owned parsing, dispatcher, filesystem-boundary, and error-aggregation
+surfaces listed in the `mutate` array in
+[`stryker.conf.json`](./stryker.conf.json).
+
+The mutation workflow is scheduled and manually dispatchable only; it is not a
+per-PR gate while survivor triage is still being paid down. Reports are written
+under `reports/mutation/` locally and uploaded as the `mutation-report`
+artifact in CI. The workflow audits the full lockfile and rejects blocked
+lookalike dependency names before installing the Stryker toolchain.
+
+Stryker core and `@stryker-mutator/vitest-runner` are exact-pinned to the same
+version because the runner plugin must stay in lockstep with core; the
+Dependabot test-runner group updates them together. `stryker.conf.json` also
+sets `vitest.related` to `false` so every mutant runs the full Vitest suite.
+That is slower, but it avoids missing cross-file assertions in the shared
+command fixtures and dispatcher tests while the mutation baseline is still
+being triaged.
+
+Initial baseline for this Stryker configuration:
+
+| Scope | Mutation score | Killed | Timed out | Survived | No coverage |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| All files | 72.83% | 895 | 11 | 333 | 5 |
+| `src/commands/*.ts` targets | 62.59% | 332 | 11 | 203 | 2 |
+| `src/inputs.ts` | 73.24% | 219 | 0 | 78 | 2 |
+| `src/main.ts` | 85.67% | 305 | 0 | 50 | 1 |
+| `src/sse.ts` | 95.12% | 39 | 0 | 2 | 0 |
+
+Survivor triage from the baseline:
+
+- The command targets remain the largest survivor bucket. Follow-up assertion
+  work should start with upload destination remapping, dry-run paths,
+  pagination, and aggregate error handling.
+- `src/inputs.ts` still has parser and validation-message survivors. These are
+  high-signal action-owned logic and cheap to test.
+- `src/main.ts` and `src/sse.ts` now kill most mutants, but the JSON/HTML
+  report should still be checked before adding disables because some survivors
+  can be equivalent mutants.
+
+The configured mutation threshold is `break: 65`, with `low: 65` and
+`high: 75`. That keeps the scheduled workflow passing the 72.83% baseline with
+7.83 points of headroom while still failing on a material regression. Raise the
+threshold only after survivors have been triaged and the baseline is re-run.
+The headroom and scheduled-only cadence are an intentional bootstrap posture.
+Once alerting has proven reliable, either tighten the break threshold toward
+the baseline, or add a non-blocking PR information run so sub-threshold drift is
+visible before the weekly cron.
+
+Default-branch scheduled and manual failures open or update one
+`mutation-testing-failure` tracking issue through
+`.github/actions/tracking-issue`; a later passing run closes it. This mirrors
+the full-lockfile audit workflow so red cron runs are visible without polling
+the Actions tab.
+
 ## Git hooks
 
 `pnpm install` runs `husky` (via the `prepare` script) which installs the hooks under [`.husky/`](./.husky/). Two hooks are active:
@@ -154,6 +212,7 @@ listed in the same table and called out explicitly.
 | `test` (matrix: ubuntu/macos/windows) | typecheck + vitest unit suite |
 | `lint` | biome `--error-on-warnings` |
 | `coverage` | vitest with v8 coverage, threshold 95 % statements / 85 % branches / 100 % functions / 95 % lines |
+| `mutation-testing` ([mutation-testing.yml](./.github/workflows/mutation-testing.yml)) | Stryker mutation testing against the Vitest suite for high-value parsing, dispatcher, filesystem-boundary, and error-aggregation targets. Runs weekly and manually; it uploads the HTML/JSON report artifact, opens or updates a tracking issue on default-branch failure, and fails if the mutation score drops below the configured break threshold (65%). |
 | `build-and-check-dist` | ncc build, then `git diff --exit-code dist/`. **Drift fails CI**: rebuild with `pnpm build` and commit `dist/`. Bundle size is gated hard at 4 MiB. |
 | `release-provenance-policy` ([security.yml](./.github/workflows/security.yml)) | parses release workflow YAML and enforces OIDC/attestation isolation, validated-SHA checkouts, tag re-verification, staged release asset upload, and post-upload verification. |
 | `github-actions` ([security.yml](./.github/workflows/security.yml)) | runs the shared GitHub Actions security composite action against every workflow, including actionlint, third-party action pin checks, and zizmor audits (see [Pinning third-party actions](#pinning-third-party-actions)) |

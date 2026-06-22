@@ -8,6 +8,7 @@ This folder contains:
 - **`codeql.yml`**: CodeQL (SAST) static analysis of the TypeScript source. Runs on PRs to `main`, on push to `main`, and weekly; findings surface in the repo Security tab.
 - **`full-lockfile-audit.yml`**: PR/push + weekly + manual `pnpm audit --audit-level high` across the full lockfile (dev/build tooling included). PR failures are informational; default-branch failures manage labeled tracking issues.
 - **`full-lockfile-audit-heartbeat.yml`**: daily + manual check that a scheduled, manual, or main-push full-lockfile audit has fired recently; opens, updates, or closes a tracking issue for transient cron lapses after an audit has been observed.
+- **`mutation-testing.yml`**: weekly + manual Stryker mutation testing against high-value action-owned parsing, dispatcher, filesystem-boundary, and error-aggregation targets. Default-branch failures manage a labeled tracking issue and upload the mutation report artifact when available.
 - **`release.yml`**: fires on three-component `vX.Y.Z` tags (a bare `v1` does **not** trigger it): full gate + GitHub Release + floats the major-version tag (`v1`, `v2`, …).
 - **`daily-smoke.yml`**: 03:13 UTC cron: real-B2 end-to-end smoke against the test bucket.
 - **`large-multipart-smoke.yml`**: weekly real-B2 multipart upload + download SHA-1 integrity check for a payload above B2's recommended part size.

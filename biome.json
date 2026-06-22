@@ -34,6 +34,15 @@
     }
   },
   "files": {
-    "includes": ["**", "!dist", "!docs", "!node_modules", "!coverage", "!licenses.txt"]
+    "includes": [
+      "**",
+      "!dist",
+      "!docs",
+      "!node_modules",
+      "!coverage",
+      "!reports",
+      "!.stryker-tmp",
+      "!licenses.txt"
+    ]
   }
 }

@@ -19,6 +19,7 @@ updates:
         patterns:
           - 'vitest'
           - '@vitest/*'
+          - '@stryker-mutator/*'
     labels:
       - 'deps'
 
