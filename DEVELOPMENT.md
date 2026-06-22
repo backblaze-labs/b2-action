@@ -72,6 +72,7 @@ pnpm lint:fix
 pnpm typecheck      # tsc --noEmit (strict + exactOptionalPropertyTypes)
 pnpm test           # vitest run: drives against the SDK's in-memory B2Simulator
 pnpm test:coverage  # same + the 95/85/100/95 coverage gate
+pnpm test:mutation  # Stryker mutation run against the Vitest suite
 pnpm build          # ncc build src/main.ts -o dist
 pnpm run audit      # pnpm audit --prod --audit-level high (CI gate; needs network)
 pnpm spellcheck     # cspell across src/, __tests__/, *.md, *.yml, action.yml
@@ -114,6 +115,54 @@ On every cold cache (new version, fresh runner, or cache eviction), `pnpm docs:l
 
 Interrupted local installs can leave a cache lock directory behind. The next run waits for the derived install-lock timeout before printing the lock path to remove. That long wait is intentional so a concurrent live install is not deleted; remove the named lock only after confirming no `docs:links` process is running.
 
+## Mutation testing
+
+`pnpm test:mutation` runs Stryker with the Vitest runner. It mutates the
+action-owned parsing, dispatcher, filesystem-boundary, and error-aggregation
+surfaces listed in [`stryker.conf.json`](./stryker.conf.json):
+
+- `src/inputs.ts`
+- `src/sse.ts`
+- `src/main.ts`
+- `src/commands/upload.ts`
+- `src/commands/download.ts`
+- `src/commands/sync.ts`
+- `src/commands/delete.ts`
+- `src/commands/purge.ts`
+
+The mutation workflow is scheduled and manually dispatchable only; it is not a
+per-PR gate while survivor triage is still being paid down. Reports are written
+under `reports/mutation/` locally and uploaded as the `mutation-report`
+artifact in CI.
+
+Initial baseline for this Stryker configuration:
+
+| Scope | Mutation score | Killed | Timed out | Survived | No coverage |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| All files | 38.50% | 468 | 11 | 760 | 5 |
+| `src/commands/*.ts` targets | 56.93% | 301 | 11 | 234 | 2 |
+| `src/inputs.ts` | 50.50% | 151 | 0 | 146 | 2 |
+| `src/main.ts` | 0.00% | 0 | 0 | 355 | 1 |
+| `src/sse.ts` | 39.02% | 16 | 0 | 25 | 0 |
+
+Survivor triage from the baseline:
+
+- `src/main.ts` is the largest survivor bucket. Dispatcher tests execute the
+  paths, but many summary, output, and entrypoint assertions do not pin the
+  exact behavior tightly enough to kill mutants.
+- `src/inputs.ts` and `src/sse.ts` show parser and validation-message
+  survivors. These are good follow-up targets because they are high-signal
+  action-owned logic and cheap to test.
+- The command targets have a mixed survivor set around destination remapping,
+  glob branching, dry-run paths, pagination, and aggregate error handling.
+  Some will be equivalent mutants, but the JSON/HTML report should be checked
+  before adding disables.
+
+The configured mutation threshold is `break: 35`, with `low: 35` and
+`high: 45`. That keeps the scheduled workflow passing the baseline with a small
+amount of headroom while still failing on a material regression. Raise the
+threshold only after survivors have been triaged and the baseline is re-run.
+
 ## Git hooks
 
 `pnpm install` runs `husky` (via the `prepare` script) which installs the hooks under [`.husky/`](./.husky/). Two hooks are active:
@@ -154,6 +203,7 @@ listed in the same table and called out explicitly.
 | `test` (matrix: ubuntu/macos/windows) | typecheck + vitest unit suite |
 | `lint` | biome `--error-on-warnings` |
 | `coverage` | vitest with v8 coverage, threshold 95 % statements / 85 % branches / 100 % functions / 95 % lines |
+| `mutation-testing` ([mutation-testing.yml](./.github/workflows/mutation-testing.yml)) | Stryker mutation testing against the Vitest suite for high-value parsing, dispatcher, filesystem-boundary, and error-aggregation targets. Runs weekly and manually; it uploads the HTML/JSON report artifact and fails if the mutation score drops below the documented baseline threshold. |
 | `build-and-check-dist` | ncc build, then `git diff --exit-code dist/`. **Drift fails CI**: rebuild with `pnpm build` and commit `dist/`. Bundle size is gated hard at 4 MiB. |
 | `release-provenance-policy` ([security.yml](./.github/workflows/security.yml)) | parses release workflow YAML and enforces OIDC/attestation isolation, validated-SHA checkouts, tag re-verification, staged release asset upload, and post-upload verification. |
 | `github-actions` ([security.yml](./.github/workflows/security.yml)) | runs the shared GitHub Actions security composite action against every workflow, including actionlint, third-party action pin checks, and zizmor audits (see [Pinning third-party actions](#pinning-third-party-actions)) |

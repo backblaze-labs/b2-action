@@ -64,6 +64,9 @@ nvmrc
 vite
 vitest
 vitests
+stryker
+mutator
+dispatchable
 
 # Test helpers and bucket fixture names
 spyon

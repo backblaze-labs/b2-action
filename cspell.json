@@ -19,6 +19,8 @@
     "docs/**",
     "node_modules/**",
     "coverage/**",
+    "reports/**",
+    ".stryker-tmp/**",
     "pnpm-lock.yaml",
     "package-lock.json",
     ".husky/_/**",
