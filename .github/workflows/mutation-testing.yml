@@ -90,7 +90,7 @@ jobs:
             echo ''
             echo "Result: $STRYKER_RESULT"
             echo ''
-            echo 'Check the job log and the `mutation-report` artifact if one was produced.'
+            echo 'Check the job log and the mutation-report artifact if one was produced.'
           } > "$body"
           echo "body_file=$body" >> "$GITHUB_OUTPUT"
       - name: Open or update mutation tracking issue
