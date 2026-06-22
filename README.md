@@ -221,10 +221,16 @@ Exact-name `copy`, single-file `delete`, and `retention` operate only when the l
 
 ```yaml
 - uses: backblaze-labs/b2-action@v1
-  with: { action: hide, bucket: my-bucket, source: legacy/old.tar.gz }
+  with:
+    action: hide
+    bucket: my-bucket
+    source: legacy/old.tar.gz
 
 - uses: backblaze-labs/b2-action@v1
-  with: { action: unhide, bucket: my-bucket, source: legacy/old.tar.gz }
+  with:
+    action: unhide
+    bucket: my-bucket
+    source: legacy/old.tar.gz
 ```
 
 ### Verify SHA-1 without downloading
@@ -267,7 +273,12 @@ the step; comparable SHA-1 mismatches also fail.
 ```yaml
 # SSE-B2 (B2-managed key, no cost)
 - uses: backblaze-labs/b2-action@v1
-  with: { action: upload, bucket: my-bucket, source: ./private.tar.gz, destination: private.tar.gz, sse: B2 }
+  with:
+    action: upload
+    bucket: my-bucket
+    source: ./private.tar.gz
+    destination: private.tar.gz
+    sse: B2
 
 # SSE-C (customer-provided 256-bit key, base64)
 - uses: backblaze-labs/b2-action@v1
