@@ -122,10 +122,10 @@ function extractSetOutputKeys(dir) {
   }
   for (const file of walkTsFiles(dir)) {
     const source = readFileSync(file, 'utf8')
-    for (const match of source.matchAll(/core\.setOutput\(\s*['"]([a-z][a-z0-9-]*)['"]/g)) {
+    for (const match of source.matchAll(/core\.setOutput\(\s*['"]([a-z][a-z0-9-]*)['"]\s*,/g)) {
       keys.add(match[1])
     }
-    for (const match of source.matchAll(/core\.setOutput\(\s*([A-Z][A-Z0-9_]*)\b/g)) {
+    for (const match of source.matchAll(/core\.setOutput\(\s*([A-Z][A-Z0-9_]*)\s*,/g)) {
       const key = stringConstants.get(match[1])
       if (key !== undefined) keys.add(key)
     }
