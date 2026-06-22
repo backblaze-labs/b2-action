@@ -366,7 +366,14 @@ function hasB2Prefix(value: string, prefix: string): boolean {
 function isMappableSingleFileDownloadKey(key: string): boolean {
   const tail = key.split('/').at(-1) ?? ''
   if (tail === '' || tail === '.' || tail === '..') return false
-  if ([...tail].some((char) => (char.codePointAt(0) ?? 0) <= 0x1f)) return false
+  if (
+    [...tail].some((char) => {
+      const codePoint = char.codePointAt(0) ?? 0
+      return codePoint <= 0x1f || codePoint === 0x7f
+    })
+  ) {
+    return false
+  }
   return process.platform !== 'win32' || !isUnsafeWindowsSegment(tail)
 }
 

@@ -229,6 +229,7 @@ describe('upload + download commands (B2Simulator)', () => {
     for (const [prefix, unsafeName] of [
       ['dup/', 'dup/a//b.txt'],
       ['dot/', 'dot/a/../b.txt'],
+      ['del/', 'del/has-del\u007f.txt'],
     ] as const) {
       const downloadCalls: string[] = []
       const originalListFileNames = fx.bucket.listFileNames.bind(fx.bucket)

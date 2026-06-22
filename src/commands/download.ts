@@ -308,7 +308,7 @@ function validateRemotePathSegment(segment: string, fileName: string): void {
   }
   for (const char of segment) {
     const codePoint = char.codePointAt(0)
-    if (codePoint !== undefined && codePoint <= 0x1f) {
+    if (codePoint !== undefined && (codePoint <= 0x1f || codePoint === 0x7f)) {
       throw new Error(
         `download path for B2 file "${fileName}" cannot be safely mapped because it contains a control character`,
       )
