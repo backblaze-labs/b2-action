@@ -11,7 +11,10 @@ export interface VerifyResult {
   fileName: string
   /** Server-reported byte size of the remote object. */
   remoteSize: number
-  /** Remote SHA-1 header value, or `null` if B2 does not expose one. */
+  /**
+   * Remote SHA-1 header value as reported by B2, including non-comparable values
+   * such as `none` or `unverified:<sha1>`; `null` when B2 does not expose one.
+   */
   remoteSha1: string | null
   /** Locally-computed SHA-1, or `null` if no local file was provided. */
   localSha1: string | null

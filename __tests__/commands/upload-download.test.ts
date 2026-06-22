@@ -185,6 +185,46 @@ describe('upload + download commands (B2Simulator)', () => {
     await expect(readFile(join(destDir, 'windows/CON'), 'utf8')).resolves.toBe('reserved')
   })
 
+  it('uses actual filesystem case behavior for prefix collision checks', async () => {
+    for (const [fileName, body] of [
+      ['bundle/case/Case.txt', 'upper'],
+      ['bundle/case/case.txt', 'lower'],
+    ] as const) {
+      const local = join(fx.workDir, `${body}.txt`)
+      await writeFile(local, body)
+      await uploadCommand(fx.bucket, {
+        ...baseInputs(),
+        source: local,
+        destination: fileName,
+      })
+    }
+
+    const destDir = join(fx.workDir, 'case-out')
+    await mkdir(destDir)
+
+    if (await isCaseInsensitiveDirectory(destDir)) {
+      await expect(
+        downloadCommand(fx.bucket, {
+          ...baseInputs(),
+          action: 'download',
+          source: 'bundle/case/',
+          destination: destDir,
+        }),
+      ).rejects.toThrow(/download path collision/)
+      return
+    }
+
+    await downloadCommand(fx.bucket, {
+      ...baseInputs(),
+      action: 'download',
+      source: 'bundle/case/',
+      destination: destDir,
+    })
+
+    await expect(readFile(join(destDir, 'Case.txt'), 'utf8')).resolves.toBe('upper')
+    await expect(readFile(join(destDir, 'case.txt'), 'utf8')).resolves.toBe('lower')
+  })
+
   it('rejects unsafe prefix path segments before they can overwrite files', async () => {
     for (const [prefix, unsafeName] of [
       ['dup/', 'dup/a//b.txt'],
@@ -415,6 +455,25 @@ describe('upload + download commands (B2Simulator)', () => {
     expect(result.bytesTransferred).toBe(0)
   })
 })
+
+async function isCaseInsensitiveDirectory(dir: string): Promise<boolean> {
+  const marker = `case-check-${randomBytes(8).toString('hex')}`
+  const lowerPath = join(dir, marker.toLowerCase())
+  const upperPath = join(dir, marker.toUpperCase())
+
+  await writeFile(lowerPath, '')
+  try {
+    await readFile(upperPath)
+    return true
+  } catch (error) {
+    if (typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT') {
+      return false
+    }
+    throw error
+  } finally {
+    await rm(lowerPath, { force: true })
+  }
+}
 
 describe('upload: multipart abort cleanup', () => {
   let fx: TestFixture

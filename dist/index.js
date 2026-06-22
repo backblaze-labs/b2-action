@@ -35977,6 +35977,7 @@ function makeProgressListener(label, intervalMs = 1000) {
 
 
 
+
 /**
  * Download from B2 to the local runner.
  *
@@ -36011,6 +36012,7 @@ function sseFromInputs(inputs) {
 async function downloadPrefix(bucket, prefix, destinationDir, sseDownload, signal) {
     const destRoot = (0,external_node_path_.resolve)(destinationDir);
     await (0,promises_.mkdir)(destRoot, { recursive: true });
+    const caseInsensitivePaths = await isCaseInsensitiveDirectory(destRoot);
     const files = [];
     const localPathOwners = new Map();
     let total = 0;
@@ -36031,7 +36033,7 @@ async function downloadPrefix(bucket, prefix, destinationDir, sseDownload, signa
             // leaves the name unchanged.
             const relName = f.fileName.slice(prefix.length);
             const localPath = await resolvePathUnderRoot(destRoot, safeRemotePathSegments(relName), f.fileName);
-            const collisionKey = localPathCollisionKey(localPath);
+            const collisionKey = localPathCollisionKey(localPath, caseInsensitivePaths);
             const existingFileName = localPathOwners.get(collisionKey);
             if (existingFileName !== undefined && existingFileName !== f.fileName) {
                 throw new Error(`download path collision: B2 files "${existingFileName}" and "${f.fileName}" both map to "${localPath}"`);
@@ -36163,10 +36165,32 @@ async function assertExistingAncestryInsideRoot(root, localPath, fileName) {
 function isFileNotFound(error) {
     return typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT';
 }
-function localPathCollisionKey(localPath) {
-    return process.platform === 'win32' || process.platform === 'darwin'
-        ? localPath.toLowerCase()
-        : localPath;
+async function isCaseInsensitiveDirectory(dir) {
+    const marker = `.b2-action-case-check-${(0,external_node_crypto_.randomUUID)()}`;
+    const lowerPath = (0,external_node_path_.resolve)(dir, marker.toLowerCase());
+    const upperPath = (0,external_node_path_.resolve)(dir, marker.toUpperCase());
+    await (0,promises_.writeFile)(lowerPath, '');
+    try {
+        try {
+            return (await (0,promises_.realpath)(lowerPath)) === (await (0,promises_.realpath)(upperPath));
+        }
+        catch (error) {
+            if (isFileNotFound(error))
+                return false;
+            throw error;
+        }
+    }
+    finally {
+        try {
+            await (0,promises_.unlink)(lowerPath);
+        }
+        catch {
+            // Best-effort cleanup only.
+        }
+    }
+}
+function localPathCollisionKey(localPath, caseInsensitivePaths) {
+    return caseInsensitivePaths ? localPath.toLowerCase() : localPath;
 }
 function safeRemotePathSegments(fileName) {
     const segments = fileName.split('/');

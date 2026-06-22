@@ -1,5 +1,6 @@
+import { randomUUID } from 'node:crypto'
 import { createWriteStream } from 'node:fs'
-import { mkdir, realpath, unlink } from 'node:fs/promises'
+import { mkdir, realpath, unlink, writeFile } from 'node:fs/promises'
 import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
 import { Readable, Transform } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
@@ -76,6 +77,7 @@ async function downloadPrefix(
 ): Promise<DownloadResult> {
   const destRoot = resolve(destinationDir)
   await mkdir(destRoot, { recursive: true })
+  const caseInsensitivePaths = await isCaseInsensitiveDirectory(destRoot)
 
   const files: DownloadedFile[] = []
   const localPathOwners = new Map<string, string>()
@@ -101,7 +103,7 @@ async function downloadPrefix(
         safeRemotePathSegments(relName),
         f.fileName,
       )
-      const collisionKey = localPathCollisionKey(localPath)
+      const collisionKey = localPathCollisionKey(localPath, caseInsensitivePaths)
       const existingFileName = localPathOwners.get(collisionKey)
       if (existingFileName !== undefined && existingFileName !== f.fileName) {
         throw new Error(
@@ -258,10 +260,30 @@ function isFileNotFound(error: unknown): boolean {
   return typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT'
 }
 
-function localPathCollisionKey(localPath: string): string {
-  return process.platform === 'win32' || process.platform === 'darwin'
-    ? localPath.toLowerCase()
-    : localPath
+async function isCaseInsensitiveDirectory(dir: string): Promise<boolean> {
+  const marker = `.b2-action-case-check-${randomUUID()}`
+  const lowerPath = resolve(dir, marker.toLowerCase())
+  const upperPath = resolve(dir, marker.toUpperCase())
+
+  await writeFile(lowerPath, '')
+  try {
+    try {
+      return (await realpath(lowerPath)) === (await realpath(upperPath))
+    } catch (error) {
+      if (isFileNotFound(error)) return false
+      throw error
+    }
+  } finally {
+    try {
+      await unlink(lowerPath)
+    } catch {
+      // Best-effort cleanup only.
+    }
+  }
+}
+
+function localPathCollisionKey(localPath: string, caseInsensitivePaths: boolean): string {
+  return caseInsensitivePaths ? localPath.toLowerCase() : localPath
 }
 
 function safeRemotePathSegments(fileName: string): string[] {
