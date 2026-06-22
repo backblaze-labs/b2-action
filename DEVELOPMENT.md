@@ -128,6 +128,14 @@ under `reports/mutation/` locally and uploaded as the `mutation-report`
 artifact in CI. The workflow audits the full lockfile and rejects blocked
 lookalike dependency names before installing the Stryker toolchain.
 
+Stryker core and `@stryker-mutator/vitest-runner` are exact-pinned to the same
+version because the runner plugin must stay in lockstep with core; the
+Dependabot test-runner group updates them together. `stryker.conf.json` also
+sets `vitest.related` to `false` so every mutant runs the full Vitest suite.
+That is slower, but it avoids missing cross-file assertions in the shared
+command fixtures and dispatcher tests while the mutation baseline is still
+being triaged.
+
 Initial baseline for this Stryker configuration:
 
 | Scope | Mutation score | Killed | Timed out | Survived | No coverage |
