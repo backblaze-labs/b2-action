@@ -224,7 +224,27 @@ async function downloadOne(
       counter,
       writeStream,
     )
-    await rename(tempPath, localPath)
+    try {
+      await rename(tempPath, localPath)
+    } catch (renameError) {
+      const retryWindowsOverwrite =
+        process.platform === 'win32' &&
+        typeof renameError === 'object' &&
+        renameError !== null &&
+        'code' in renameError &&
+        (renameError.code === 'EEXIST' || renameError.code === 'EPERM')
+      if (!retryWindowsOverwrite) throw renameError
+
+      // Windows refuses to rename over an existing leaf. Remove only the leaf
+      // path, which unlinks symlinks instead of following them, then retry the
+      // completed same-directory temp-file move.
+      try {
+        await unlink(localPath)
+      } catch (unlinkError) {
+        if (!isFileNotFound(unlinkError)) throw unlinkError
+      }
+      await rename(tempPath, localPath)
+    }
   } catch (err) {
     // Partial download on disk is worse than no file. Write through a
     // same-directory temporary file and rename only after the body completes,
