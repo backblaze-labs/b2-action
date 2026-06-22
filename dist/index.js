@@ -41790,7 +41790,7 @@ async function run() {
                         },
                     ],
                 });
-                if (!result.verified && !isNonComparableRemoteSha1(result.reason)) {
+                if (!result.verified && isComparableRemoteSha1(result.remoteSha1)) {
                     throw new Error(result.reason ?? 'verify failed: SHA-1 mismatch');
                 }
                 return;
@@ -41913,8 +41913,8 @@ async function emitDeletionSummary(verb, result, inputs) {
 function setFileCountOutput(count) {
     setOutput('file-count', String(count));
 }
-function isNonComparableRemoteSha1(reason) {
-    return reason?.startsWith('remote SHA-1 is unavailable because') ?? false;
+function isComparableRemoteSha1(remoteSha1) {
+    return remoteSha1 !== null && /^[a-f0-9]{40}$/.test(remoteSha1);
 }
 function registerSecretValue(secretValues, value) {
     const trimmed = value.trim();

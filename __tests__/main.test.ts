@@ -975,7 +975,7 @@ describe('main dispatcher', () => {
     const result = {
       fileName: 'bad.bin',
       remoteSize: 8,
-      remoteSha1: 'remote-sha',
+      remoteSha1: '0000000000000000000000000000000000000000',
       localSha1: 'local-sha',
       verified: false,
       reason: 'SHA-1 mismatch',
@@ -989,7 +989,7 @@ describe('main dispatcher', () => {
     expect(outputs(ctx)).toMatchObject({
       verified: 'false',
       'file-name': 'bad.bin',
-      'remote-sha1': 'remote-sha',
+      'remote-sha1': '0000000000000000000000000000000000000000',
       'local-sha1': 'local-sha',
     })
   })
@@ -999,7 +999,7 @@ describe('main dispatcher', () => {
     const result = {
       fileName: 'unknown.bin',
       remoteSize: 9,
-      remoteSha1: 'remote-sha',
+      remoteSha1: '1111111111111111111111111111111111111111',
       localSha1: 'local-sha',
       verified: false,
       reason: undefined,
@@ -1016,7 +1016,7 @@ describe('main dispatcher', () => {
         {
           fileName: 'unknown.bin',
           size: 9,
-          sha1: 'remote-sha',
+          sha1: '1111111111111111111111111111111111111111',
           status: 'mismatch',
         },
       ],
