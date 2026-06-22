@@ -378,7 +378,8 @@ If you don't need customer-managed keys, **`sse: B2`** (SSE-B2, B2-managed) is t
 | `verified` | verify | `true` / `false`. |
 | `remote-sha1` | verify | The remote object's whole-file SHA-1, or empty for multipart objects when B2 does not expose one. |
 | `local-sha1` | verify | Local file SHA-1 (when computed from `destination`). |
-| `summary-json` | every command | JSON array with per-file details. |
+| `summary-json` | every command | JSON array with per-file details, capped at the first 100 entries and 256 KiB of UTF-16 JSON text. |
+| `summary-json-truncated` | every command when truncated | `true` when `summary-json` omitted entries because it exceeded the supported count or size cap. |
 | `retryable` | classified SDK failures | `true` only when the failed action is safe to re-run automatically. Mutating actions with ambiguous transient failures emit `false` so callers inspect B2 state first. |
 | `retry-after` | classified SDK failures | Retry delay in seconds, clamped to 3600. Emitted only with `retryable=true`; network failures use a default backoff. |
 

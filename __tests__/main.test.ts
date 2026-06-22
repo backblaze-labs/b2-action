@@ -514,6 +514,28 @@ describe('main dispatcher', () => {
     })
   })
 
+  it('truncates large summary-json outputs and emits a flag', async () => {
+    const ctx = await loadMain()
+    const files = Array.from({ length: 105 }, (_, i) =>
+      listedFile({
+        fileName: `manifest-${i}.txt`,
+        fileId: `id-manifest-${i}`,
+        size: 1,
+      }),
+    )
+    ctx.parseInputs.mockReturnValue(inputs('list'))
+    ctx.commands.listCommand.mockResolvedValue({ files, truncated: false })
+
+    await ctx.run()
+
+    const out = outputs(ctx)
+    expect(JSON.parse(out['summary-json'] ?? '[]')).toHaveLength(100)
+    expect(out['summary-json-truncated']).toBe('true')
+    expect(ctx.core.warning).toHaveBeenCalledWith(
+      expect.stringContaining('summary-json truncated to 100 of 105 item(s)'),
+    )
+  })
+
   it('omits list truncation markers when results fit', async () => {
     const ctx = await loadMain()
     const files = [

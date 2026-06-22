@@ -41319,6 +41319,68 @@ function addUriEncodedSecretVariant(variants, secret) {
     }
 }
 
+;// CONCATENATED MODULE: ./src/outputs.ts
+
+
+const SUMMARY_JSON_MAX_ENTRIES = 100;
+const SUMMARY_JSON_MAX_UTF16_BYTES = 256 * 1024;
+/**
+ * Serialize per-file command details into the bounded `summary-json` output.
+ *
+ * GitHub Actions caps all action outputs for a job at 1 MB, approximated with
+ * UTF-16 size. Keep this single structured output well below that job-level
+ * budget so the scalar outputs and any caller-defined outputs still have room.
+ */
+function buildSummaryJsonPayload(items) {
+    const cappedCount = Math.min(items.length, SUMMARY_JSON_MAX_ENTRIES);
+    const cappedJson = JSON.stringify(items.slice(0, cappedCount));
+    if (utf16ByteLength(cappedJson) <= SUMMARY_JSON_MAX_UTF16_BYTES) {
+        return {
+            json: cappedJson,
+            totalCount: items.length,
+            emittedCount: cappedCount,
+            truncated: cappedCount < items.length,
+        };
+    }
+    let low = 0;
+    let high = cappedCount;
+    let emittedCount = 0;
+    let json = '[]';
+    while (low <= high) {
+        const mid = Math.floor((low + high) / 2);
+        const candidate = JSON.stringify(items.slice(0, mid));
+        if (utf16ByteLength(candidate) <= SUMMARY_JSON_MAX_UTF16_BYTES) {
+            emittedCount = mid;
+            json = candidate;
+            low = mid + 1;
+        }
+        else {
+            high = mid - 1;
+        }
+    }
+    return {
+        json,
+        totalCount: items.length,
+        emittedCount,
+        truncated: emittedCount < items.length,
+    };
+}
+function setSummaryJsonOutput(items) {
+    const payload = buildSummaryJsonPayload(items);
+    setOutput('summary-json', payload.json);
+    if (!payload.truncated)
+        return;
+    setOutput('summary-json-truncated', 'true');
+    warning(`summary-json truncated to ${payload.emittedCount} of ${payload.totalCount} item(s); ` +
+        `limit is ${SUMMARY_JSON_MAX_ENTRIES} entries and ${formatKiB(SUMMARY_JSON_MAX_UTF16_BYTES)} of UTF-16 JSON text`);
+}
+function utf16ByteLength(value) {
+    return external_node_buffer_.Buffer.byteLength(value, 'utf16le');
+}
+function formatKiB(bytes) {
+    return `${Math.floor(bytes / 1024)} KiB`;
+}
+
 ;// CONCATENATED MODULE: ./src/summary.ts
 
 
@@ -41369,6 +41431,7 @@ function escapeHtml(value) {
 }
 
 ;// CONCATENATED MODULE: ./src/main.ts
+
 
 
 
@@ -41452,7 +41515,7 @@ async function run() {
                 setOutput('files-uploaded', String(result.files.length));
                 setFileCountOutput(result.files.length);
                 setOutput('bytes-transferred', String(result.bytesTransferred));
-                setOutput('summary-json', JSON.stringify(result.files));
+                setSummaryJsonOutput(result.files);
                 info(`uploaded ${result.files.length} file(s), ${result.bytesTransferred} bytes`);
                 await writeStepSummary({
                     title: 'Backblaze B2: upload',
@@ -41478,7 +41541,7 @@ async function run() {
                 setOutput('files-downloaded', String(result.files.length));
                 setFileCountOutput(result.files.length);
                 setOutput('bytes-transferred', String(result.bytesTransferred));
-                setOutput('summary-json', JSON.stringify(result.files));
+                setSummaryJsonOutput(result.files);
                 info(`downloaded ${result.files.length} file(s), ${result.bytesTransferred} bytes`);
                 await writeStepSummary({
                     title: 'Backblaze B2: download',
@@ -41499,7 +41562,7 @@ async function run() {
                 setOutput('files-deleted', String(result.deleted));
                 setFileCountOutput(result.uploaded + result.downloaded + result.deleted + result.skipped);
                 setOutput('bytes-transferred', String(result.bytesTransferred));
-                setOutput('summary-json', JSON.stringify(result.events));
+                setSummaryJsonOutput(result.events);
                 if (result.errors > 0) {
                     const sample = summarizeSyncErrors(result.events);
                     throw new Error(`Sync completed with ${result.errors} error(s): ${sample}`);
@@ -41536,7 +41599,7 @@ async function run() {
                 setOutput('file-name', result.destinationFileName);
                 setFileCountOutput(1);
                 setOutput('bytes-transferred', String(result.size));
-                setOutput('summary-json', JSON.stringify([result]));
+                setSummaryJsonOutput([result]);
                 await writeStepSummary({
                     title: 'Backblaze B2: copy',
                     rows: [
@@ -41564,7 +41627,7 @@ async function run() {
                 }
                 setOutput('files-listed', String(result.files.length));
                 setFileCountOutput(result.files.length);
-                setOutput('summary-json', JSON.stringify(result.files));
+                setSummaryJsonOutput(result.files);
                 await writeStepSummary({
                     title: `Backblaze B2: presign (${result.files.length})`,
                     rows: result.files.slice(0, 50).map((f) => ({
@@ -41578,7 +41641,7 @@ async function run() {
                 const result = await listCommand(bucket, inputs);
                 setOutput('files-listed', String(result.files.length));
                 setFileCountOutput(result.files.length);
-                setOutput('summary-json', JSON.stringify(result.files));
+                setSummaryJsonOutput(result.files);
                 if (result.truncated) {
                     warning(`list result truncated at max-results=${inputs.maxResults}; raise it to see more`);
                 }
@@ -41603,7 +41666,7 @@ async function run() {
                 setOutput('file-id', result.fileId);
                 setOutput('file-name', result.fileName);
                 setFileCountOutput(1);
-                setOutput('summary-json', JSON.stringify([result]));
+                setSummaryJsonOutput([result]);
                 await writeStepSummary({
                     title: 'Backblaze B2: hide',
                     rows: [{ fileName: result.fileName, fileId: result.fileId, status: 'hidden' }],
@@ -41617,7 +41680,7 @@ async function run() {
                     setOutput('file-id', result.removedMarkerFileId);
                 }
                 setFileCountOutput(1);
-                setOutput('summary-json', JSON.stringify([result]));
+                setSummaryJsonOutput([result]);
                 await writeStepSummary({
                     title: 'Backblaze B2: unhide',
                     rows: [
@@ -41639,7 +41702,7 @@ async function run() {
                     setOutput('remote-sha1', result.remoteSha1);
                 if (result.localSha1 !== null)
                     setOutput('local-sha1', result.localSha1);
-                setOutput('summary-json', JSON.stringify([result]));
+                setSummaryJsonOutput([result]);
                 await writeStepSummary({
                     title: result.verified ? 'Backblaze B2: verify ✓' : 'Backblaze B2: verify ✗',
                     rows: [
@@ -41661,7 +41724,7 @@ async function run() {
                 setOutput('file-id', result.fileId);
                 setOutput('file-name', result.fileName);
                 setFileCountOutput(1);
-                setOutput('summary-json', JSON.stringify([result]));
+                setSummaryJsonOutput([result]);
                 await writeStepSummary({
                     title: 'Backblaze B2: retention',
                     rows: [
@@ -41682,7 +41745,7 @@ async function run() {
                     setOutput('content-sha1', result.contentSha1);
                 setFileCountOutput(1);
                 setOutput('bytes-transferred', '0');
-                setOutput('summary-json', JSON.stringify([result]));
+                setSummaryJsonOutput([result]);
                 await writeStepSummary({
                     title: 'Backblaze B2: head',
                     rows: [
@@ -41753,7 +41816,7 @@ async function emitDeletionSummary(verb, result, inputs) {
     const wouldDelete = result.files.filter((f) => f.skipped).length;
     setOutput('files-deleted', String(actuallyDeleted));
     setFileCountOutput(result.files.length);
-    setOutput('summary-json', JSON.stringify(result.files));
+    setSummaryJsonOutput(result.files);
     if (result.errors > 0) {
         const labels = { delete: 'Delete', purge: 'Purge' };
         throw new Error(`${labels[verb]} completed with ${result.errors} error(s)`);
