@@ -1581,7 +1581,7 @@ describe('sync: down with no destination defaults to cwd', () => {
 
   it('downloads to the current working directory when destination is omitted', async () => {
     await seedFile(fx, 'r.txt', 'root-down-cwd')
-    // chdir to a fresh empty subdir so the cwd-equals-default-destination
+    // Mock cwd to a fresh empty subdir so the cwd-equals-default-destination
     // path doesn't already contain `r.txt` from the seed. If the local
     // copy is present, the simulator's `Date.now()`-based uploadTimestamp
     // can collide with the local file's mtime millisecond-for-millisecond,
