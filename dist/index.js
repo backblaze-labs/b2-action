@@ -35445,6 +35445,7 @@ var external_node_crypto_ = __nccwpck_require__(7598);
 
 
 
+const CANONICAL_BASE64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
 /**
  * Parse the `sse` input into an SDK {@link EncryptionSetting}.
  *
@@ -35473,9 +35474,11 @@ function parseSse(raw) {
         if (base64Key === '') {
             throw new Error("SSE-C key is empty. Use 'C:<base64-encoded-32-byte-key>'.");
         }
-        // Node's `Buffer.from(str, 'base64')` silently drops invalid chars rather
-        // than throwing; malformed keys surface as wrong-length output and get
-        // caught by the byteLength check below.
+        // Node's `Buffer.from(str, 'base64')` silently drops invalid chars instead
+        // of throwing, so validate the canonical alphabet and padding first.
+        if (!CANONICAL_BASE64.test(base64Key)) {
+            throw new Error("SSE-C key must be valid canonical base64. Use 'C:<base64-encoded-32-byte-key>'.");
+        }
         const keyBytes = external_node_buffer_.Buffer.from(base64Key, 'base64');
         if (keyBytes.byteLength !== 32) {
             throw new Error(`SSE-C key must decode to exactly 32 bytes (256 bits); got ${keyBytes.byteLength}.`);
@@ -35649,6 +35652,8 @@ function requireSource(source, verb, description) {
  *   const x = parseEnum('compare-mode', raw, VALID_COMPARE)
  *
  * Throws a uniform error message that lists the legal values.
+ *
+ * @internal
  */
 function parseEnum(name, raw, valid) {
     if (valid.includes(raw))
@@ -35709,6 +35714,11 @@ function resolveCredential(inputName, envName) {
         return fromEnv;
     throw new Error(`Missing credential: set input '${inputName}' or env var '${envName}'`);
 }
+/**
+ * Parse a comma-separated action input, trimming entries and dropping blanks.
+ *
+ * @internal
+ */
 function splitCsv(value) {
     if (value === undefined)
         return [];
@@ -35717,6 +35727,11 @@ function splitCsv(value) {
         .map((s) => s.trim())
         .filter((s) => s.length > 0);
 }
+/**
+ * Parse the documented boolean input spellings accepted by this action.
+ *
+ * @internal
+ */
 function parseBool(name, raw) {
     const v = raw.trim().toLowerCase();
     if (v === 'true' || v === '1' || v === 'yes')
@@ -35725,9 +35740,15 @@ function parseBool(name, raw) {
         return false;
     throw new Error(`Invalid boolean for '${name}': "${raw}"`);
 }
+/**
+ * Parse a strictly positive integer input.
+ *
+ * @internal
+ */
 function parsePositiveInt(name, raw) {
-    const n = Number(raw);
-    if (!Number.isInteger(n) || n <= 0) {
+    const trimmed = raw.trim();
+    const n = Number(trimmed);
+    if (!/^\d+$/.test(trimmed) || n <= 0 || !Number.isSafeInteger(n)) {
         throw new Error(`Invalid positive integer for '${name}': "${raw}"`);
     }
     return n;
@@ -35991,6 +36012,7 @@ async function downloadPrefix(bucket, prefix, destinationDir, sseDownload, signa
     const destRoot = (0,external_node_path_.resolve)(destinationDir);
     await (0,promises_.mkdir)(destRoot, { recursive: true });
     const files = [];
+    const localPathOwners = new Map();
     let total = 0;
     let startFileName;
     for (;;) {
@@ -36008,7 +36030,13 @@ async function downloadPrefix(bucket, prefix, destinationDir, sseDownload, signa
             // SDK / B2 contract, so the slice is always safe. Empty `prefix`
             // leaves the name unchanged.
             const relName = f.fileName.slice(prefix.length);
-            const localPath = (0,external_node_path_.join)(destRoot, ...relName.split(external_node_path_.posix.sep));
+            const localPath = await resolvePathUnderRoot(destRoot, safeRemotePathSegments(relName), f.fileName);
+            const collisionKey = localPathCollisionKey(localPath);
+            const existingFileName = localPathOwners.get(collisionKey);
+            if (existingFileName !== undefined && existingFileName !== f.fileName) {
+                throw new Error(`download path collision: B2 files "${existingFileName}" and "${f.fileName}" both map to "${localPath}"`);
+            }
+            localPathOwners.set(collisionKey, f.fileName);
             startGroup(`download b2://${bucket.name}/${f.fileName} → ${localPath}`);
             try {
                 const r = await downloadOne(bucket, f.fileName, localPath, sseDownload, signal);
@@ -36078,24 +36106,97 @@ async function downloadOne(bucket, fileName, destination, sseDownload, signal) {
     info(`  wrote ${size} bytes to ${localPath} (sha1=${sha1 ?? 'multipart'})`);
     return { fileName, localPath, size, contentSha1: sha1 };
 }
+/**
+ * Resolve the local target path for a single B2 download.
+ *
+ * @internal
+ */
 async function resolveLocalPath(fileName, destination) {
-    // `fileName` is always non-empty (validated by `requireSource` in the
-    // dispatcher), so `String.split` returns at least one element and `pop`
-    // never returns undefined. The non-null assertion encodes that invariant
-    // without a defensive fallback that v8 would flag as a dead branch.
-    // biome-ignore lint/style/noNonNullAssertion: split on a non-empty string never returns an empty array.
-    const tail = fileName.split(external_node_path_.posix.sep).pop();
+    const segments = safeRemotePathSegments(fileName);
+    const tail = segments.at(-1) ?? '_';
     if (destination === undefined || destination === '') {
         return (0,external_node_path_.resolve)(tail);
     }
     if (destination.endsWith('/') || destination.endsWith('\\')) {
-        return (0,external_node_path_.resolve)(destination, tail);
+        const destRoot = (0,external_node_path_.resolve)(destination);
+        await (0,promises_.mkdir)(destRoot, { recursive: true });
+        return await resolvePathUnderRoot(destRoot, [tail], fileName);
     }
     const s = await tryStat(destination);
     if (s?.isDirectory()) {
-        return (0,external_node_path_.resolve)(destination, tail);
+        const destRoot = (0,external_node_path_.resolve)(destination);
+        return await resolvePathUnderRoot(destRoot, [tail], fileName);
     }
     return (0,external_node_path_.resolve)(destination);
+}
+async function resolvePathUnderRoot(root, segments, fileName) {
+    const localPath = (0,external_node_path_.resolve)(root, ...segments);
+    const rel = (0,external_node_path_.relative)(root, localPath);
+    if (rel !== '' && (rel.startsWith('..') || (0,external_node_path_.isAbsolute)(rel))) {
+        throw new Error(`download path for B2 file "${fileName}" escapes destination directory`);
+    }
+    await assertExistingAncestryInsideRoot(root, localPath, fileName);
+    return localPath;
+}
+async function assertExistingAncestryInsideRoot(root, localPath, fileName) {
+    const realRoot = await (0,promises_.realpath)(root);
+    let candidate = (0,external_node_path_.dirname)(localPath);
+    for (;;) {
+        try {
+            const realCandidate = await (0,promises_.realpath)(candidate);
+            const rel = (0,external_node_path_.relative)(realRoot, realCandidate);
+            if (rel === '' || (!rel.startsWith('..') && !(0,external_node_path_.isAbsolute)(rel)))
+                return;
+            throw new Error(`download path for B2 file "${fileName}" escapes destination directory`);
+        }
+        catch (error) {
+            if (!isFileNotFound(error))
+                throw error;
+            const parent = (0,external_node_path_.dirname)(candidate);
+            if (parent === candidate)
+                throw error;
+            candidate = parent;
+        }
+    }
+}
+function isFileNotFound(error) {
+    return typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT';
+}
+function localPathCollisionKey(localPath) {
+    return process.platform === 'win32' || process.platform === 'darwin'
+        ? localPath.toLowerCase()
+        : localPath;
+}
+function safeRemotePathSegments(fileName) {
+    const segments = fileName.split('/');
+    for (const segment of segments) {
+        validateRemotePathSegment(segment, fileName);
+    }
+    return segments;
+}
+function validateRemotePathSegment(segment, fileName) {
+    if (segment === '' || segment === '.' || segment === '..') {
+        throw new Error(`download path for B2 file "${fileName}" cannot be safely mapped because it contains an empty, "." or ".." path segment`);
+    }
+    for (const char of segment) {
+        const codePoint = char.codePointAt(0);
+        if (codePoint !== undefined && codePoint <= 0x1f) {
+            throw new Error(`download path for B2 file "${fileName}" cannot be safely mapped because it contains a control character`);
+        }
+    }
+    // B2 keys are opaque, but prefix downloads must project `/`-separated
+    // keys into the runner filesystem without path traversal or lossy rewrites.
+    // POSIX runners can preserve characters such as `:`, `?`, trailing dots,
+    // and Windows device names verbatim. Windows treats several of those as
+    // separators or invalid/reserved filenames, so reject them there instead of
+    // silently changing the on-disk name or risking two B2 keys overwriting one
+    // local path.
+    if (process.platform === 'win32' &&
+        (/[<>:"|?*\\]/u.test(segment) ||
+            /[. ]$/u.test(segment) ||
+            /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/iu.test(segment))) {
+        throw new Error(`download path for B2 file "${fileName}" cannot be safely mapped on Windows because segment "${segment}" is reserved or contains a Windows path character`);
+    }
 }
 
 ;// CONCATENATED MODULE: ./src/commands/head.ts
@@ -41001,6 +41102,11 @@ function compareStrings(a, b) {
         return 1;
     return 0;
 }
+/**
+ * Map a local source file to its B2 file name under the requested destination.
+ *
+ * @internal
+ */
 function remapFileName(file, destination, isSingleExplicitFile) {
     if (destination === undefined || destination === '')
         return file.fileName;
@@ -41087,41 +41193,71 @@ async function verifyCommand(bucket, inputs) {
         const remoteSize = headers.contentLength;
         const remoteSha1 = headers.contentSha1;
         let localSha1 = null;
-        let expected = inputs.expectedSha1 ?? null;
+        let expected = inputs.expectedSha1 !== undefined ? verify_normalizeSha1(inputs.expectedSha1, 'expected-sha1') : null;
         if (expected === null && inputs.destination !== undefined && inputs.destination !== '') {
             localSha1 = await sha1OfFile(inputs.destination);
-            expected = localSha1;
+            expected = verify_normalizeSha1(localSha1, 'destination');
         }
         if (expected === null) {
             throw new Error("verify needs either 'expected-sha1' (literal) or 'destination' (local file path) to compare against");
         }
-        if (remoteSha1 === null) {
-            const reason = 'remote SHA-1 is unavailable because B2 does not expose a whole-file SHA-1 for multipart-uploaded files; HEAD-only verify cannot validate this object, even with expected-sha1';
+        const normalizedRemoteSha1 = remoteSha1 === null ? null : normalizeRemoteSha1(remoteSha1);
+        if (normalizedRemoteSha1 === null) {
+            const reason = unavailableRemoteSha1Reason(remoteSha1);
             warning(`  ${reason}`);
             return {
                 fileName: source,
                 remoteSize,
-                remoteSha1: null,
+                remoteSha1,
                 localSha1,
                 verified: false,
                 reason,
             };
         }
-        const verified = remoteSha1.toLowerCase() === expected.toLowerCase();
+        const verified = normalizedRemoteSha1 === expected;
         const reason = verified
             ? undefined
-            : `SHA-1 mismatch: remote=${remoteSha1} expected=${expected}`;
+            : `SHA-1 mismatch: remote=${normalizedRemoteSha1} expected=${expected}`;
         if (verified) {
-            info(`  ✓ SHA-1 matches (${remoteSha1}), size=${remoteSize}B`);
+            info(`  ✓ SHA-1 matches (${normalizedRemoteSha1}), size=${remoteSize}B`);
         }
         else {
             warning(`  ${reason}`);
         }
-        return { fileName: source, remoteSize, remoteSha1, localSha1, verified, reason };
+        return {
+            fileName: source,
+            remoteSize,
+            remoteSha1: normalizedRemoteSha1,
+            localSha1,
+            verified,
+            reason,
+        };
     }
     finally {
         endGroup();
     }
+}
+/**
+ * Normalize and validate a SHA-1 digest for case-insensitive comparison.
+ *
+ * @internal
+ */
+function verify_normalizeSha1(raw, label = 'SHA-1') {
+    const normalized = raw.trim().toLowerCase();
+    if (!/^[a-f0-9]{40}$/.test(normalized)) {
+        throw new Error(`Invalid ${label}: expected a 40-character hexadecimal SHA-1 digest`);
+    }
+    return normalized;
+}
+function normalizeRemoteSha1(raw) {
+    const normalized = raw.trim().toLowerCase();
+    return /^[a-f0-9]{40}$/.test(normalized) ? normalized : null;
+}
+function unavailableRemoteSha1Reason(remoteSha1) {
+    if (remoteSha1 === null) {
+        return 'remote SHA-1 is unavailable because B2 does not expose a whole-file SHA-1 for multipart-uploaded files; HEAD-only verify cannot validate this object, even with expected-sha1';
+    }
+    return `remote SHA-1 is unavailable because B2 reported ${JSON.stringify(remoteSha1)} instead of a verified 40-character whole-file SHA-1; HEAD-only verify cannot validate this object, even with expected-sha1`;
 }
 async function sha1OfFile(path) {
     const fileStat = await (0,promises_.stat)(path);
@@ -41319,162 +41455,10 @@ function addUriEncodedSecretVariant(variants, secret) {
     }
 }
 
-;// CONCATENATED MODULE: ./src/outputs.ts
-
-
-const SUMMARY_JSON_PREVIEW_MAX_ENTRIES = 100;
-const SUMMARY_JSON_MAX_UTF8_BYTES = 256 * 1024;
-const SUMMARY_JSON_OUTPUT_NAME = 'summary-json';
-const SUMMARY_JSON_TRUNCATED_OUTPUT_NAME = 'summary-json-truncated';
-const SUMMARY_JSON_NOTICE_OUTPUT_NAME = 'summary-json-notice';
-const SUMMARY_JSON_PREVIEW_OUTPUT_NAME = 'summary-json-preview';
-/**
- * Serialize per-file command details into the bounded `summary-json` output.
- *
- * GitHub Actions writes outputs as UTF-8 and caps all action outputs for a job
- * at 1 MB. Keep this single structured output well below that job-level
- * budget so scalar outputs, $GITHUB_OUTPUT framing, and caller-defined outputs
- * still have room.
- *
- * `summary-json` remains a complete array when the full manifest fits. When a
- * result exceeds the supported byte cap, `summary-json` remains an array
- * (`[]`) rather than changing shape or carrying a partial manifest.
- * `summary-json-notice` receives a small JSON object describing the
- * truncation, `summary-json-preview` receives a bounded diagnostic prefix, and
- * `summary-json-truncated` is set to `true`. The action step may still succeed
- * because the B2 operation itself has already completed. Scalar count outputs
- * (`file-count`, `files-listed`, etc.) remain the authoritative totals.
- *
- * The serializer also omits credential-bearing field names for every command:
- * `url`, fields ending in `url`, and fields containing `authorization`,
- * `signature`, or `token` after case/underscore/hyphen normalization. Commands
- * that need to expose similarly named non-secret data should project it to an
- * explicit safe field name before calling this helper.
- */
-function buildSummaryJsonPayload(items, options = {}) {
-    const serialized = serializeJsonArrayPrefix(items, options, items.length);
-    if (!serialized.byteLimitExceeded && !serialized.serializationFailed) {
-        return {
-            json: serialized.json,
-            totalCount: items.length,
-            truncated: false,
-        };
-    }
-    return buildTruncatedSummaryJsonPayload(items, options, serialized.serializationFailed
-        ? 'summary-json could not be serialized within the supported output contract'
-        : 'summary-json exceeded the supported UTF-8 output size cap');
-}
-function buildTruncatedSummaryJsonPayload(items, options, reason) {
-    const preview = buildSummaryJsonPreview(items, options);
-    return {
-        json: '[]',
-        noticeJson: JSON.stringify({
-            truncated: true,
-            reason,
-            totalCount: items.length,
-            previewCount: preview.emittedCount,
-            previewOutput: SUMMARY_JSON_PREVIEW_OUTPUT_NAME,
-        }),
-        previewJson: preview.json,
-        totalCount: items.length,
-        previewCount: preview.emittedCount,
-        reason,
-        truncated: true,
-    };
-}
-function buildSummaryJsonPreview(items, options) {
-    const preview = serializeJsonArrayPrefix(items, options, SUMMARY_JSON_PREVIEW_MAX_ENTRIES);
-    return { json: preview.json, emittedCount: preview.emittedCount };
-}
-function setSummaryJsonOutput(items, options = {}) {
-    const payload = buildSummaryJsonPayload(items, options);
-    setOutput(SUMMARY_JSON_TRUNCATED_OUTPUT_NAME, String(payload.truncated));
-    setOutput(SUMMARY_JSON_OUTPUT_NAME, payload.json);
-    if (!payload.truncated) {
-        return;
-    }
-    setOutput(SUMMARY_JSON_NOTICE_OUTPUT_NAME, payload.noticeJson);
-    setOutput(SUMMARY_JSON_PREVIEW_OUTPUT_NAME, payload.previewJson);
-    warning(`summary-json truncated: ${payload.reason}; preview contains ` +
-        `${payload.previewCount} of ${payload.totalCount} item(s). ` +
-        `summary-json is [] and summary-json-notice describes the truncation. ` +
-        `limit is ${formatKiB(SUMMARY_JSON_MAX_UTF8_BYTES)} of UTF-8 JSON text`);
-}
-function serializeJsonArrayPrefix(items, options, maxEntries) {
-    const parts = ['['];
-    let bytes = 2;
-    let emittedCount = 0;
-    const count = Math.min(items.length, maxEntries);
-    for (let index = 0; index < count; index++) {
-        let itemJson;
-        try {
-            itemJson = stringifyArrayItem(projectItem(items[index], options));
-        }
-        catch {
-            parts.push(']');
-            return {
-                json: parts.join(''),
-                emittedCount,
-                byteLimitExceeded: false,
-                serializationFailed: true,
-            };
-        }
-        const separator = emittedCount === 0 ? '' : ',';
-        const additionalBytes = utf8ByteLength(separator) + utf8ByteLength(itemJson);
-        if (bytes + additionalBytes > SUMMARY_JSON_MAX_UTF8_BYTES) {
-            parts.push(']');
-            return {
-                json: parts.join(''),
-                emittedCount,
-                byteLimitExceeded: true,
-                serializationFailed: false,
-            };
-        }
-        if (separator !== '')
-            parts.push(separator);
-        parts.push(itemJson);
-        bytes += additionalBytes;
-        emittedCount++;
-    }
-    parts.push(']');
-    return {
-        json: parts.join(''),
-        emittedCount,
-        byteLimitExceeded: false,
-        serializationFailed: false,
-    };
-}
-function projectItem(item, options) {
-    return options.item === undefined ? item : options.item(item);
-}
-function stringifyArrayItem(item) {
-    const json = JSON.stringify(item, sensitiveSummaryJsonFieldReplacer);
-    return json === undefined ? 'null' : json;
-}
-function sensitiveSummaryJsonFieldReplacer(key, value) {
-    return key !== '' && isSensitiveSummaryJsonField(key) ? undefined : value;
-}
-function isSensitiveSummaryJsonField(key) {
-    const normalized = key.replaceAll('-', '').replaceAll('_', '').toLowerCase();
-    return (normalized === 'url' ||
-        normalized.endsWith('url') ||
-        normalized.includes('authorization') ||
-        normalized.includes('signature') ||
-        normalized.includes('token'));
-}
-function utf8ByteLength(value) {
-    return external_node_buffer_.Buffer.byteLength(value, 'utf8');
-}
-function formatKiB(bytes) {
-    return `${Math.floor(bytes / 1024)} KiB`;
-}
-
 ;// CONCATENATED MODULE: ./src/summary.ts
 
 
 
-/** Maximum per-file rows rendered in a GitHub Actions step summary table. */
-const STEP_SUMMARY_MAX_ROWS = 100;
 /**
  * Append a markdown summary block to `$GITHUB_STEP_SUMMARY`. No-ops when
  * the env var is unset (e.g. running the bundle locally for a smoke test).
@@ -41482,16 +41466,11 @@ const STEP_SUMMARY_MAX_ROWS = 100;
  * @param opts.title - Heading rendered as `## {title}`.
  * @param opts.rows - One row per file. Empty rows render an empty table body.
  * @param opts.totals - Optional aggregate line printed above the table.
- * @param opts.totalRows - Optional source row count when callers pre-slice rows.
  */
 async function writeStepSummary(opts) {
     const path = process.env.GITHUB_STEP_SUMMARY;
     if (path === undefined || path === '')
         return;
-    // Keep the writer defensive for direct callers even though dispatcher
-    // call sites pre-slice rows to avoid mapping very large result sets.
-    const rows = opts.rows.slice(0, STEP_SUMMARY_MAX_ROWS);
-    const totalRows = opts.totalRows ?? opts.rows.length;
     const lines = [];
     lines.push(`## ${opts.title}`);
     lines.push('');
@@ -41499,15 +41478,11 @@ async function writeStepSummary(opts) {
         lines.push(`**${opts.totals.files}** files, **${formatBytes(opts.totals.bytes)}** total.`);
         lines.push('');
     }
-    if (totalRows > rows.length) {
-        lines.push(`Showing first ${rows.length} of ${totalRows} rows.`);
-        lines.push('');
-    }
-    if (rows.length > 0) {
+    if (opts.rows.length > 0) {
         lines.push('| File | Size | File ID | SHA-1 | Status |');
         lines.push('|------|------|---------|-------|--------|');
-        for (const r of rows) {
-            lines.push(`| ${inlineCodeCell(r.fileName)} | ${r.size !== undefined ? formatBytes(r.size) : ''} | ${r.fileId !== undefined ? inlineCodeCell(r.fileId) : ''} | ${r.sha1 !== undefined && r.sha1 !== null ? `\`${r.sha1.slice(0, 12)}…\`` : ''} | ${r.status !== undefined ? inlineCodeCell(r.status) : ''} |`);
+        for (const r of opts.rows) {
+            lines.push(`| ${inlineCodeCell(r.fileName)} | ${r.size !== undefined ? formatBytes(r.size) : ''} | ${r.fileId !== undefined ? inlineCodeCell(r.fileId) : ''} | ${r.sha1 !== undefined && r.sha1 !== null ? `\`${r.sha1.slice(0, 12)}…\`` : ''} | ${r.status ?? ''} |`);
         }
     }
     lines.push('');
@@ -41530,7 +41505,6 @@ function escapeHtml(value) {
 }
 
 ;// CONCATENATED MODULE: ./src/main.ts
-
 
 
 
@@ -41614,11 +41588,12 @@ async function run() {
                 setOutput('files-uploaded', String(result.files.length));
                 setFileCountOutput(result.files.length);
                 setOutput('bytes-transferred', String(result.bytesTransferred));
+                setOutput('summary-json', JSON.stringify(result.files));
                 info(`uploaded ${result.files.length} file(s), ${result.bytesTransferred} bytes`);
                 await writeStepSummary({
                     title: 'Backblaze B2: upload',
                     totals: { files: result.files.length, bytes: result.bytesTransferred },
-                    ...stepSummaryRows(result.files, (f) => ({
+                    rows: result.files.map((f) => ({
                         fileName: f.fileName,
                         size: f.size,
                         fileId: f.fileId,
@@ -41626,7 +41601,6 @@ async function run() {
                         status: 'uploaded',
                     })),
                 });
-                setSummaryJsonOutput(result.files);
                 return;
             }
             case 'download': {
@@ -41640,18 +41614,18 @@ async function run() {
                 setOutput('files-downloaded', String(result.files.length));
                 setFileCountOutput(result.files.length);
                 setOutput('bytes-transferred', String(result.bytesTransferred));
+                setOutput('summary-json', JSON.stringify(result.files));
                 info(`downloaded ${result.files.length} file(s), ${result.bytesTransferred} bytes`);
                 await writeStepSummary({
                     title: 'Backblaze B2: download',
                     totals: { files: result.files.length, bytes: result.bytesTransferred },
-                    ...stepSummaryRows(result.files, (f) => ({
+                    rows: result.files.map((f) => ({
                         fileName: f.fileName,
                         size: f.size,
                         sha1: f.contentSha1,
                         status: 'downloaded',
                     })),
                 });
-                setSummaryJsonOutput(result.files);
                 return;
             }
             case 'sync': {
@@ -41661,7 +41635,7 @@ async function run() {
                 setOutput('files-deleted', String(result.deleted));
                 setFileCountOutput(result.uploaded + result.downloaded + result.deleted + result.skipped);
                 setOutput('bytes-transferred', String(result.bytesTransferred));
-                setSummaryJsonOutput(result.events);
+                setOutput('summary-json', JSON.stringify(result.events));
                 if (result.errors > 0) {
                     const sample = summarizeSyncErrors(result.events);
                     throw new Error(`Sync completed with ${result.errors} error(s): ${sample}`);
@@ -41698,6 +41672,7 @@ async function run() {
                 setOutput('file-name', result.destinationFileName);
                 setFileCountOutput(1);
                 setOutput('bytes-transferred', String(result.size));
+                setOutput('summary-json', JSON.stringify([result]));
                 await writeStepSummary({
                     title: 'Backblaze B2: copy',
                     rows: [
@@ -41709,7 +41684,6 @@ async function run() {
                         },
                     ],
                 });
-                setSummaryJsonOutput([result]);
                 return;
             }
             case 'delete': {
@@ -41726,20 +41700,21 @@ async function run() {
                 }
                 setOutput('files-listed', String(result.files.length));
                 setFileCountOutput(result.files.length);
+                setOutput('summary-json', JSON.stringify(result.files));
                 await writeStepSummary({
                     title: `Backblaze B2: presign (${result.files.length})`,
-                    ...stepSummaryRows(result.files, (f) => ({
+                    rows: result.files.slice(0, 50).map((f) => ({
                         fileName: f.fileName,
                         status: `expires at ${new Date(f.expiresAt * 1000).toISOString()}`,
                     })),
                 });
-                setSummaryJsonOutput(result.files, { item: presignSummaryItem });
                 return;
             }
             case 'list': {
                 const result = await listCommand(bucket, inputs);
                 setOutput('files-listed', String(result.files.length));
                 setFileCountOutput(result.files.length);
+                setOutput('summary-json', JSON.stringify(result.files));
                 if (result.truncated) {
                     warning(`list result truncated at max-results=${inputs.maxResults}; raise it to see more`);
                 }
@@ -41749,7 +41724,7 @@ async function run() {
                         files: result.files.length,
                         bytes: result.files.reduce((s, f) => s + f.size, 0),
                     },
-                    ...stepSummaryRows(result.files, (f) => ({
+                    rows: result.files.slice(0, 100).map((f) => ({
                         fileName: f.fileName,
                         size: f.size,
                         fileId: f.fileId,
@@ -41757,7 +41732,6 @@ async function run() {
                         status: f.contentType,
                     })),
                 });
-                setSummaryJsonOutput(result.files);
                 return;
             }
             case 'hide': {
@@ -41765,11 +41739,11 @@ async function run() {
                 setOutput('file-id', result.fileId);
                 setOutput('file-name', result.fileName);
                 setFileCountOutput(1);
+                setOutput('summary-json', JSON.stringify([result]));
                 await writeStepSummary({
                     title: 'Backblaze B2: hide',
                     rows: [{ fileName: result.fileName, fileId: result.fileId, status: 'hidden' }],
                 });
-                setSummaryJsonOutput([result]);
                 return;
             }
             case 'unhide': {
@@ -41779,6 +41753,7 @@ async function run() {
                     setOutput('file-id', result.removedMarkerFileId);
                 }
                 setFileCountOutput(1);
+                setOutput('summary-json', JSON.stringify([result]));
                 await writeStepSummary({
                     title: 'Backblaze B2: unhide',
                     rows: [
@@ -41789,7 +41764,6 @@ async function run() {
                         },
                     ],
                 });
-                setSummaryJsonOutput([result]);
                 return;
             }
             case 'verify': {
@@ -41801,6 +41775,7 @@ async function run() {
                     setOutput('remote-sha1', result.remoteSha1);
                 if (result.localSha1 !== null)
                     setOutput('local-sha1', result.localSha1);
+                setOutput('summary-json', JSON.stringify([result]));
                 await writeStepSummary({
                     title: result.verified ? 'Backblaze B2: verify ✓' : 'Backblaze B2: verify ✗',
                     rows: [
@@ -41812,8 +41787,7 @@ async function run() {
                         },
                     ],
                 });
-                setSummaryJsonOutput([result]);
-                if (!result.verified) {
+                if (!result.verified && !isNonComparableRemoteSha1(result.reason)) {
                     throw new Error(result.reason ?? 'verify failed: SHA-1 mismatch');
                 }
                 return;
@@ -41823,6 +41797,7 @@ async function run() {
                 setOutput('file-id', result.fileId);
                 setOutput('file-name', result.fileName);
                 setFileCountOutput(1);
+                setOutput('summary-json', JSON.stringify([result]));
                 await writeStepSummary({
                     title: 'Backblaze B2: retention',
                     rows: [
@@ -41833,7 +41808,6 @@ async function run() {
                         },
                     ],
                 });
-                setSummaryJsonOutput([result]);
                 return;
             }
             case 'head': {
@@ -41844,6 +41818,7 @@ async function run() {
                     setOutput('content-sha1', result.contentSha1);
                 setFileCountOutput(1);
                 setOutput('bytes-transferred', '0');
+                setOutput('summary-json', JSON.stringify([result]));
                 await writeStepSummary({
                     title: 'Backblaze B2: head',
                     rows: [
@@ -41856,7 +41831,6 @@ async function run() {
                         },
                     ],
                 });
-                setSummaryJsonOutput([result]);
                 return;
             }
             case 'purge': {
@@ -41905,42 +41879,39 @@ function isEntrypoint(metaUrl, argv1) {
  * Shared output-emission + step-summary for the two deletion verbs.
  * `delete` and `purge` returned-shape and dispatcher-side handling are
  * structurally identical (filter into actually-deleted vs would-delete,
- * set the same outputs, render the same capped row table); they differ only
- * in the verb label and the per-row status string.
+ * set the same outputs, render the same row table); they differ only in
+ * the verb label, the per-row status string, and whether to cap the
+ * summary at 100 rows (purge wipes everything, including historical
+ * versions, so the row count can dwarf delete).
  */
 async function emitDeletionSummary(verb, result, inputs) {
     const actuallyDeleted = result.files.filter((f) => !f.skipped).length;
     const wouldDelete = result.files.filter((f) => f.skipped).length;
     setOutput('files-deleted', String(actuallyDeleted));
     setFileCountOutput(result.files.length);
-    setSummaryJsonOutput(result.files);
+    setOutput('summary-json', JSON.stringify(result.files));
     if (result.errors > 0) {
         const labels = { delete: 'Delete', purge: 'Purge' };
         throw new Error(`${labels[verb]} completed with ${result.errors} error(s)`);
     }
     const past = verb === 'delete' ? 'deleted' : 'purged';
     const future = verb === 'delete' ? 'would delete' : 'would purge';
+    const rowsSource = verb === 'purge' ? result.files.slice(0, 100) : result.files;
     await writeStepSummary({
         title: inputs.dryRun ? `Backblaze B2: ${verb} (dry-run)` : `Backblaze B2: ${verb}`,
         totals: { files: actuallyDeleted + wouldDelete, bytes: 0 },
-        ...stepSummaryRows(result.files, (f) => ({
+        rows: rowsSource.map((f) => ({
             fileName: f.fileName,
             fileId: f.fileId,
             status: f.skipped ? future : past,
         })),
     });
 }
-function stepSummaryRows(items, row) {
-    // Pre-slice here to avoid mapping very large result sets; writeStepSummary
-    // keeps its own defensive cap for direct callers.
-    const rows = items.slice(0, STEP_SUMMARY_MAX_ROWS).map(row);
-    return rows.length < items.length ? { rows, totalRows: items.length } : { rows };
-}
-function presignSummaryItem(file) {
-    return { fileName: file.fileName, expiresAt: file.expiresAt };
-}
 function setFileCountOutput(count) {
     setOutput('file-count', String(count));
+}
+function isNonComparableRemoteSha1(reason) {
+    return reason?.startsWith('remote SHA-1 is unavailable because') ?? false;
 }
 function registerSecretValue(secretValues, value) {
     const trimmed = value.trim();

@@ -19,9 +19,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Added
 
 - Add a weekly real-B2 large multipart smoke workflow that uploads a payload above B2's recommended part size, downloads it, checks SHA-1 integrity, and deletes the test prefix. ([#25](https://github.com/backblaze-labs/b2-action/issues/25))
+- Add property-based and adversarial tests for SSE-C parsing, input coercion, upload/download path mapping, and SHA-1 normalization. ([#51](https://github.com/backblaze-labs/b2-action/issues/51))
 
 ### Changed
 
+- `download`: prefix downloads now reject B2 keys that cannot be mapped safely into the destination directory, including empty, `.`, `..`, and control-character path segments; legal POSIX names are preserved verbatim on POSIX runners, while Windows-only reserved path forms are rejected instead of silently rewritten. ([#51](https://github.com/backblaze-labs/b2-action/issues/51))
+- Input validation now rejects non-canonical SSE-C base64 keys, requires positive integer inputs to use safe decimal integer syntax, and requires `verify` `expected-sha1` values to be 40-character hexadecimal digests. ([#51](https://github.com/backblaze-labs/b2-action/issues/51))
 - `upload`: directory/glob uploads now consistently treat `destination` as a prefix even when the source resolves to a single file; only an explicit single-file source treats a non-trailing-slash `destination` as the exact object key.
 - `summary-json` now has an explicit 256 KiB UTF-8 cap. Results that exceed it no longer fail an otherwise successful B2 operation or emit a partial array under `summary-json`; instead the Action sets `summary-json-truncated=true`, keeps `summary-json` as `[]`, writes a small truncation object to `summary-json-notice`, and emits a bounded `summary-json-preview` for diagnostics. Migration note: consumers must branch on the always-emitted `summary-json-truncated` output first, and use `file-count` plus verb-specific count outputs for authoritative totals when it is `true`. Credential-like fields are omitted by name from `summary-json` and `summary-json-preview` for every command. ([#41](https://github.com/backblaze-labs/b2-action/issues/41))
 - Breaking change for prefix-mode `presign` consumers: live presigned download URLs are no longer written into `summary-json` or `summary-json-preview`; the dedicated `presigned-url` output remains the only bearer-URL channel and exposes only the first URL in prefix mode. Bulk prefix-mode URL retrieval through `summary-json` is intentionally unsupported. ([#41](https://github.com/backblaze-labs/b2-action/issues/41))
@@ -30,6 +33,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- `verify`: remote SHA-1 headers that B2 reports as non-comparable values such as `unverified:<sha1>` now return a structured `verified=false` result with a diagnostic reason instead of aborting inside SHA-1 normalization or failing the action before outputs can be consumed. ([#51](https://github.com/backblaze-labs/b2-action/issues/51))
 - `pnpm docs:links` now downloads, verifies, and runs a pinned lychee binary on supported local platforms, and CI uses the same command, so contributors can reproduce the markdown-link gate from a clean checkout where lychee publishes a matching binary. ([#39](https://github.com/backblaze-labs/b2-action/issues/39))
 - Top-level action failures now classify known SDK errors into actionable authentication, permission, and transient retry messages, expose failure-path `retryable` / `retry-after` outputs only when an automatic retry is safe, preserve sanitized generic B2 error detail and debug traces, and avoid leaking server-controlled SDK text before logging. ([#27](https://github.com/backblaze-labs/b2-action/issues/27))
 

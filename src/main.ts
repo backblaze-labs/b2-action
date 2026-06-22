@@ -282,7 +282,7 @@ export async function run(): Promise<void> {
           ],
         })
         setSummaryJsonOutput([result])
-        if (!result.verified) {
+        if (!result.verified && !isNonComparableRemoteSha1(result.reason)) {
           throw new Error(result.reason ?? 'verify failed: SHA-1 mismatch')
         }
         return
@@ -418,6 +418,10 @@ function presignSummaryItem(file: PresignedFile): Pick<PresignedFile, 'fileName'
 
 function setFileCountOutput(count: number): void {
   core.setOutput('file-count', String(count))
+}
+
+function isNonComparableRemoteSha1(reason: string | undefined): boolean {
+  return reason?.startsWith('remote SHA-1 is unavailable because') ?? false
 }
 
 function registerSecretValue(secretValues: string[], value: string): void {

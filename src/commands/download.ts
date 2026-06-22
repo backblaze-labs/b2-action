@@ -1,6 +1,6 @@
 import { createWriteStream } from 'node:fs'
-import { mkdir, unlink } from 'node:fs/promises'
-import { dirname, join, posix, resolve } from 'node:path'
+import { mkdir, realpath, unlink } from 'node:fs/promises'
+import { dirname, isAbsolute, relative, resolve } from 'node:path'
 import { Readable, Transform } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import * as core from '@actions/core'
@@ -78,6 +78,7 @@ async function downloadPrefix(
   await mkdir(destRoot, { recursive: true })
 
   const files: DownloadedFile[] = []
+  const localPathOwners = new Map<string, string>()
   let total = 0
   let startFileName: string | undefined
 
@@ -95,7 +96,19 @@ async function downloadPrefix(
       // SDK / B2 contract, so the slice is always safe. Empty `prefix`
       // leaves the name unchanged.
       const relName = f.fileName.slice(prefix.length)
-      const localPath = join(destRoot, ...relName.split(posix.sep))
+      const localPath = await resolvePathUnderRoot(
+        destRoot,
+        safeRemotePathSegments(relName),
+        f.fileName,
+      )
+      const collisionKey = localPathCollisionKey(localPath)
+      const existingFileName = localPathOwners.get(collisionKey)
+      if (existingFileName !== undefined && existingFileName !== f.fileName) {
+        throw new Error(
+          `download path collision: B2 files "${existingFileName}" and "${f.fileName}" both map to "${localPath}"`,
+        )
+      }
+      localPathOwners.set(collisionKey, f.fileName)
       core.startGroup(`download b2://${bucket.name}/${f.fileName} → ${localPath}`)
       try {
         const r = await downloadOne(bucket, f.fileName, localPath, sseDownload, signal)
@@ -179,25 +192,114 @@ async function downloadOne(
   return { fileName, localPath, size, contentSha1: sha1 }
 }
 
-async function resolveLocalPath(
+/**
+ * Resolve the local target path for a single B2 download.
+ *
+ * @internal
+ */
+export async function resolveLocalPath(
   fileName: string,
   destination: string | undefined,
 ): Promise<string> {
-  // `fileName` is always non-empty (validated by `requireSource` in the
-  // dispatcher), so `String.split` returns at least one element and `pop`
-  // never returns undefined. The non-null assertion encodes that invariant
-  // without a defensive fallback that v8 would flag as a dead branch.
-  // biome-ignore lint/style/noNonNullAssertion: split on a non-empty string never returns an empty array.
-  const tail = fileName.split(posix.sep).pop()!
+  const segments = safeRemotePathSegments(fileName)
+  const tail = segments.at(-1) ?? '_'
   if (destination === undefined || destination === '') {
     return resolve(tail)
   }
   if (destination.endsWith('/') || destination.endsWith('\\')) {
-    return resolve(destination, tail)
+    const destRoot = resolve(destination)
+    await mkdir(destRoot, { recursive: true })
+    return await resolvePathUnderRoot(destRoot, [tail], fileName)
   }
   const s = await tryStat(destination)
   if (s?.isDirectory()) {
-    return resolve(destination, tail)
+    const destRoot = resolve(destination)
+    return await resolvePathUnderRoot(destRoot, [tail], fileName)
   }
   return resolve(destination)
+}
+
+async function resolvePathUnderRoot(root: string, segments: string[], fileName: string) {
+  const localPath = resolve(root, ...segments)
+  const rel = relative(root, localPath)
+  if (rel !== '' && (rel.startsWith('..') || isAbsolute(rel))) {
+    throw new Error(`download path for B2 file "${fileName}" escapes destination directory`)
+  }
+  await assertExistingAncestryInsideRoot(root, localPath, fileName)
+  return localPath
+}
+
+async function assertExistingAncestryInsideRoot(
+  root: string,
+  localPath: string,
+  fileName: string,
+): Promise<void> {
+  const realRoot = await realpath(root)
+  let candidate = dirname(localPath)
+
+  for (;;) {
+    try {
+      const realCandidate = await realpath(candidate)
+      const rel = relative(realRoot, realCandidate)
+      if (rel === '' || (!rel.startsWith('..') && !isAbsolute(rel))) return
+      throw new Error(`download path for B2 file "${fileName}" escapes destination directory`)
+    } catch (error) {
+      if (!isFileNotFound(error)) throw error
+      const parent = dirname(candidate)
+      if (parent === candidate) throw error
+      candidate = parent
+    }
+  }
+}
+
+function isFileNotFound(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT'
+}
+
+function localPathCollisionKey(localPath: string): string {
+  return process.platform === 'win32' || process.platform === 'darwin'
+    ? localPath.toLowerCase()
+    : localPath
+}
+
+function safeRemotePathSegments(fileName: string): string[] {
+  const segments = fileName.split('/')
+  for (const segment of segments) {
+    validateRemotePathSegment(segment, fileName)
+  }
+  return segments
+}
+
+function validateRemotePathSegment(segment: string, fileName: string): void {
+  if (segment === '' || segment === '.' || segment === '..') {
+    throw new Error(
+      `download path for B2 file "${fileName}" cannot be safely mapped because it contains an empty, "." or ".." path segment`,
+    )
+  }
+  for (const char of segment) {
+    const codePoint = char.codePointAt(0)
+    if (codePoint !== undefined && codePoint <= 0x1f) {
+      throw new Error(
+        `download path for B2 file "${fileName}" cannot be safely mapped because it contains a control character`,
+      )
+    }
+  }
+
+  // B2 keys are opaque, but prefix downloads must project `/`-separated
+  // keys into the runner filesystem without path traversal or lossy rewrites.
+  // POSIX runners can preserve characters such as `:`, `?`, trailing dots,
+  // and Windows device names verbatim. Windows treats several of those as
+  // separators or invalid/reserved filenames, so reject them there instead of
+  // silently changing the on-disk name or risking two B2 keys overwriting one
+  // local path.
+  if (
+    process.platform === 'win32' &&
+    (/[<>:"|?*\\]/u.test(segment) ||
+      /[. ]$/u.test(segment) ||
+      /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/iu.test(segment))
+  ) {
+    throw new Error(
+      `download path for B2 file "${fileName}" cannot be safely mapped on Windows because segment "${segment}" is reserved or contains a Windows path character`,
+    )
+  }
 }

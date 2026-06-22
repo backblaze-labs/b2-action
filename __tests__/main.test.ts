@@ -1023,6 +1023,30 @@ describe('main dispatcher', () => {
     })
   })
 
+  it('publishes verify=false without failing when the remote SHA-1 is not comparable', async () => {
+    const ctx = await loadMain()
+    const result = {
+      fileName: 'unverified.bin',
+      remoteSize: 8,
+      remoteSha1: 'unverified:0000000000000000000000000000000000000000',
+      localSha1: null,
+      verified: false,
+      reason:
+        'remote SHA-1 is unavailable because B2 reported "unverified:0000000000000000000000000000000000000000" instead of a verified 40-character whole-file SHA-1; HEAD-only verify cannot validate this object, even with expected-sha1',
+    }
+    ctx.parseInputs.mockReturnValue(inputs('verify'))
+    ctx.commands.verifyCommand.mockResolvedValue(result)
+
+    await ctx.run()
+
+    expect(ctx.core.setFailed).not.toHaveBeenCalled()
+    expect(outputs(ctx)).toMatchObject({
+      verified: 'false',
+      'file-name': 'unverified.bin',
+      'remote-sha1': 'unverified:0000000000000000000000000000000000000000',
+    })
+  })
+
   it('reports deletion aggregate errors after publishing deletion outputs', async () => {
     const ctx = await loadMain()
     const files = [{ fileName: 'stuck.txt', fileId: 'id-stuck', skipped: false }]

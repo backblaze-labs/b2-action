@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto'
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { ProgressEvent } from '@backblaze-labs/b2-sdk'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -51,6 +51,19 @@ describe('upload + download commands (B2Simulator)', () => {
     })
 
     expect(result.files[0]?.fileName).toBe('releases/v1/report.csv')
+  })
+
+  it('does not silently normalize SDK-rejected upload keys', async () => {
+    const local = join(fx.workDir, 'opaque.txt')
+    await writeFile(local, 'opaque')
+
+    await expect(
+      uploadCommand(fx.bucket, {
+        ...baseInputs(),
+        source: local,
+        destination: '//archive//opaque.txt',
+      }),
+    ).rejects.toThrow(/fileName/)
   })
 
   it('treats destination as a prefix for a directory resolving to one file', async () => {
@@ -116,6 +129,119 @@ describe('upload + download commands (B2Simulator)', () => {
       const got = await readFile(join(destDir, name), 'utf8')
       expect(got).toBe(`payload-${name}`)
     }
+  })
+
+  it('does not collapse legal POSIX names during prefix downloads', async () => {
+    const entries = [
+      ['bundle/release/bin/deploy_.sh', 'underscore'],
+      ['bundle/release/bin/deploy|.sh', 'pipe'],
+      ['bundle/slash/a/b.txt', 'slash'],
+      ['bundle/slash/a\\b.txt', 'backslash'],
+      ['bundle/trailing/archive.', 'dot'],
+      ['bundle/trailing/archive ', 'space'],
+      ['bundle/windows/CON', 'reserved'],
+    ] as const
+
+    for (const [fileName, body] of entries) {
+      const local = join(fx.workDir, `${body}.txt`)
+      await writeFile(local, body)
+      await uploadCommand(fx.bucket, {
+        ...baseInputs(),
+        source: local,
+        destination: fileName,
+      })
+    }
+
+    const destDir = join(fx.workDir, 'posix-out')
+    if (process.platform === 'win32') {
+      await expect(
+        downloadCommand(fx.bucket, {
+          ...baseInputs(),
+          action: 'download',
+          source: 'bundle/',
+          destination: destDir,
+        }),
+      ).rejects.toThrow(/cannot be safely mapped/)
+      return
+    }
+
+    await downloadCommand(fx.bucket, {
+      ...baseInputs(),
+      action: 'download',
+      source: 'bundle/',
+      destination: destDir,
+    })
+
+    await expect(readFile(join(destDir, 'release/bin/deploy_.sh'), 'utf8')).resolves.toBe(
+      'underscore',
+    )
+    await expect(readFile(join(destDir, 'release/bin/deploy|.sh'), 'utf8')).resolves.toBe('pipe')
+    await expect(readFile(join(destDir, 'slash/a/b.txt'), 'utf8')).resolves.toBe('slash')
+    await expect(readFile(join(destDir, 'slash/a\\b.txt'), 'utf8')).resolves.toBe('backslash')
+    await expect(readFile(join(destDir, 'trailing/archive.'), 'utf8')).resolves.toBe('dot')
+    await expect(readFile(join(destDir, 'trailing/archive '), 'utf8')).resolves.toBe('space')
+    await expect(readFile(join(destDir, 'windows/CON'), 'utf8')).resolves.toBe('reserved')
+  })
+
+  it('rejects unsafe prefix path segments before they can overwrite files', async () => {
+    for (const [prefix, unsafeName] of [
+      ['dup/', 'dup/a//b.txt'],
+      ['dot/', 'dot/a/../b.txt'],
+    ] as const) {
+      const downloadCalls: string[] = []
+      const originalListFileNames = fx.bucket.listFileNames.bind(fx.bucket)
+      const originalDownload = fx.bucket.download.bind(fx.bucket)
+      fx.bucket.listFileNames = async () =>
+        ({
+          files: [{ action: 'upload', fileName: unsafeName }],
+          nextFileName: null,
+        }) as unknown as Awaited<ReturnType<typeof fx.bucket.listFileNames>>
+      fx.bucket.download = async (...args: Parameters<typeof fx.bucket.download>) => {
+        downloadCalls.push(args[0])
+        return await originalDownload(...args)
+      }
+
+      const destDir = join(fx.workDir, `${prefix.replace('/', '')}-out`)
+      try {
+        await expect(
+          downloadCommand(fx.bucket, {
+            ...baseInputs(),
+            action: 'download',
+            source: prefix,
+            destination: destDir,
+          }),
+        ).rejects.toThrow(/cannot be safely mapped/)
+        expect(downloadCalls).toEqual([])
+      } finally {
+        fx.bucket.listFileNames = originalListFileNames
+        fx.bucket.download = originalDownload
+      }
+    }
+  })
+
+  it('rejects prefix downloads through symlinked destination components', async () => {
+    const local = join(fx.workDir, 'escape.txt')
+    await writeFile(local, 'escape')
+    await uploadCommand(fx.bucket, {
+      ...baseInputs(),
+      source: local,
+      destination: 'bundle/link/escape.txt',
+    })
+
+    const destDir = join(fx.workDir, 'dest')
+    const outsideDir = join(fx.workDir, 'outside')
+    await mkdir(destDir)
+    await mkdir(outsideDir)
+    await symlink(outsideDir, join(destDir, 'link'), 'dir')
+
+    await expect(
+      downloadCommand(fx.bucket, {
+        ...baseInputs(),
+        action: 'download',
+        source: 'bundle/',
+        destination: destDir,
+      }),
+    ).rejects.toThrow(/escapes destination directory/)
   })
 
   it('uploads glob matches with bounded file-level concurrency', async () => {
