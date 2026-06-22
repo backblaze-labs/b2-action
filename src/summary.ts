@@ -79,7 +79,7 @@ export async function writeStepSummary(opts: {
         `| ${inlineCodeCell(r.fileName)} | ${r.size !== undefined ? formatBytes(r.size) : ''} | ${
           r.fileId !== undefined ? inlineCodeCell(r.fileId) : ''
         } | ${r.sha1 !== undefined && r.sha1 !== null ? `\`${r.sha1.slice(0, 12)}…\`` : ''} | ${
-          r.status ?? ''
+          r.status !== undefined ? inlineCodeCell(r.status) : ''
         } |`,
       )
     }

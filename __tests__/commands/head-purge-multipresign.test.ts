@@ -178,6 +178,8 @@ function commandEscaped(value: string): string {
   return value.replaceAll('%', '%25').replaceAll('\r', '%0D').replaceAll('\n', '%0A')
 }
 
+// This command-level test cannot import main.ts's private dispatcher helper
+// without executing the action entrypoint; main.test covers the shipped helper.
 function presignSummaryItem(file: PresignedFile): Pick<PresignedFile, 'fileName' | 'expiresAt'> {
   return { fileName: file.fileName, expiresAt: file.expiresAt }
 }

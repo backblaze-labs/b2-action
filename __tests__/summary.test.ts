@@ -44,27 +44,48 @@ describe('writeStepSummary', () => {
     expect(out).toContain('<code>fid-a</code>')
     expect(out).toContain('aaaaaaaaaaaa…')
     expect(out).toContain('<code>b.bin</code>')
+    expect(out).toContain('<code>ok</code>')
     expect(out).toMatch(/\|------\|------/)
   })
 
   it('escapes pipes in table cells', async () => {
     await writeStepSummary({
       title: 'Pipe',
-      rows: [{ fileName: 'evil|name.txt', fileId: 'fid|1', size: 1, status: 'ok' }],
+      rows: [{ fileName: 'evil|name.txt', fileId: 'fid|1', size: 1, status: 'bad|status' }],
     })
     const out = await readFile(path, 'utf8')
     expect(out).toContain('<code>evil&#124;name.txt</code>')
     expect(out).toContain('<code>fid&#124;1</code>')
+    expect(out).toContain('<code>bad&#124;status</code>')
   })
 
   it('escapes html in table code cells', async () => {
     await writeStepSummary({
       title: 'Html',
-      rows: [{ fileName: '<unsafe>&file.txt', fileId: '<fid>&1', size: 1, status: 'ok' }],
+      rows: [{ fileName: '<unsafe>&file.txt', fileId: '<fid>&1', size: 1, status: '<ok>&' }],
     })
     const out = await readFile(path, 'utf8')
     expect(out).toContain('<code>&lt;unsafe&gt;&amp;file.txt</code>')
     expect(out).toContain('<code>&lt;fid&gt;&amp;1</code>')
+    expect(out).toContain('<code>&lt;ok&gt;&amp;</code>')
+  })
+
+  it('escapes untrusted status markdown before writing table rows', async () => {
+    await writeStepSummary({
+      title: 'Status',
+      rows: [
+        {
+          fileName: 'listed.txt',
+          status: '] | x | x | [![](x)](https://evil.example) | <bad>',
+        },
+      ],
+    })
+
+    const out = await readFile(path, 'utf8')
+    expect(out).toContain(
+      '<code>] &#124; x &#124; x &#124; [![](x)](https://evil.example) &#124; &lt;bad&gt;</code>',
+    )
+    expect(out).not.toContain('| ] | x | x | [![](x)](https://evil.example) | <bad> |')
   })
 
   it('caps rendered rows before appending the markdown summary', async () => {

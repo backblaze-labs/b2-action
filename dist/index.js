@@ -41326,21 +41326,24 @@ const SUMMARY_JSON_PREVIEW_MAX_ENTRIES = 100;
 const SUMMARY_JSON_MAX_UTF8_BYTES = 256 * 1024;
 const SUMMARY_JSON_OUTPUT_NAME = 'summary-json';
 const SUMMARY_JSON_TRUNCATED_OUTPUT_NAME = 'summary-json-truncated';
+const SUMMARY_JSON_NOTICE_OUTPUT_NAME = 'summary-json-notice';
 const SUMMARY_JSON_PREVIEW_OUTPUT_NAME = 'summary-json-preview';
 /**
  * Serialize per-file command details into the bounded `summary-json` output.
  *
  * GitHub Actions writes outputs as UTF-8 and caps all action outputs for a job
  * at 1 MB. Keep this single structured output well below that job-level
- * budget so the scalar outputs and any caller-defined outputs still have room.
+ * budget so scalar outputs, $GITHUB_OUTPUT framing, and caller-defined outputs
+ * still have room.
  *
  * `summary-json` remains a complete array when the full manifest fits. When a
- * result exceeds the supported byte cap, `summary-json` receives a small JSON
- * object describing the truncation, never a partial array or an empty string.
- * `summary-json-preview` receives a bounded diagnostic prefix,
- * `summary-json-truncated` is set to `true`, and the action step may still
- * succeed because the B2 operation itself has already completed. Scalar count
- * outputs (`file-count`, `files-listed`, etc.) remain the authoritative totals.
+ * result exceeds the supported byte cap, `summary-json` remains an array
+ * (`[]`) rather than changing shape or carrying a partial manifest.
+ * `summary-json-notice` receives a small JSON object describing the
+ * truncation, `summary-json-preview` receives a bounded diagnostic prefix, and
+ * `summary-json-truncated` is set to `true`. The action step may still succeed
+ * because the B2 operation itself has already completed. Scalar count outputs
+ * (`file-count`, `files-listed`, etc.) remain the authoritative totals.
  */
 function buildSummaryJsonPayload(items, options = {}) {
     const serialized = serializeJsonArrayPrefix(items, options, items.length);
@@ -41348,7 +41351,6 @@ function buildSummaryJsonPayload(items, options = {}) {
         return {
             json: serialized.json,
             totalCount: items.length,
-            emittedCount: items.length,
             truncated: false,
         };
     }
@@ -41359,7 +41361,8 @@ function buildSummaryJsonPayload(items, options = {}) {
 function buildTruncatedSummaryJsonPayload(items, options, reason) {
     const preview = buildSummaryJsonPreview(items, options);
     return {
-        json: JSON.stringify({
+        json: '[]',
+        noticeJson: JSON.stringify({
             truncated: true,
             reason,
             totalCount: items.length,
@@ -41368,7 +41371,7 @@ function buildTruncatedSummaryJsonPayload(items, options, reason) {
         }),
         previewJson: preview.json,
         totalCount: items.length,
-        emittedCount: preview.emittedCount,
+        previewCount: preview.emittedCount,
         truncated: true,
     };
 }
@@ -41383,10 +41386,11 @@ function setSummaryJsonOutput(items, options = {}) {
     if (!payload.truncated) {
         return;
     }
+    setOutput(SUMMARY_JSON_NOTICE_OUTPUT_NAME, payload.noticeJson);
     setOutput(SUMMARY_JSON_PREVIEW_OUTPUT_NAME, payload.previewJson);
     warning(`summary-json exceeds supported output limits; preview contains ` +
-        `${payload.emittedCount} of ${payload.totalCount} item(s). ` +
-        `summary-json contains a truncation notice instead of a partial manifest. ` +
+        `${payload.previewCount} of ${payload.totalCount} item(s). ` +
+        `summary-json is [] and summary-json-notice describes the truncation. ` +
         `limit is ${formatKiB(SUMMARY_JSON_MAX_UTF8_BYTES)} of UTF-8 JSON text`);
 }
 function serializeJsonArrayPrefix(items, options, maxEntries) {
@@ -41437,8 +41441,19 @@ function projectItem(item, options) {
     return options.item === undefined ? item : options.item(item);
 }
 function stringifyArrayItem(item) {
-    const json = JSON.stringify(item);
+    const json = JSON.stringify(item, sensitiveSummaryJsonFieldReplacer);
     return json === undefined ? 'null' : json;
+}
+function sensitiveSummaryJsonFieldReplacer(key, value) {
+    return key !== '' && isSensitiveSummaryJsonField(key) ? undefined : value;
+}
+function isSensitiveSummaryJsonField(key) {
+    const normalized = key.replaceAll('-', '').replaceAll('_', '').toLowerCase();
+    return (normalized === 'url' ||
+        normalized.endsWith('url') ||
+        normalized.includes('authorization') ||
+        normalized.includes('signature') ||
+        normalized.includes('token'));
 }
 function utf8ByteLength(value) {
     return external_node_buffer_.Buffer.byteLength(value, 'utf8');
@@ -41485,7 +41500,7 @@ async function writeStepSummary(opts) {
         lines.push('| File | Size | File ID | SHA-1 | Status |');
         lines.push('|------|------|---------|-------|--------|');
         for (const r of rows) {
-            lines.push(`| ${inlineCodeCell(r.fileName)} | ${r.size !== undefined ? formatBytes(r.size) : ''} | ${r.fileId !== undefined ? inlineCodeCell(r.fileId) : ''} | ${r.sha1 !== undefined && r.sha1 !== null ? `\`${r.sha1.slice(0, 12)}…\`` : ''} | ${r.status ?? ''} |`);
+            lines.push(`| ${inlineCodeCell(r.fileName)} | ${r.size !== undefined ? formatBytes(r.size) : ''} | ${r.fileId !== undefined ? inlineCodeCell(r.fileId) : ''} | ${r.sha1 !== undefined && r.sha1 !== null ? `\`${r.sha1.slice(0, 12)}…\`` : ''} | ${r.status !== undefined ? inlineCodeCell(r.status) : ''} |`);
         }
     }
     lines.push('');
@@ -41909,6 +41924,8 @@ async function emitDeletionSummary(verb, result, inputs) {
     });
 }
 function stepSummaryRows(items, row) {
+    // Pre-slice here to avoid mapping very large result sets; writeStepSummary
+    // keeps its own defensive cap for direct callers.
     const rows = items.slice(0, STEP_SUMMARY_MAX_ROWS).map(row);
     return rows.length < items.length ? { rows, totalRows: items.length } : { rows };
 }

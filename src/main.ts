@@ -406,6 +406,8 @@ function stepSummaryRows<T>(
   items: readonly T[],
   row: (item: T) => SummaryRow,
 ): { rows: SummaryRow[]; totalRows?: number } {
+  // Pre-slice here to avoid mapping very large result sets; writeStepSummary
+  // keeps its own defensive cap for direct callers.
   const rows = items.slice(0, STEP_SUMMARY_MAX_ROWS).map(row)
   return rows.length < items.length ? { rows, totalRows: items.length } : { rows }
 }

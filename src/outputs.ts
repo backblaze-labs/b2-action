@@ -3,8 +3,9 @@ import * as core from '@actions/core'
 
 export const SUMMARY_JSON_PREVIEW_MAX_ENTRIES = 100
 export const SUMMARY_JSON_MAX_UTF8_BYTES = 256 * 1024
-export const SUMMARY_JSON_OUTPUT_NAME = 'summary-json'
-export const SUMMARY_JSON_TRUNCATED_OUTPUT_NAME = 'summary-json-truncated'
+const SUMMARY_JSON_OUTPUT_NAME = 'summary-json'
+const SUMMARY_JSON_TRUNCATED_OUTPUT_NAME = 'summary-json-truncated'
+const SUMMARY_JSON_NOTICE_OUTPUT_NAME = 'summary-json-notice'
 export const SUMMARY_JSON_PREVIEW_OUTPUT_NAME = 'summary-json-preview'
 
 export type SummaryJsonPayload = CompleteSummaryJsonPayload | TruncatedSummaryJsonPayload
@@ -12,15 +13,15 @@ export type SummaryJsonPayload = CompleteSummaryJsonPayload | TruncatedSummaryJs
 export interface CompleteSummaryJsonPayload {
   json: string
   totalCount: number
-  emittedCount: number
   truncated: false
 }
 
 export interface TruncatedSummaryJsonPayload {
   json: string
+  noticeJson: string
   previewJson: string
   totalCount: number
-  emittedCount: number
+  previewCount: number
   truncated: true
 }
 
@@ -40,15 +41,17 @@ interface BoundedJsonArray {
  *
  * GitHub Actions writes outputs as UTF-8 and caps all action outputs for a job
  * at 1 MB. Keep this single structured output well below that job-level
- * budget so the scalar outputs and any caller-defined outputs still have room.
+ * budget so scalar outputs, $GITHUB_OUTPUT framing, and caller-defined outputs
+ * still have room.
  *
  * `summary-json` remains a complete array when the full manifest fits. When a
- * result exceeds the supported byte cap, `summary-json` receives a small JSON
- * object describing the truncation, never a partial array or an empty string.
- * `summary-json-preview` receives a bounded diagnostic prefix,
- * `summary-json-truncated` is set to `true`, and the action step may still
- * succeed because the B2 operation itself has already completed. Scalar count
- * outputs (`file-count`, `files-listed`, etc.) remain the authoritative totals.
+ * result exceeds the supported byte cap, `summary-json` remains an array
+ * (`[]`) rather than changing shape or carrying a partial manifest.
+ * `summary-json-notice` receives a small JSON object describing the
+ * truncation, `summary-json-preview` receives a bounded diagnostic prefix, and
+ * `summary-json-truncated` is set to `true`. The action step may still succeed
+ * because the B2 operation itself has already completed. Scalar count outputs
+ * (`file-count`, `files-listed`, etc.) remain the authoritative totals.
  */
 export function buildSummaryJsonPayload<T>(
   items: readonly T[],
@@ -59,7 +62,6 @@ export function buildSummaryJsonPayload<T>(
     return {
       json: serialized.json,
       totalCount: items.length,
-      emittedCount: items.length,
       truncated: false,
     }
   }
@@ -81,7 +83,8 @@ function buildTruncatedSummaryJsonPayload<T>(
   const preview = buildSummaryJsonPreview(items, options)
 
   return {
-    json: JSON.stringify({
+    json: '[]',
+    noticeJson: JSON.stringify({
       truncated: true,
       reason,
       totalCount: items.length,
@@ -90,7 +93,7 @@ function buildTruncatedSummaryJsonPayload<T>(
     }),
     previewJson: preview.json,
     totalCount: items.length,
-    emittedCount: preview.emittedCount,
+    previewCount: preview.emittedCount,
     truncated: true,
   }
 }
@@ -118,11 +121,12 @@ export function setSummaryJsonOutput<T>(
     return
   }
 
+  core.setOutput(SUMMARY_JSON_NOTICE_OUTPUT_NAME, payload.noticeJson)
   core.setOutput(SUMMARY_JSON_PREVIEW_OUTPUT_NAME, payload.previewJson)
   core.warning(
     `summary-json exceeds supported output limits; preview contains ` +
-      `${payload.emittedCount} of ${payload.totalCount} item(s). ` +
-      `summary-json contains a truncation notice instead of a partial manifest. ` +
+      `${payload.previewCount} of ${payload.totalCount} item(s). ` +
+      `summary-json is [] and summary-json-notice describes the truncation. ` +
       `limit is ${formatKiB(SUMMARY_JSON_MAX_UTF8_BYTES)} of UTF-8 JSON text`,
   )
 }
@@ -183,8 +187,23 @@ function projectItem<T>(item: T, options: SummaryJsonOutputOptions<T>): unknown 
 }
 
 function stringifyArrayItem(item: unknown): string {
-  const json = JSON.stringify(item)
+  const json = JSON.stringify(item, sensitiveSummaryJsonFieldReplacer)
   return json === undefined ? 'null' : json
+}
+
+function sensitiveSummaryJsonFieldReplacer(key: string, value: unknown): unknown {
+  return key !== '' && isSensitiveSummaryJsonField(key) ? undefined : value
+}
+
+function isSensitiveSummaryJsonField(key: string): boolean {
+  const normalized = key.replaceAll('-', '').replaceAll('_', '').toLowerCase()
+  return (
+    normalized === 'url' ||
+    normalized.endsWith('url') ||
+    normalized.includes('authorization') ||
+    normalized.includes('signature') ||
+    normalized.includes('token')
+  )
 }
 
 function utf8ByteLength(value: string): number {

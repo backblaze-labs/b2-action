@@ -16,7 +16,6 @@ describe('summary-json output guard', () => {
     expect(payload).toEqual({
       json: JSON.stringify(items),
       totalCount: 2,
-      emittedCount: 2,
       truncated: false,
     })
   })
@@ -31,7 +30,6 @@ describe('summary-json output guard', () => {
     expect(payload.truncated).toBe(false)
     if (payload.truncated) throw new Error('expected complete payload')
     expect(payload.totalCount).toBe(SUMMARY_JSON_PREVIEW_MAX_ENTRIES + 5)
-    expect(payload.emittedCount).toBe(SUMMARY_JSON_PREVIEW_MAX_ENTRIES + 5)
     expect(JSON.parse(payload.json)).toHaveLength(SUMMARY_JSON_PREVIEW_MAX_ENTRIES + 5)
   })
 
@@ -45,13 +43,13 @@ describe('summary-json output guard', () => {
 
     expect(payload.truncated).toBe(true)
     if (!payload.truncated) throw new Error('expected truncated payload')
-    expect(Array.isArray(JSON.parse(payload.json))).toBe(false)
-    expect(JSON.parse(payload.json)).toMatchObject({
+    expect(JSON.parse(payload.json)).toEqual([])
+    expect(JSON.parse(payload.noticeJson)).toMatchObject({
       truncated: true,
       totalCount: items.length,
       previewOutput: SUMMARY_JSON_PREVIEW_OUTPUT_NAME,
     })
-    expect(payload.emittedCount).toBeLessThan(items.length)
+    expect(payload.previewCount).toBeLessThan(items.length)
     expect(Buffer.byteLength(payload.previewJson, 'utf8')).toBeLessThanOrEqual(
       SUMMARY_JSON_MAX_UTF8_BYTES,
     )
@@ -78,9 +76,10 @@ describe('summary-json output guard', () => {
 
     expect(payload.truncated).toBe(true)
     if (!payload.truncated) throw new Error('expected truncated payload')
-    expect(payload.emittedCount).toBe(0)
+    expect(payload.previewCount).toBe(0)
+    expect(payload.json).toBe('[]')
     expect(payload.previewJson).toBe('[]')
-    expect(JSON.parse(payload.json)).toMatchObject({ truncated: true, previewCount: 0 })
+    expect(JSON.parse(payload.noticeJson)).toMatchObject({ truncated: true, previewCount: 0 })
   })
 
   it('emits a truncation notice when the full manifest cannot be serialized', () => {
@@ -92,7 +91,8 @@ describe('summary-json output guard', () => {
 
     expect(payload.truncated).toBe(true)
     if (!payload.truncated) throw new Error('expected truncated payload')
-    expect(JSON.parse(payload.json)).toMatchObject({
+    expect(payload.json).toBe('[]')
+    expect(JSON.parse(payload.noticeJson)).toMatchObject({
       truncated: true,
       reason: 'summary-json could not be serialized within the supported output contract',
       totalCount: items.length,
@@ -117,13 +117,71 @@ describe('summary-json output guard', () => {
 
     expect(payload.truncated).toBe(true)
     expect(serializedCount).toBeLessThan(10)
-    expect(JSON.parse(payload.json)).toMatchObject({
+    if (!payload.truncated) throw new Error('expected truncated payload')
+    expect(payload.json).toBe('[]')
+    expect(JSON.parse(payload.noticeJson)).toMatchObject({
       truncated: true,
       totalCount: items.length,
       previewCount: 0,
     })
-    if (!payload.truncated) throw new Error('expected truncated payload')
     expect(payload.previewJson).toBe('[]')
+  })
+
+  it('redacts sensitive fields without requiring a projection for complete payloads', () => {
+    const items = [
+      {
+        fileName: 'secret.txt',
+        url: 'https://download.example/secret',
+        downloadUrl: 'https://download.example/secret-2',
+        downloadAuthorizationToken: 'token-value',
+        nested: {
+          Authorization: 'Bearer secret',
+          signature: 'sig-value',
+          safe: 'kept',
+        },
+      },
+    ]
+
+    const payload = buildSummaryJsonPayload(items)
+
+    expect(payload.truncated).toBe(false)
+    if (payload.truncated) throw new Error('expected complete payload')
+    expect(payload.json).not.toContain('download.example')
+    expect(payload.json).not.toContain('token-value')
+    expect(payload.json).not.toContain('Bearer secret')
+    expect(payload.json).not.toContain('sig-value')
+    expect(JSON.parse(payload.json)).toEqual([
+      {
+        fileName: 'secret.txt',
+        nested: {
+          safe: 'kept',
+        },
+      },
+    ])
+  })
+
+  it('redacts sensitive fields without requiring a projection for bounded previews', () => {
+    const items = Array.from({ length: 3 }, (_, i) => ({
+      fileName: `secret-${i}.txt`,
+      url: `https://download.example/secret-${i}`,
+      downloadAuthorizationToken: `token-${i}`,
+      metadata: 'x'.repeat(Math.floor(SUMMARY_JSON_MAX_UTF8_BYTES / 2)),
+    }))
+
+    const payload = buildSummaryJsonPayload(items)
+
+    expect(payload.truncated).toBe(true)
+    if (!payload.truncated) throw new Error('expected truncated payload')
+    expect(payload.json).not.toContain('download.example')
+    expect(payload.noticeJson).not.toContain('download.example')
+    expect(payload.previewJson).not.toContain('download.example')
+    expect(payload.previewJson).not.toContain('token-')
+    expect(JSON.parse(payload.previewJson)).toEqual([
+      {
+        fileName: 'secret-0.txt',
+        metadata: 'x'.repeat(Math.floor(SUMMARY_JSON_MAX_UTF8_BYTES / 2)),
+      },
+    ])
   })
 
   it('applies item projections before emitting complete payloads', () => {

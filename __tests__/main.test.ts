@@ -35,6 +35,7 @@ const TEST_AUTH_TOKEN = 'auth-token-for-main-tests'
 const RETAIN_UNTIL = Date.parse('2030-01-01T00:00:00Z')
 const FIXTURE_UPLOAD_TS = Date.parse('2026-01-01T00:00:00Z')
 const TEST_STEP_SUMMARY_MAX_ROWS = 100
+const SUMMARY_JSON_NOTICE_OUTPUT_NAME = 'summary-json-notice'
 
 afterEach(() => {
   vi.restoreAllMocks()
@@ -569,6 +570,9 @@ describe('main dispatcher', () => {
     expect(ctx.core.setFailed).not.toHaveBeenCalled()
     expect(out['presigned-url']).toBe(first.url)
     expect(out['summary-json-truncated']).toBe('true')
+    expect(out['summary-json']).toBe('[]')
+    expect(out[SUMMARY_JSON_NOTICE_OUTPUT_NAME]).not.toContain('https://signed.example')
+    expect(out[SUMMARY_JSON_NOTICE_OUTPUT_NAME]).not.toContain('Authorization')
     expect(out['summary-json']).not.toContain('https://signed.example')
     expect(out['summary-json']).not.toContain('Authorization')
     expect(out[SUMMARY_JSON_PREVIEW_OUTPUT_NAME]).not.toContain('https://signed.example')
@@ -655,15 +659,15 @@ describe('main dispatcher', () => {
     const out = outputs(ctx)
     expect(ctx.core.setFailed).not.toHaveBeenCalled()
     expect(out['summary-json-truncated']).toBe('true')
-    expect(Array.isArray(JSON.parse(out['summary-json'] ?? '[]'))).toBe(false)
-    expect(JSON.parse(out['summary-json'] ?? '{}')).toMatchObject({
+    expect(JSON.parse(out['summary-json'] ?? 'null')).toEqual([])
+    expect(JSON.parse(out[SUMMARY_JSON_NOTICE_OUTPUT_NAME] ?? '{}')).toMatchObject({
       truncated: true,
       totalCount: 3,
       previewOutput: SUMMARY_JSON_PREVIEW_OUTPUT_NAME,
     })
     expect(out[SUMMARY_JSON_PREVIEW_OUTPUT_NAME]).toBe('[]')
     expect(ctx.core.warning).toHaveBeenCalledWith(
-      expect.stringContaining('summary-json contains a truncation notice'),
+      expect.stringContaining('summary-json-notice describes the truncation'),
     )
   })
 
@@ -956,7 +960,11 @@ describe('main dispatcher', () => {
       'Sync completed with 1 error(s): remote-2.txt: denied',
     )
     expect(out['summary-json-truncated']).toBe('true')
-    expect(Array.isArray(JSON.parse(out['summary-json'] ?? '[]'))).toBe(false)
+    expect(JSON.parse(out['summary-json'] ?? 'null')).toEqual([])
+    expect(JSON.parse(out[SUMMARY_JSON_NOTICE_OUTPUT_NAME] ?? '{}')).toMatchObject({
+      truncated: true,
+      totalCount: events.length,
+    })
     expect(JSON.parse(out[SUMMARY_JSON_PREVIEW_OUTPUT_NAME] ?? '[]')).toHaveLength(2)
   })
 
@@ -1076,7 +1084,11 @@ describe('main dispatcher', () => {
       'file-count': '3',
       'summary-json-truncated': 'true',
     })
-    expect(Array.isArray(JSON.parse(out['summary-json'] ?? '[]'))).toBe(false)
+    expect(JSON.parse(out['summary-json'] ?? 'null')).toEqual([])
+    expect(JSON.parse(out[SUMMARY_JSON_NOTICE_OUTPUT_NAME] ?? '{}')).toMatchObject({
+      truncated: true,
+      totalCount: files.length,
+    })
     expect(out[SUMMARY_JSON_PREVIEW_OUTPUT_NAME]).toBe('[]')
     expect(ctx.writeStepSummary).not.toHaveBeenCalled()
   })
