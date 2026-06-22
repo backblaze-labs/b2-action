@@ -279,6 +279,8 @@ describe('path and checksum properties', () => {
       'bundle/a\\b.txt',
       'archive.',
       'archive ',
+      '..foo',
+      'nested/..foo',
       'CON',
       'aux.txt',
       'data:2024.json',
@@ -363,5 +365,5 @@ function isUnsafeWindowsSegment(segment: string): boolean {
 
 function expectPathInside(root: string, candidate: string): void {
   const rel = relative(root, candidate)
-  expect(rel === '' || (!rel.startsWith('..') && !isAbsolute(rel))).toBe(true)
+  expect(rel === '' || (!isAbsolute(rel) && rel !== '..' && !rel.startsWith(`..${sep}`))).toBe(true)
 }

@@ -139,6 +139,7 @@ describe('upload + download commands (B2Simulator)', () => {
       ['bundle/slash/a\\b.txt', 'backslash'],
       ['bundle/trailing/archive.', 'dot'],
       ['bundle/trailing/archive ', 'space'],
+      ['bundle/dot-prefix/..foo', 'dot-prefix'],
       ['bundle/windows/CON', 'reserved'],
     ] as const
 
@@ -180,6 +181,7 @@ describe('upload + download commands (B2Simulator)', () => {
     await expect(readFile(join(destDir, 'slash/a\\b.txt'), 'utf8')).resolves.toBe('backslash')
     await expect(readFile(join(destDir, 'trailing/archive.'), 'utf8')).resolves.toBe('dot')
     await expect(readFile(join(destDir, 'trailing/archive '), 'utf8')).resolves.toBe('space')
+    await expect(readFile(join(destDir, 'dot-prefix/..foo'), 'utf8')).resolves.toBe('dot-prefix')
     await expect(readFile(join(destDir, 'windows/CON'), 'utf8')).resolves.toBe('reserved')
   })
 

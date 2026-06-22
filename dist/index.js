@@ -36132,11 +36132,14 @@ async function resolveLocalPath(fileName, destination) {
 async function resolvePathUnderRoot(root, segments, fileName) {
     const localPath = (0,external_node_path_.resolve)(root, ...segments);
     const rel = (0,external_node_path_.relative)(root, localPath);
-    if (rel !== '' && (rel.startsWith('..') || (0,external_node_path_.isAbsolute)(rel))) {
+    if (!isPathInsideRootRelative(rel)) {
         throw new Error(`download path for B2 file "${fileName}" escapes destination directory`);
     }
     await assertExistingAncestryInsideRoot(root, localPath, fileName);
     return localPath;
+}
+function isPathInsideRootRelative(rel) {
+    return rel === '' || (!(0,external_node_path_.isAbsolute)(rel) && rel !== '..' && !rel.startsWith(`..${external_node_path_.sep}`));
 }
 async function assertExistingAncestryInsideRoot(root, localPath, fileName) {
     const realRoot = await (0,promises_.realpath)(root);
@@ -36145,7 +36148,7 @@ async function assertExistingAncestryInsideRoot(root, localPath, fileName) {
         try {
             const realCandidate = await (0,promises_.realpath)(candidate);
             const rel = (0,external_node_path_.relative)(realRoot, realCandidate);
-            if (rel === '' || (!rel.startsWith('..') && !(0,external_node_path_.isAbsolute)(rel)))
+            if (isPathInsideRootRelative(rel))
                 return;
             throw new Error(`download path for B2 file "${fileName}" escapes destination directory`);
         }

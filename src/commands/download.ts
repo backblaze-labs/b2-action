@@ -1,6 +1,6 @@
 import { createWriteStream } from 'node:fs'
 import { mkdir, realpath, unlink } from 'node:fs/promises'
-import { dirname, isAbsolute, relative, resolve } from 'node:path'
+import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
 import { Readable, Transform } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import * as core from '@actions/core'
@@ -222,11 +222,15 @@ export async function resolveLocalPath(
 async function resolvePathUnderRoot(root: string, segments: string[], fileName: string) {
   const localPath = resolve(root, ...segments)
   const rel = relative(root, localPath)
-  if (rel !== '' && (rel.startsWith('..') || isAbsolute(rel))) {
+  if (!isPathInsideRootRelative(rel)) {
     throw new Error(`download path for B2 file "${fileName}" escapes destination directory`)
   }
   await assertExistingAncestryInsideRoot(root, localPath, fileName)
   return localPath
+}
+
+function isPathInsideRootRelative(rel: string): boolean {
+  return rel === '' || (!isAbsolute(rel) && rel !== '..' && !rel.startsWith(`..${sep}`))
 }
 
 async function assertExistingAncestryInsideRoot(
@@ -241,7 +245,7 @@ async function assertExistingAncestryInsideRoot(
     try {
       const realCandidate = await realpath(candidate)
       const rel = relative(realRoot, realCandidate)
-      if (rel === '' || (!rel.startsWith('..') && !isAbsolute(rel))) return
+      if (isPathInsideRootRelative(rel)) return
       throw new Error(`download path for B2 file "${fileName}" escapes destination directory`)
     } catch (error) {
       if (!isFileNotFound(error)) throw error
