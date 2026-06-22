@@ -121,15 +121,17 @@ describe('presign command (prefix mode)', () => {
     }
 
     let files: Awaited<ReturnType<typeof presignCommand>>['files'] = []
-    const { error, stdout } = await captureFailure(async () => {
-      const result = await presignCommand(
-        fx.client,
-        fx.bucket,
-        inputs('presign', { source: 'bulk/', maxResults: 105 }),
-      )
-      files = result.files
-      setSummaryJsonOutput(result.files)
-    })
+    const { error, stdout } = await withoutGithubOutput(async () =>
+      captureFailure(async () => {
+        const result = await presignCommand(
+          fx.client,
+          fx.bucket,
+          inputs('presign', { source: 'bulk/', maxResults: 105 }),
+        )
+        files = result.files
+        setSummaryJsonOutput(result.files)
+      }),
+    )
 
     expect(error.message).toContain('Refusing to emit a partial summary-json value')
     expect(files).toHaveLength(105)
@@ -173,4 +175,18 @@ describe('presign command (prefix mode)', () => {
 
 function commandEscaped(value: string): string {
   return value.replaceAll('%', '%25').replaceAll('\r', '%0D').replaceAll('\n', '%0A')
+}
+
+async function withoutGithubOutput<T>(fn: () => Promise<T>): Promise<T> {
+  const originalGithubOutput = process.env.GITHUB_OUTPUT
+  delete process.env.GITHUB_OUTPUT
+  try {
+    return await fn()
+  } finally {
+    if (originalGithubOutput === undefined) {
+      delete process.env.GITHUB_OUTPUT
+    } else {
+      process.env.GITHUB_OUTPUT = originalGithubOutput
+    }
+  }
 }
