@@ -35,6 +35,11 @@ interface PathSafetyContext {
   safeAncestorDirs: Set<string>
 }
 
+interface DownloadPathSafety {
+  root: string
+  realRoot: string
+}
+
 interface PlannedDownload {
   fileName: string
   localPath: string
@@ -93,6 +98,7 @@ async function downloadPrefix(
   const destRoot = resolve(destinationDir)
   await mkdir(destRoot, { recursive: true })
   const pathSafety = await createPathSafetyContext(destRoot)
+  const downloadPathSafety = { root: destRoot, realRoot: pathSafety.realRoot }
   const caseInsensitivePaths = await isCaseInsensitiveDirectory(destRoot)
 
   const planned: PlannedDownload[] = []
@@ -142,7 +148,14 @@ async function downloadPrefix(
     signal?.throwIfAborted()
     core.startGroup(`download b2://${bucket.name}/${plan.fileName} → ${plan.localPath}`)
     try {
-      const r = await downloadOne(bucket, plan.fileName, plan.localPath, sseDownload, signal)
+      const r = await downloadOne(
+        bucket,
+        plan.fileName,
+        plan.localPath,
+        sseDownload,
+        signal,
+        downloadPathSafety,
+      )
       files.push(r)
       total += r.size
     } finally {
@@ -159,9 +172,16 @@ async function downloadOne(
   destination: string | undefined,
   sseDownload: SseCDownloadKey | undefined,
   signal?: AbortSignal,
+  pathSafety?: DownloadPathSafety,
 ): Promise<DownloadedFile> {
   const localPath = await resolveLocalPath(fileName, destination)
+  if (pathSafety !== undefined) {
+    await assertFreshAncestryInsideRoot(pathSafety, localPath, fileName)
+  }
   await mkdir(dirname(localPath), { recursive: true })
+  if (pathSafety !== undefined) {
+    await assertFreshAncestryInsideRoot(pathSafety, localPath, fileName)
+  }
 
   const result = await bucket.download(fileName, {
     ...(sseDownload !== undefined ? { serverSideEncryption: sseDownload } : {}),
@@ -193,6 +213,9 @@ async function downloadOne(
     },
   })
 
+  if (pathSafety !== undefined) {
+    await assertFreshAncestryInsideRoot(pathSafety, localPath, fileName)
+  }
   const tempPath = `${localPath}.b2-action-download-${randomUUID()}.tmp`
   const writeStream = createWriteStream(tempPath, { flags: 'wx' })
   try {
@@ -277,6 +300,18 @@ function isPathInsideRootRelative(rel: string): boolean {
 
 async function createPathSafetyContext(root: string): Promise<PathSafetyContext> {
   return { realRoot: await realpath(root), safeAncestorDirs: new Set([root]) }
+}
+
+async function assertFreshAncestryInsideRoot(
+  pathSafety: DownloadPathSafety,
+  localPath: string,
+  fileName: string,
+): Promise<void> {
+  await assertExistingAncestryInsideRoot(
+    { realRoot: pathSafety.realRoot, safeAncestorDirs: new Set([pathSafety.root]) },
+    localPath,
+    fileName,
+  )
 }
 
 async function assertExistingAncestryInsideRoot(

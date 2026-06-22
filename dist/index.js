@@ -36016,6 +36016,7 @@ async function downloadPrefix(bucket, prefix, destinationDir, sseDownload, signa
     const destRoot = (0,external_node_path_.resolve)(destinationDir);
     await (0,promises_.mkdir)(destRoot, { recursive: true });
     const pathSafety = await createPathSafetyContext(destRoot);
+    const downloadPathSafety = { root: destRoot, realRoot: pathSafety.realRoot };
     const caseInsensitivePaths = await isCaseInsensitiveDirectory(destRoot);
     const planned = [];
     const localPathOwners = new Map();
@@ -36053,7 +36054,7 @@ async function downloadPrefix(bucket, prefix, destinationDir, sseDownload, signa
         signal?.throwIfAborted();
         startGroup(`download b2://${bucket.name}/${plan.fileName} → ${plan.localPath}`);
         try {
-            const r = await downloadOne(bucket, plan.fileName, plan.localPath, sseDownload, signal);
+            const r = await downloadOne(bucket, plan.fileName, plan.localPath, sseDownload, signal, downloadPathSafety);
             files.push(r);
             total += r.size;
         }
@@ -36063,9 +36064,15 @@ async function downloadPrefix(bucket, prefix, destinationDir, sseDownload, signa
     }
     return { files, bytesTransferred: total };
 }
-async function downloadOne(bucket, fileName, destination, sseDownload, signal) {
+async function downloadOne(bucket, fileName, destination, sseDownload, signal, pathSafety) {
     const localPath = await resolveLocalPath(fileName, destination);
+    if (pathSafety !== undefined) {
+        await assertFreshAncestryInsideRoot(pathSafety, localPath, fileName);
+    }
     await (0,promises_.mkdir)((0,external_node_path_.dirname)(localPath), { recursive: true });
+    if (pathSafety !== undefined) {
+        await assertFreshAncestryInsideRoot(pathSafety, localPath, fileName);
+    }
     const result = await bucket.download(fileName, {
         ...(sseDownload !== undefined ? { serverSideEncryption: sseDownload } : {}),
         ...(signal !== undefined ? { signal } : {}),
@@ -36094,6 +36101,9 @@ async function downloadOne(bucket, fileName, destination, sseDownload, signal) {
             cb(null, chunk);
         },
     });
+    if (pathSafety !== undefined) {
+        await assertFreshAncestryInsideRoot(pathSafety, localPath, fileName);
+    }
     const tempPath = `${localPath}.b2-action-download-${(0,external_node_crypto_.randomUUID)()}.tmp`;
     const writeStream = (0,external_node_fs_namespaceObject.createWriteStream)(tempPath, { flags: 'wx' });
     try {
@@ -36152,6 +36162,9 @@ function isPathInsideRootRelative(rel) {
 }
 async function createPathSafetyContext(root) {
     return { realRoot: await (0,promises_.realpath)(root), safeAncestorDirs: new Set([root]) };
+}
+async function assertFreshAncestryInsideRoot(pathSafety, localPath, fileName) {
+    await assertExistingAncestryInsideRoot({ realRoot: pathSafety.realRoot, safeAncestorDirs: new Set([pathSafety.root]) }, localPath, fileName);
 }
 async function assertExistingAncestryInsideRoot(pathSafety, localPath, fileName) {
     let candidate = (0,external_node_path_.dirname)(localPath);
