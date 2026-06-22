@@ -108,6 +108,7 @@ aes256
 base64
 hexdigest
 sigstore
+ghsa
 
 # Test-only path identifiers
 somedir

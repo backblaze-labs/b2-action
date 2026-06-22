@@ -26,3 +26,11 @@ overrides:
   # Vite pulls esbuild; keep it above the <0.28.1 dev-server file-read range.
   # Drop when Vite's esbuild floor is >=0.28.1.
   esbuild: '>=0.28.1 <0.29.0'
+  # Stryker depends on @inquirer/prompts for interactive init. Keep the
+  # non-interactive mutation runner on the latest 7.x line so the lockfile uses
+  # @inquirer/core's wrap-ansi/string-width-family tree and does not pull the
+  # fast-wrap-ansi/fast-string-width lookalike packages.
+  '@inquirer/prompts': 7.8.6
+  # typed-rest-client pulls qs; keep the dev toolchain on the patched release
+  # for GHSA-q8mj-m7cp-5q26.
+  qs: 6.15.2

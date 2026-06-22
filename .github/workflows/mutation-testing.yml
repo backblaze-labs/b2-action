@@ -19,6 +19,8 @@ jobs:
     name: stryker
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
         with:
@@ -30,6 +32,15 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
+      - name: Reject blocked dependency names
+        run: |
+          set -euo pipefail
+          if grep -nE 'fast-wrap-ansi|fast-string-width|fast-string-truncated-width' pnpm-lock.yaml; then
+            echo "::error::Blocked lookalike text-width dependency found in pnpm-lock.yaml"
+            exit 1
+          fi
+      - name: Audit full lockfile
+        run: pnpm audit --audit-level high
       - run: pnpm install --frozen-lockfile
       - run: pnpm test:mutation
       - name: Upload mutation report
@@ -38,4 +49,59 @@ jobs:
         with:
           name: mutation-report
           path: reports/mutation
-          if-no-files-found: ignore
+          if-no-files-found: warn
+
+  mutation-tracking:
+    name: mutation failure tracking
+    needs: stryker
+    if: always() && github.repository == 'backblaze-labs/b2-action' && github.ref_name == github.event.repository.default_branch
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
+        with:
+          persist-credentials: false
+      - name: Close mutation tracking issue on recovery
+        if: needs.stryker.result == 'success'
+        uses: ./.github/actions/tracking-issue
+        with:
+          mode: close
+          title: Mutation testing failure
+          label: mutation-testing-failure
+          recovery-message: 'Mutation testing recovered and passed: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'
+          repo: ${{ github.repository }}
+          github-token: ${{ github.token }}
+      - name: Prepare mutation tracking issue
+        id: mutation_issue
+        if: needs.stryker.result != 'success'
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          STRYKER_RESULT: ${{ needs.stryker.result }}
+        run: |
+          set -euo pipefail
+          body="$(mktemp)"
+          {
+            echo '<!-- mutation-testing-failure -->'
+            echo 'The scheduled or manually dispatched mutation-testing workflow failed.'
+            echo ''
+            echo "Run: $RUN_URL"
+            echo ''
+            echo "Result: $STRYKER_RESULT"
+            echo ''
+            echo 'Check the job log and the `mutation-report` artifact if one was produced.'
+          } > "$body"
+          echo "body_file=$body" >> "$GITHUB_OUTPUT"
+      - name: Open or update mutation tracking issue
+        if: needs.stryker.result != 'success'
+        uses: ./.github/actions/tracking-issue
+        with:
+          mode: open-or-update
+          title: Mutation testing failure
+          label: mutation-testing-failure
+          label-color: D93F0B
+          label-description: Workflow-owned mutation testing failure tracking
+          body-file: ${{ steps.mutation_issue.outputs.body_file }}
+          repo: ${{ github.repository }}
+          github-token: ${{ github.token }}

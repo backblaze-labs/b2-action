@@ -176,7 +176,7 @@ describe('download: destination resolution edge cases', () => {
       }),
     )
 
-    const cwd = vi.spyOn(process, 'cwd').mockReturnValue(fx.workDir)
+    const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(fx.workDir)
     try {
       const result = await downloadCommand(
         fx.bucket,
@@ -184,7 +184,7 @@ describe('download: destination resolution edge cases', () => {
       )
       expect(result.files[0]?.localPath.endsWith('no-dest.txt')).toBe(true)
     } finally {
-      cwd.mockRestore()
+      cwdSpy.mockRestore()
     }
   })
 
@@ -984,12 +984,12 @@ describe('download: prefix mode defaults destination to cwd', () => {
   it('uses "." when destination is undefined', async () => {
     await seedFile(fx, 'dd/d.txt', 'dl-default-dest')
 
-    const cwd = vi.spyOn(process, 'cwd').mockReturnValue(fx.workDir)
+    const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(fx.workDir)
     try {
       const result = await downloadCommand(fx.bucket, makeInputs('download', fx, { source: 'dd/' }))
       expect(result.files.length).toBeGreaterThanOrEqual(1)
     } finally {
-      cwd.mockRestore()
+      cwdSpy.mockRestore()
     }
   })
 })
@@ -1589,7 +1589,7 @@ describe('sync: down with no destination defaults to cwd', () => {
     // intermittently.
     const cwdSubdir = join(fx.workDir, 'cwd-only')
     await mkdir(cwdSubdir, { recursive: true })
-    const cwd = vi.spyOn(process, 'cwd').mockReturnValue(cwdSubdir)
+    const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(cwdSubdir)
     try {
       const result = await syncCommand(
         fx.bucket,
@@ -1599,7 +1599,7 @@ describe('sync: down with no destination defaults to cwd', () => {
       expect(result.direction).toBe('b2-to-local')
       expect(result.downloaded).toBeGreaterThanOrEqual(1)
     } finally {
-      cwd.mockRestore()
+      cwdSpy.mockRestore()
     }
   })
 })
