@@ -1,19 +1,12 @@
 import { rm, truncate, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { Readable } from 'node:stream'
-import { B2Client, type Bucket, type ProgressEvent } from '@backblaze-labs/b2-sdk'
-import { B2Simulator } from '@backblaze-labs/b2-sdk/simulator'
+import type { ProgressEvent } from '@backblaze-labs/b2-sdk'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import {
-  makeParsedInputs,
-  TEST_APPLICATION_KEY,
-  TEST_APPLICATION_KEY_ID,
-} from '../_parsed-inputs.ts'
+import type { TestFixture } from '../_helpers.ts'
 
-const PART_SIZE = 100_000
 const CONCURRENCY = 4
 const CHUNK_SIZE = 16 * 1024
-const TOTAL_SIZE = PART_SIZE * 24 + 123
 
 describe('upload streaming regression', () => {
   afterEach(() => {
@@ -22,11 +15,8 @@ describe('upload streaming regression', () => {
   })
 
   it('keeps large upload stream intake bounded by part concurrency', async () => {
-    const fx = await makeMultipartFixture('gh-action-streaming-regression')
-    const local = join(fx.workDir, 'synthetic-large.bin')
-    await writeFile(local, '')
-    await truncate(local, TOTAL_SIZE)
     const intake = new IntakeTracker()
+    let totalSize = 0
     let observedCanSlice: boolean | undefined
     let observedSourceSize: number | undefined
 
@@ -35,9 +25,17 @@ describe('upload streaming regression', () => {
       const actual = await vi.importActual<typeof import('node:fs')>('node:fs')
       return {
         ...actual,
-        createReadStream: vi.fn(() => makeSyntheticReadable(TOTAL_SIZE, CHUNK_SIZE, intake)),
+        createReadStream: vi.fn(() => makeSyntheticReadable(totalSize, CHUNK_SIZE, intake)),
       }
     })
+
+    const { makeInputs, makeMultipartFixture, MULTIPART_PART_SIZE } = await import('../_helpers.ts')
+    const partSize = MULTIPART_PART_SIZE
+    totalSize = partSize * 24 + 123
+    const fx: TestFixture = await makeMultipartFixture('gh-action-streaming-regression')
+    const local = join(fx.workDir, 'synthetic-large.bin')
+    await writeFile(local, '')
+    await truncate(local, totalSize)
 
     try {
       const { uploadCommand } = await import('../../src/commands/upload.ts')
@@ -55,27 +53,29 @@ describe('upload streaming regression', () => {
         })
       }
 
-      const result = await uploadCommand(fx.bucket, {
-        ...makeParsedInputs('upload', {
-          bucket: fx.bucket.name,
+      const result = await uploadCommand(
+        fx.bucket,
+        makeInputs('upload', fx, {
           source: local,
           concurrency: CONCURRENCY,
-          partSize: PART_SIZE,
+          partSize,
         }),
-      })
+      )
 
       // The SDK owns multipart buffering, so this test verifies two action-
       // layer invariants: uploadCommand passes a forward-only StreamSource,
       // and the simulator upload never reads substantially beyond the bytes
       // already accepted as uploaded. A full stream buffer would make the peak
-      // approach TOTAL_SIZE before the first multipart progress event.
-      const bound = CONCURRENCY * PART_SIZE + CHUNK_SIZE * 8
-      expect(result.bytesTransferred).toBe(TOTAL_SIZE)
+      // approach totalSize before the first multipart progress event. If this
+      // numeric bound fails after an SDK upgrade, triage SDK prefetch behavior
+      // first; the canSlice assertion is the SDK-version-independent guard.
+      const bound = CONCURRENCY * partSize + CHUNK_SIZE * 8
+      expect(result.bytesTransferred).toBe(totalSize)
       expect(observedCanSlice).toBe(false)
-      expect(observedSourceSize).toBe(TOTAL_SIZE)
-      expect(intake.produced).toBe(TOTAL_SIZE)
+      expect(observedSourceSize).toBe(totalSize)
+      expect(intake.produced).toBe(totalSize)
       expect(intake.peakProducedAheadOfUpload).toBeLessThanOrEqual(bound)
-      expect(TOTAL_SIZE).toBeGreaterThan(bound * 4)
+      expect(totalSize).toBeGreaterThan(bound * 4)
     } finally {
       await rm(fx.workDir, { recursive: true, force: true })
     }
@@ -126,27 +126,4 @@ function makeSyntheticReadable(
       this.push(chunk)
     },
   })
-}
-
-interface MultipartFixture {
-  workDir: string
-  bucket: Bucket
-}
-
-async function makeMultipartFixture(bucketName: string): Promise<MultipartFixture> {
-  const { mkdtemp } = await import('node:fs/promises')
-  const { tmpdir } = await import('node:os')
-  const sim = new B2Simulator({
-    minimumPartSize: PART_SIZE,
-    recommendedPartSize: PART_SIZE,
-  })
-  const client = new B2Client({
-    applicationKeyId: TEST_APPLICATION_KEY_ID,
-    applicationKey: TEST_APPLICATION_KEY,
-    transport: sim.transport(),
-  })
-  await client.authorize()
-  const bucket = await client.createBucket({ bucketName, bucketType: 'allPrivate' })
-  const workDir = await mkdtemp(join(tmpdir(), 'b2-streaming-test-'))
-  return { workDir, bucket }
 }
