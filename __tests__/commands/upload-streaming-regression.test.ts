@@ -34,10 +34,11 @@ describe('upload streaming regression', () => {
     totalSize = partSize * 24 + 123
     const fx: TestFixture = await makeMultipartFixture('gh-action-streaming-regression')
     const local = join(fx.workDir, 'synthetic-large.bin')
-    await writeFile(local, '')
-    await truncate(local, totalSize)
 
     try {
+      await writeFile(local, '')
+      await truncate(local, totalSize)
+
       const { uploadCommand } = await import('../../src/commands/upload.ts')
       const originalUpload = fx.bucket.upload.bind(fx.bucket)
       fx.bucket.upload = async (...args: Parameters<typeof fx.bucket.upload>) => {
