@@ -45,7 +45,7 @@ export function main() {
 }
 
 export function runBatchedMutation({
-  command = 'pnpm',
+  command = defaultPnpmCommand(),
   cwd = process.cwd(),
   runCommand = execFileSync,
   stdout = console.log,
@@ -65,6 +65,7 @@ export function runBatchedMutation({
   const childFailures = []
   const unknownStatuses = new Map()
 
+  rmSync(resolve(cwd, BY_FILE_DIR), { force: true, recursive: true })
   mkdirSync(resolve(cwd, BY_FILE_DIR), { recursive: true })
 
   for (const file of files) {
@@ -153,6 +154,10 @@ export function strykerArgs(file) {
     '--thresholds.break',
     '0',
   ]
+}
+
+export function defaultPnpmCommand(platform = process.platform) {
+  return platform === 'win32' ? 'pnpm.cmd' : 'pnpm'
 }
 
 export function countsForReport(report, unknownStatuses = new Map()) {

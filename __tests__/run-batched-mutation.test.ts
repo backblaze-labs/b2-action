@@ -1,11 +1,12 @@
 import { mkdirSync, writeFileSync } from 'node:fs'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { access, mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 
 // @ts-expect-error scripts are dependency-free JavaScript, not typed modules.
 const runner = (await import('../scripts/run-batched-mutation-lib.mjs')) as {
+  defaultPnpmCommand: (platform?: NodeJS.Platform) => string
   runBatchedMutation: (options?: {
     command?: string
     cwd?: string
@@ -23,6 +24,12 @@ afterEach(async () => {
 })
 
 describe('batched mutation runner', () => {
+  it('uses the platform-specific pnpm command by default', () => {
+    expect(runner.defaultPnpmCommand('darwin')).toBe('pnpm')
+    expect(runner.defaultPnpmCommand('linux')).toBe('pnpm')
+    expect(runner.defaultPnpmCommand('win32')).toBe('pnpm.cmd')
+  })
+
   it('disables per-file Stryker break exits before enforcing the aggregate gate', async () => {
     const result = await runFixture({ statuses: ['Killed'] })
 
@@ -97,14 +104,31 @@ describe('batched mutation runner', () => {
       totals: { survived: 1 },
     })
   })
+
+  it('clears stale per-file reports before writing the current run artifacts', async () => {
+    const result = await runFixture({
+      beforeRun: (cwd) => writeStaleByFileReport(cwd),
+      statuses: ['Killed'],
+    })
+
+    expect(result.exitCode).toBe(0)
+    await expect(
+      access(join(result.cwd, 'reports/mutation/by-file/src__removed.ts.json')),
+    ).rejects.toThrow(/ENOENT/u)
+    await expect(
+      access(join(result.cwd, 'reports/mutation/by-file/src__example.ts.json')),
+    ).resolves.toBeUndefined()
+  })
 })
 
 async function runFixture({
+  beforeRun,
   childStatus,
   statuses = ['Killed'],
   threshold = 65,
   writeReport = true,
 }: {
+  beforeRun?: (cwd: string) => void
   childStatus?: number
   statuses?: string[]
   threshold?: number | null
@@ -113,6 +137,7 @@ async function runFixture({
   const cwd = await mkdtemp(join(tmpdir(), 'b2-batched-mutation-'))
   tempDirs.push(cwd)
   writeConfig(cwd, threshold)
+  beforeRun?.(cwd)
 
   let command = ''
   let args: string[] = []
@@ -144,6 +169,11 @@ async function runFixture({
     stderr: stderr.join('\n'),
     stdout: stdout.join('\n'),
   }
+}
+
+function writeStaleByFileReport(cwd: string) {
+  mkdirSync(join(cwd, 'reports/mutation/by-file'), { recursive: true })
+  writeFileSync(join(cwd, 'reports/mutation/by-file/src__removed.ts.json'), '{}')
 }
 
 function writeConfig(cwd: string, threshold: number | null) {
