@@ -72,7 +72,8 @@ pnpm lint:fix
 pnpm typecheck      # tsc --noEmit (strict + exactOptionalPropertyTypes)
 pnpm test           # vitest run: drives against the SDK's in-memory B2Simulator
 pnpm test:coverage  # same + the 95/85/100/95 coverage gate
-pnpm test:mutation  # Stryker mutation run against the Vitest suite
+pnpm test:mutation  # batched per-file Stryker mutation run + aggregate gate
+pnpm test:mutation:single  # raw Stryker run for focused local investigation
 pnpm build          # ncc build src/main.ts -o dist
 pnpm run audit      # pnpm audit --prod --audit-level high (CI gate; needs network)
 pnpm spellcheck     # cspell across src/, __tests__/, *.md, *.yml, action.yml
@@ -117,26 +118,46 @@ Interrupted local installs can leave a cache lock directory behind. The next run
 
 ## Mutation testing
 
-`pnpm test:mutation` runs Stryker with the Vitest runner. It mutates the
-action-owned parsing, dispatcher, filesystem-boundary, and error-aggregation
-surfaces listed in the `mutate` array in
-[`stryker.conf.json`](./stryker.conf.json).
+`pnpm test:mutation` runs
+[`scripts/run-batched-mutation.mjs`](./scripts/run-batched-mutation.mjs). The
+wrapper runs Stryker once per file listed in the `mutate` array in
+[`stryker.conf.json`](./stryker.conf.json), then aggregates the JSON reports and
+applies the configured break threshold to the combined score. The per-file
+invocation disables Stryker's own break exit so a below-threshold file does not
+hide runner, config, or environment failures.
+
+The current mutation scope is the explicit `mutate` list in
+`stryker.conf.json`: action-owned `src/*.ts` support modules plus the command
+implementations under `src/commands/*.ts` that are named there. Update that
+single list when adding or removing mutation targets.
 
 The mutation workflow is scheduled and manually dispatchable only; it is not a
 per-PR gate while survivor triage is still being paid down. Reports are written
 under `reports/mutation/` locally and uploaded as the `mutation-report`
-artifact in CI. The workflow audits the full lockfile and rejects blocked
-lookalike dependency names before installing the Stryker toolchain.
+artifact in CI. The useful files are:
+
+- `reports/mutation/by-file/*.json`: one Stryker JSON report per mutated file.
+- `reports/mutation/aggregate.json`: the wrapper's combined score, threshold,
+  per-file rows, and status totals.
+- `reports/mutation/mutation.json`: Stryker's shared JSON output path from the
+  last per-file run.
+
+The workflow audits the full lockfile and rejects blocked lookalike dependency
+names before installing the Stryker toolchain.
 
 Stryker core and `@stryker-mutator/vitest-runner` are exact-pinned to the same
 version because the runner plugin must stay in lockstep with core; the
-Dependabot test-runner group updates them together. `stryker.conf.json` also
-sets `vitest.related` to `false` so every mutant runs the full Vitest suite.
-That is slower, but it avoids missing cross-file assertions in the shared
-command fixtures and dispatcher tests while the mutation baseline is still
-being triaged.
+Dependabot test-runner group updates them together. `pnpm test:mutation:single`
+runs raw `stryker run` using the config reporters, which is useful for focused
+local investigation. Do not use a full-scope raw run as the scheduled gate:
+with this suite's `vi.resetModules()` + `vi.doMock()` + dynamic import pattern,
+the Vitest runner can mis-attribute mutants when all files are instrumented in
+one Stryker process. `stryker.conf.json` also sets `vitest.related` to `false`
+so every mutant runs the full Vitest suite. That is slower, but it avoids
+missing cross-file assertions in the shared command fixtures and dispatcher
+tests while the mutation baseline is still being triaged.
 
-Initial baseline for this Stryker configuration:
+Batched-runner baseline for the current mutation scope:
 
 | Scope | Mutation score | Killed | Timed out | Survived | No coverage |
 | --- | ---: | ---: | ---: | ---: | ---: |
@@ -157,14 +178,17 @@ Survivor triage from the baseline:
   report should still be checked before adding disables because some survivors
   can be equivalent mutants.
 
-The configured mutation threshold is `break: 65`, with `low: 65` and
-`high: 75`. That keeps the scheduled workflow passing the 72.83% baseline with
-7.83 points of headroom while still failing on a material regression. Raise the
-threshold only after survivors have been triaged and the baseline is re-run.
-The headroom and scheduled-only cadence are an intentional bootstrap posture.
-Once alerting has proven reliable, either tighten the break threshold toward
-the baseline, or add a non-blocking PR information run so sub-threshold drift is
-visible before the weekly cron.
+The configured aggregate mutation threshold is `break: 65`, with `low: 65` and
+`high: 75`. The batched wrapper enforces that threshold only when
+`thresholds.break` is a number; setting it to `null` disables the aggregate
+failure, matching Stryker's disabled-break semantics. The current 65% break gate
+keeps the scheduled workflow passing the 72.83% baseline with 7.83 points of
+headroom while still failing on a material regression. Raise the threshold only
+after survivors have been triaged and the baseline is re-run. The headroom and
+scheduled-only cadence are an intentional bootstrap posture. Once alerting has
+proven reliable, either tighten the break threshold toward the baseline, or add
+a non-blocking PR information run so sub-threshold drift is visible before the
+weekly cron.
 
 Default-branch scheduled and manual failures open or update one
 `mutation-testing-failure` tracking issue through
@@ -212,7 +236,7 @@ listed in the same table and called out explicitly.
 | `test` (matrix: ubuntu/macos/windows) | typecheck + vitest unit suite |
 | `lint` | biome `--error-on-warnings` |
 | `coverage` | vitest with v8 coverage, threshold 95 % statements / 85 % branches / 100 % functions / 95 % lines |
-| `mutation-testing` ([mutation-testing.yml](./.github/workflows/mutation-testing.yml)) | Stryker mutation testing against the Vitest suite for high-value parsing, dispatcher, filesystem-boundary, and error-aggregation targets. Runs weekly and manually; it uploads the HTML/JSON report artifact, opens or updates a tracking issue on default-branch failure, and fails if the mutation score drops below the configured break threshold (65%). |
+| `mutation-testing` ([mutation-testing.yml](./.github/workflows/mutation-testing.yml)) | Batched per-file Stryker mutation testing against the configured `stryker.conf.json` mutation scope. Runs weekly and manually; it uploads the JSON report artifact, opens or updates a tracking issue on default-branch failure, and fails if the aggregate mutation score drops below the configured break threshold (65%). |
 | `build-and-check-dist` | ncc build, then `git diff --exit-code dist/`. **Drift fails CI**: rebuild with `pnpm build` and commit `dist/`. Bundle size is gated hard at 4 MiB. |
 | `release-provenance-policy` ([security.yml](./.github/workflows/security.yml)) | parses release workflow YAML and enforces OIDC/attestation isolation, validated-SHA checkouts, tag re-verification, staged release asset upload, and post-upload verification. |
 | `github-actions` ([security.yml](./.github/workflows/security.yml)) | runs the shared GitHub Actions security composite action against every workflow, including actionlint, third-party action pin checks, and zizmor audits (see [Pinning third-party actions](#pinning-third-party-actions)) |

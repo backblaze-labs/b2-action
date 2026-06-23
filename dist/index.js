@@ -36111,29 +36111,7 @@ async function downloadOne(bucket, fileName, destination, sseDownload, signal, p
     const writeStream = (0,external_node_fs_namespaceObject.createWriteStream)(tempPath, { flags: 'wx' });
     try {
         await (0,external_node_stream_promises_namespaceObject.pipeline)(external_node_stream_.Readable.fromWeb(result.body), counter, writeStream);
-        try {
-            await (0,promises_.rename)(tempPath, localPath);
-        }
-        catch (renameError) {
-            const retryWindowsOverwrite = process.platform === 'win32' &&
-                typeof renameError === 'object' &&
-                renameError !== null &&
-                'code' in renameError &&
-                (renameError.code === 'EEXIST' || renameError.code === 'EPERM');
-            if (!retryWindowsOverwrite)
-                throw renameError;
-            // Windows refuses to rename over an existing leaf. Remove only the leaf
-            // path, which unlinks symlinks instead of following them, then retry the
-            // completed same-directory temp-file move.
-            try {
-                await (0,promises_.unlink)(localPath);
-            }
-            catch (unlinkError) {
-                if (!isFileNotFound(unlinkError))
-                    throw unlinkError;
-            }
-            await (0,promises_.rename)(tempPath, localPath);
-        }
+        await replaceDownloadedFile(tempPath, localPath);
     }
     catch (err) {
         // Partial download on disk is worse than no file. Write through a
@@ -36149,6 +36127,36 @@ async function downloadOne(bucket, fileName, destination, sseDownload, signal, p
     }
     info(`  wrote ${size} bytes to ${localPath} (sha1=${sha1 ?? 'multipart'})`);
     return { fileName, localPath, size, contentSha1: sha1 };
+}
+/**
+ * Atomically move a completed same-directory download into place.
+ *
+ * @internal
+ */
+async function replaceDownloadedFile(tempPath, localPath, { platform = process.platform, renameFile = promises_.rename, unlinkFile = promises_.unlink, } = {}) {
+    try {
+        await renameFile(tempPath, localPath);
+    }
+    catch (renameError) {
+        const retryWindowsOverwrite = platform === 'win32' &&
+            typeof renameError === 'object' &&
+            renameError !== null &&
+            'code' in renameError &&
+            (renameError.code === 'EEXIST' || renameError.code === 'EPERM');
+        if (!retryWindowsOverwrite)
+            throw renameError;
+        // Windows refuses to rename over an existing leaf. Remove only the leaf
+        // path, which unlinks symlinks instead of following them, then retry the
+        // completed same-directory temp-file move.
+        try {
+            await unlinkFile(localPath);
+        }
+        catch (unlinkError) {
+            if (!isFileNotFound(unlinkError))
+                throw unlinkError;
+        }
+        await renameFile(tempPath, localPath);
+    }
 }
 /**
  * Resolve the local target path for a single B2 download.

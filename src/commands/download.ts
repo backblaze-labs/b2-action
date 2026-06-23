@@ -50,6 +50,12 @@ interface LocalPathOwner {
   localPath: string
 }
 
+interface ReplaceDownloadedFileOptions {
+  platform?: NodeJS.Platform
+  renameFile?: typeof rename
+  unlinkFile?: typeof unlink
+}
+
 /**
  * Download from B2 to the local runner.
  *
@@ -227,27 +233,7 @@ async function downloadOne(
       counter,
       writeStream,
     )
-    try {
-      await rename(tempPath, localPath)
-    } catch (renameError) {
-      const retryWindowsOverwrite =
-        process.platform === 'win32' &&
-        typeof renameError === 'object' &&
-        renameError !== null &&
-        'code' in renameError &&
-        (renameError.code === 'EEXIST' || renameError.code === 'EPERM')
-      if (!retryWindowsOverwrite) throw renameError
-
-      // Windows refuses to rename over an existing leaf. Remove only the leaf
-      // path, which unlinks symlinks instead of following them, then retry the
-      // completed same-directory temp-file move.
-      try {
-        await unlink(localPath)
-      } catch (unlinkError) {
-        if (!isFileNotFound(unlinkError)) throw unlinkError
-      }
-      await rename(tempPath, localPath)
-    }
+    await replaceDownloadedFile(tempPath, localPath)
   } catch (err) {
     // Partial download on disk is worse than no file. Write through a
     // same-directory temporary file and rename only after the body completes,
@@ -263,6 +249,43 @@ async function downloadOne(
   core.info(`  wrote ${size} bytes to ${localPath} (sha1=${sha1 ?? 'multipart'})`)
 
   return { fileName, localPath, size, contentSha1: sha1 }
+}
+
+/**
+ * Atomically move a completed same-directory download into place.
+ *
+ * @internal
+ */
+export async function replaceDownloadedFile(
+  tempPath: string,
+  localPath: string,
+  {
+    platform = process.platform,
+    renameFile = rename,
+    unlinkFile = unlink,
+  }: ReplaceDownloadedFileOptions = {},
+): Promise<void> {
+  try {
+    await renameFile(tempPath, localPath)
+  } catch (renameError) {
+    const retryWindowsOverwrite =
+      platform === 'win32' &&
+      typeof renameError === 'object' &&
+      renameError !== null &&
+      'code' in renameError &&
+      (renameError.code === 'EEXIST' || renameError.code === 'EPERM')
+    if (!retryWindowsOverwrite) throw renameError
+
+    // Windows refuses to rename over an existing leaf. Remove only the leaf
+    // path, which unlinks symlinks instead of following them, then retry the
+    // completed same-directory temp-file move.
+    try {
+      await unlinkFile(localPath)
+    } catch (unlinkError) {
+      if (!isFileNotFound(unlinkError)) throw unlinkError
+    }
+    await renameFile(tempPath, localPath)
+  }
 }
 
 /**

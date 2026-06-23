@@ -1,9 +1,9 @@
 import { randomBytes } from 'node:crypto'
-import { mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { ProgressEvent } from '@backblaze-labs/b2-sdk'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { downloadCommand } from '../../src/commands/download.ts'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { downloadCommand, replaceDownloadedFile } from '../../src/commands/download.ts'
 import { uploadCommand } from '../../src/commands/upload.ts'
 import type { ParsedInputs } from '../../src/inputs.ts'
 import {
@@ -866,56 +866,41 @@ describe('upload + download: log + branch coverage', () => {
   })
 })
 
-// Windows refuses to rename over an existing leaf, so downloadOne unlinks the
-// leaf and retries. That path is unreachable on the Linux/macOS CI runners, so
-// fake the platform and inject a single EEXIST from `rename` to exercise it.
-describe('download: win32 rename-overwrite retry', () => {
-  afterEach(() => {
-    vi.doUnmock('node:fs/promises')
-    vi.resetModules()
-  })
+// Windows refuses to rename over an existing leaf. Exercise the extracted
+// replace helper with a rename implementation that behaves that way, without
+// pinning the command-level download test to exact fs/promises calls.
+describe('download: win32 replace helper', () => {
+  it('replaces an existing leaf when win32 rename throws EEXIST', async () => {
+    const fx = await makeFixture('gh-action-win-rename')
+    try {
+      const tempPath = join(fx.workDir, 'fresh-content.tmp')
+      const dest = join(fx.workDir, 'leaf-target.txt')
+      await writeFile(tempPath, 'fresh-content')
+      await writeFile(dest, 'stale-content')
 
-  it('removes the existing leaf and retries when win32 rename throws EEXIST', async () => {
-    const realFsp = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises')
-    let renameCalls = 0
-    let unlinkCalls = 0
-    vi.resetModules()
-    vi.doMock('node:fs/promises', () => ({
-      ...realFsp,
-      rename: async (from: string, to: string) => {
-        renameCalls += 1
-        if (renameCalls === 1) {
+      await replaceDownloadedFile(tempPath, dest, {
+        platform: 'win32',
+        renameFile: async (from, to) => {
+          try {
+            await readFile(to)
+          } catch (error) {
+            if (isFileNotFound(error)) return await rename(from, to)
+            throw error
+          }
           const err = new Error('EEXIST: file already exists') as NodeJS.ErrnoException
           err.code = 'EEXIST'
           throw err
-        }
-        return realFsp.rename(from, to)
-      },
-      unlink: async (target: string) => {
-        unlinkCalls += 1
-        return realFsp.unlink(target)
-      },
-    }))
+        },
+      })
 
-    const originalPlatform = process.platform
-    Object.defineProperty(process, 'platform', { value: 'win32', configurable: true })
-    const { downloadCommand: mockedDownload } = await import('../../src/commands/download.ts')
-    const fx = await makeFixture('gh-action-win-rename')
-    try {
-      await seedFile(fx, 'r.txt', 'fresh-content')
-      const dest = join(fx.workDir, 'leaf-target.txt')
-      await writeFile(dest, 'stale-content') // pre-existing leaf rename must replace
-      const result = await mockedDownload(
-        fx.bucket,
-        makeInputs('download', fx, { source: 'r.txt', destination: dest }),
-      )
-      expect(renameCalls).toBe(2)
-      expect(unlinkCalls).toBeGreaterThanOrEqual(1)
-      expect(result.files[0]?.size).toBe('fresh-content'.length)
       expect(await readFile(dest, 'utf8')).toBe('fresh-content')
+      await expect(readFile(tempPath)).rejects.toThrow(/ENOENT/u)
     } finally {
-      Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true })
       await rm(fx.workDir, { recursive: true, force: true })
     }
   })
 })
+
+function isFileNotFound(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT'
+}
