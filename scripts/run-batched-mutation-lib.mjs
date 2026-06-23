@@ -26,6 +26,7 @@ import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 export const REPORT = 'reports/mutation/mutation.json'
+export const PER_FILE_CONFIG = 'reports/mutation/stryker-per-file.conf.json'
 export const BY_FILE_DIR = 'reports/mutation/by-file'
 export const REPORTERS = 'clear-text,json'
 export const STATUS_KEYS = Object.freeze([
@@ -79,11 +80,12 @@ export function runBatchedMutation({
   for (const file of files) {
     stdout(`\n=== mutating ${file} ===`)
     rmSync(resolve(cwd, REPORT), { force: true })
+    writePerFileConfig(cwd, config, file)
 
     try {
-      runCommand(command, strykerArgs(file), { cwd, stdio: 'inherit' })
+      runCommand(command, strykerArgs(), { cwd, stdio: 'inherit' })
     } catch (error) {
-      childFailures.push({ file, message: childFailureMessage(error) })
+      childFailures.push({ file, ...childFailureDetails(error) })
     }
 
     if (!existsSync(resolve(cwd, REPORT))) {
@@ -114,12 +116,6 @@ export function runBatchedMutation({
   }
   writeFileSync(resolve(cwd, 'reports/mutation/aggregate.json'), JSON.stringify(summary, null, 2))
 
-  if (childFailures.length > 0) {
-    stderr('\nOne or more Stryker subprocesses failed even though a report was produced:')
-    for (const failure of childFailures) stderr(`- ${failure.file}: ${failure.message}`)
-    return 1
-  }
-
   if (totals.errors > 0) {
     stderr(`\nStryker reported ${totals.errors} errored mutant(s); treating as a hard failure.`)
     return 1
@@ -138,6 +134,16 @@ export function runBatchedMutation({
     return 1
   }
 
+  const hardChildFailures = childFailures.filter((failure) => {
+    const row = rows.find(({ file }) => file === failure.file)
+    return !isPerFileThresholdExit(failure, row, threshold)
+  })
+  if (hardChildFailures.length > 0) {
+    stderr('\nOne or more Stryker subprocesses failed even though a report was produced:')
+    for (const failure of hardChildFailures) stderr(`- ${failure.file}: ${failure.message}`)
+    return 1
+  }
+
   if (threshold === null) {
     stdout(
       `\nAggregate mutation score ${aggregateScore.toFixed(2)}%; no break threshold configured.`,
@@ -150,18 +156,10 @@ export function runBatchedMutation({
   return 0
 }
 
-export function strykerArgs(file) {
-  return [
-    'exec',
-    'stryker',
-    'run',
-    '--mutate',
-    file,
-    '--reporters',
-    REPORTERS,
-    '--thresholds.break',
-    '0',
-  ]
+export function strykerArgs() {
+  // Stryker 9.x thresholds are config-file only. The wrapper writes this
+  // per-file config with thresholds.break disabled, then gates on the aggregate.
+  return ['exec', 'stryker', 'run', PER_FILE_CONFIG]
 }
 
 export function defaultPnpmCommand(platform = process.platform) {
@@ -208,12 +206,47 @@ function zero() {
   return Object.fromEntries(STATUS_KEYS.map((key) => [key, 0]))
 }
 
-function childFailureMessage(error) {
+function writePerFileConfig(cwd, config, file) {
+  mkdirSync(resolve(cwd, 'reports/mutation'), { recursive: true })
+  const thresholds =
+    config.thresholds === undefined
+      ? undefined
+      : { high: 80, low: 60, ...config.thresholds, break: null }
+  writeFileSync(
+    resolve(cwd, PER_FILE_CONFIG),
+    JSON.stringify(
+      {
+        ...config,
+        mutate: [file],
+        reporters: REPORTERS.split(','),
+        ...(thresholds === undefined ? {} : { thresholds }),
+      },
+      null,
+      2,
+    ),
+  )
+}
+
+function childFailureDetails(error) {
   if (typeof error === 'object' && error !== null && 'status' in error) {
-    return `exit status ${error.status ?? 'unknown'}`
+    return {
+      message: `exit status ${error.status ?? 'unknown'}`,
+      status: typeof error.status === 'number' ? error.status : null,
+    }
   }
-  if (error instanceof Error) return error.message
-  return String(error)
+  if (error instanceof Error) return { message: error.message, status: null }
+  return { message: String(error), status: null }
+}
+
+function isPerFileThresholdExit(failure, row, threshold) {
+  return (
+    failure.status === 1 &&
+    threshold !== null &&
+    row !== undefined &&
+    row.score < threshold &&
+    row.errors === 0 &&
+    row.unknown === 0
+  )
 }
 
 function printAggregate(rows, totals, stdout) {
