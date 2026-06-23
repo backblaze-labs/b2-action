@@ -66,7 +66,7 @@ describe('head/hide/unhide log + error surface', () => {
     const out = await captureStdout(async () => {
       result = await unhideCommand(fx.bucket, makeInputs('unhide', fx, { source: 'u.txt' }))
     })
-    expect(result?.removedMarkerFileId).not.toBeNull()
+    expect(result?.removedMarkerFileId).toEqual(expect.any(String))
     expect(out).toContain('::group::unhide b2://gh-action-logs/u.txt')
     expect(out).toContain(
       `removed hide marker fileId=${result?.removedMarkerFileId}, u.txt is now visible`,
