@@ -15,6 +15,7 @@ const scriptPath = join(
 const runner = (await import('../scripts/run-batched-mutation-lib.mjs')) as {
   defaultPnpmCommand: (platform?: NodeJS.Platform) => string
   isEntrypoint: (metaUrl: string, argv1: string | undefined) => boolean
+  PER_FILE_CONFIG: string
   runBatchedMutation: (options?: {
     command?: string
     cwd?: string
@@ -22,7 +23,7 @@ const runner = (await import('../scripts/run-batched-mutation-lib.mjs')) as {
     stderr?: (message: string) => void
     stdout?: (message: string) => void
   }) => number
-  strykerArgs: (file: string) => string[]
+  strykerArgs: () => string[]
 }
 
 const tempDirs: string[] = []
@@ -50,20 +51,15 @@ describe('batched mutation runner', () => {
 
     expect(result.exitCode).toBe(0)
     expect(result.command).toBe('pnpm')
-    expect(result.args).toEqual(runner.strykerArgs('src/example.ts'))
+    expect(result.args).toEqual(runner.strykerArgs())
     // Stryker 9.x removed dot-notation CLI options, so passing --thresholds.break
-    // makes every per-file run fail with "unknown option". The runner catches
-    // per-file break exits and gates on the aggregate instead.
+    // makes every per-file run fail with "unknown option". The generated
+    // per-file config disables the break threshold for the subprocess instead.
     expect(result.args).not.toContain('--thresholds.break')
-    expect(result.args).toEqual([
-      'exec',
-      'stryker',
-      'run',
-      '--mutate',
-      'src/example.ts',
-      '--reporters',
-      'clear-text,json',
-    ])
+    await expect(readPerFileConfig(result.cwd)).resolves.toMatchObject({
+      mutate: ['src/example.ts'],
+      thresholds: { break: null },
+    })
   })
 
   it('fails all-error reports instead of treating an empty valid denominator as 100%', async () => {
@@ -112,6 +108,32 @@ describe('batched mutation runner', () => {
     })
   })
 
+  it('passes when a per-file threshold exit still meets the aggregate gate', async () => {
+    const result = await runFixture({
+      childStatuses: { 'src/example.ts': 1 },
+      files: ['src/example.ts', 'src/covered.ts'],
+      statusesByFile: {
+        'src/covered.ts': ['Killed', 'Killed'],
+        'src/example.ts': ['Survived'],
+      },
+      threshold: 65,
+    })
+
+    expect(result.exitCode).toBe(0)
+    expect(result.stderr).not.toContain('subprocesses failed')
+
+    const aggregate = (await readAggregate(result.cwd)) as {
+      score: number
+      threshold: number
+      totals: { killed: number; survived: number }
+    }
+    expect(aggregate.score).toBeCloseTo(66.67, 2)
+    expect(aggregate).toMatchObject({
+      threshold: 65,
+      totals: { killed: 2, survived: 1 },
+    })
+  })
+
   it('fails when Stryker does not produce a report', async () => {
     const result = await runFixture({ writeReport: false })
 
@@ -127,6 +149,18 @@ describe('batched mutation runner', () => {
     await expect(readAggregate(result.cwd)).resolves.toMatchObject({
       score: 0,
       threshold: null,
+      totals: { survived: 1 },
+    })
+  })
+
+  it('fails when the aggregate score is below thresholds.break', async () => {
+    const result = await runFixture({ statuses: ['Survived'], threshold: 65 })
+
+    expect(result.exitCode).toBe(1)
+    expect(result.stderr).toContain('below break threshold 65')
+    await expect(readAggregate(result.cwd)).resolves.toMatchObject({
+      score: 0,
+      threshold: 65,
       totals: { survived: 1 },
     })
   })
@@ -150,23 +184,30 @@ describe('batched mutation runner', () => {
 async function runFixture({
   beforeRun,
   childStatus,
+  childStatuses = {},
+  files = ['src/example.ts'],
   statuses = ['Killed'],
+  statusesByFile = {},
   threshold = 65,
   writeReport = true,
 }: {
   beforeRun?: (cwd: string) => void
   childStatus?: number
+  childStatuses?: Record<string, number>
+  files?: string[]
   statuses?: string[]
+  statusesByFile?: Record<string, string[]>
   threshold?: number | null
   writeReport?: boolean
 }) {
   const cwd = await mkdtemp(join(tmpdir(), 'b2-batched-mutation-'))
   tempDirs.push(cwd)
-  writeConfig(cwd, threshold)
+  writeConfig(cwd, threshold, files)
   beforeRun?.(cwd)
 
   let command = ''
   let args: string[] = []
+  let runIndex = 0
   const stdout: string[] = []
   const stderr: string[] = []
   const exitCode = runner.runBatchedMutation({
@@ -175,11 +216,15 @@ async function runFixture({
     runCommand: (nextCommand, nextArgs, options) => {
       command = nextCommand
       args = nextArgs
+      const file = files[runIndex]
+      runIndex += 1
+      if (file === undefined) throw new Error('Unexpected extra Stryker invocation')
       expect(options.cwd).toBe(cwd)
-      if (writeReport) writeReportFile(cwd, statuses)
-      if (childStatus !== undefined) {
+      if (writeReport) writeReportFile(cwd, file, statusesByFile[file] ?? statuses)
+      const nextChildStatus = childStatuses[file] ?? childStatus
+      if (nextChildStatus !== undefined) {
         const error = new Error('simulated child failure') as Error & { status: number }
-        error.status = childStatus
+        error.status = nextChildStatus
         throw error
       }
     },
@@ -202,23 +247,23 @@ function writeStaleByFileReport(cwd: string) {
   writeFileSync(join(cwd, 'reports/mutation/by-file/src__removed.ts.json'), '{}')
 }
 
-function writeConfig(cwd: string, threshold: number | null) {
+function writeConfig(cwd: string, threshold: number | null, files: string[]) {
   writeFileSync(
     join(cwd, 'stryker.conf.json'),
     JSON.stringify({
-      mutate: ['src/example.ts'],
+      mutate: files,
       thresholds: { break: threshold },
     }),
   )
 }
 
-function writeReportFile(cwd: string, statuses: string[]) {
+function writeReportFile(cwd: string, file: string, statuses: string[]) {
   mkdirSync(join(cwd, 'reports/mutation'), { recursive: true })
   writeFileSync(
     join(cwd, 'reports/mutation/mutation.json'),
     JSON.stringify({
       files: {
-        'src/example.ts': {
+        [file]: {
           mutants: statuses.map((status, index) => ({ id: String(index), status })),
         },
       },
@@ -228,4 +273,8 @@ function writeReportFile(cwd: string, statuses: string[]) {
 
 async function readAggregate(cwd: string) {
   return JSON.parse(await readFile(join(cwd, 'reports/mutation/aggregate.json'), 'utf8')) as unknown
+}
+
+async function readPerFileConfig(cwd: string) {
+  return JSON.parse(await readFile(join(cwd, runner.PER_FILE_CONFIG), 'utf8')) as unknown
 }
