@@ -35324,7 +35324,7 @@ class B2Client {
 //# sourceMappingURL=client.js.map
 
 ;// CONCATENATED MODULE: ./package.json
-const package_namespaceObject = {"rE":"1.0.1"};
+const package_namespaceObject = {"rE":"1.1.0"};
 ;// CONCATENATED MODULE: ./src/version.ts
 
 /**

@@ -1,6 +1,6 @@
 {
   "name": "b2",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "private": true,
   "description": "Upload, download, sync, copy, and manage Backblaze B2 Cloud Storage from GitHub Actions. Built on @backblaze-labs/b2-sdk.",
   "type": "module",

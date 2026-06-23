@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-06-23
+
 ### Security
 
 - Pin every third-party GitHub Action in `.github/workflows/` to a full commit SHA (with an exact `# vX.Y.Z` comment), so a moved or compromised upstream tag cannot alter our CI or the `contents: write` release job. Dependabot keeps the pins current. ([#18](https://github.com/backblaze-labs/b2-action/issues/18))
@@ -132,6 +134,7 @@ Initial release. Built on [`@backblaze-labs/b2-sdk`](https://github.com/backblaz
 
 `file-id`, `file-name`, `content-sha1`, `bytes-transferred`, `files-uploaded`, `files-downloaded`, `files-deleted`, `files-listed`, `presigned-url`, `verified`, `remote-sha1`, `local-sha1`, `summary-json`.
 
-[Unreleased]: https://github.com/backblaze-labs/b2-action/compare/v1.0.1...HEAD
+[Unreleased]: https://github.com/backblaze-labs/b2-action/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/backblaze-labs/b2-action/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/backblaze-labs/b2-action/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/backblaze-labs/b2-action/releases/tag/v1.0.0
