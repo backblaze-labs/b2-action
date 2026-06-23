@@ -1,5 +1,5 @@
 import type { ProgressEvent } from '@backblaze-labs/b2-sdk'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { makeProgressListener } from '../src/progress.ts'
 
 /**
@@ -97,6 +97,82 @@ describe('makeProgressListener', () => {
       )
       const text = lines.join('')
       expect(text).toContain('1/2 parts')
+    } finally {
+      restore()
+    }
+  })
+})
+
+describe('makeProgressListener: precise output + math', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('formats the exact percent and total suffix for a known event', () => {
+    const { lines, restore } = captureStdout()
+    try {
+      makeProgressListener(
+        'up',
+        0,
+      )(event({ bytesTransferred: 10, totalBytes: 100, totalParts: null }))
+      const text = lines.join('')
+      expect(text).toContain('up 10%')
+      expect(text).toContain('/ 100 B')
+    } finally {
+      restore()
+    }
+  })
+
+  it('shows ?% and omits the total suffix when totalBytes is null', () => {
+    const { lines, restore } = captureStdout()
+    try {
+      makeProgressListener('up', 0)(event({ bytesTransferred: 10, totalBytes: null }))
+      const text = lines.join('')
+      expect(text).toContain('up ?%')
+      expect(text).not.toMatch(/\/ \d/)
+    } finally {
+      restore()
+    }
+  })
+
+  it('omits the parts suffix when totalParts is null', () => {
+    const { lines, restore } = captureStdout()
+    try {
+      makeProgressListener(
+        'np',
+        0,
+      )(event({ bytesTransferred: 10, totalBytes: 100, totalParts: null }))
+      expect(lines.join('')).not.toContain('parts)')
+    } finally {
+      restore()
+    }
+  })
+
+  it('skips an intermediate not-due event but still emits the first', () => {
+    const { lines, restore } = captureStdout()
+    try {
+      const listener = makeProgressListener('thr', 100_000)
+      listener(event({ bytesTransferred: 1, totalBytes: 100 }))
+      listener(event({ bytesTransferred: 2, totalBytes: 100 }))
+      const count = lines
+        .join('')
+        .split('\n')
+        .filter((l) => l.includes('thr')).length
+      expect(count).toBe(1)
+    } finally {
+      restore()
+    }
+  })
+
+  it('computes MB/s from the byte delta over elapsed time', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(500) // listener captures lastTime = 500
+    const listener = makeProgressListener('rate', 0)
+    vi.setSystemTime(1500) // elapsed = 1000ms
+    const { lines, restore } = captureStdout()
+    try {
+      listener(event({ bytesTransferred: 1024 * 1024, totalBytes: null }))
+      expect(lines.join('')).toContain('@ 1.00 MB/s')
     } finally {
       restore()
     }

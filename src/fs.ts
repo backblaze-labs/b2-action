@@ -8,9 +8,5 @@ import { stat } from 'node:fs/promises'
  * try/catch at every call site.
  */
 export async function tryStat(path: string): Promise<Stats | undefined> {
-  try {
-    return await stat(path)
-  } catch {
-    return undefined
-  }
+  return stat(path).catch(() => undefined)
 }

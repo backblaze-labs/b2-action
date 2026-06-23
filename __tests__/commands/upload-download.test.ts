@@ -1,12 +1,19 @@
 import { randomBytes } from 'node:crypto'
-import { mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { ProgressEvent } from '@backblaze-labs/b2-sdk'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { downloadCommand } from '../../src/commands/download.ts'
+import { downloadCommand, replaceDownloadedFile } from '../../src/commands/download.ts'
 import { uploadCommand } from '../../src/commands/upload.ts'
 import type { ParsedInputs } from '../../src/inputs.ts'
-import { makeFixture, makeInputs, makeMultipartFixture, type TestFixture } from '../_helpers.ts'
+import {
+  captureStdout,
+  makeFixture,
+  makeInputs,
+  makeMultipartFixture,
+  seedFile,
+  type TestFixture,
+} from '../_helpers.ts'
 
 function baseInputs(): ParsedInputs {
   return makeInputs('upload')
@@ -708,4 +715,192 @@ function abortOnMultipartProgress(fx: TestFixture, controller: AbortController):
     })
   }
   return () => sawMultipartProgress
+}
+
+describe('upload + download: log + branch coverage', () => {
+  let fx: TestFixture
+
+  beforeEach(async () => {
+    fx = await makeFixture('gh-action-cov')
+  })
+
+  afterEach(async () => {
+    await rm(fx.workDir, { recursive: true, force: true })
+  })
+
+  it('logs the upload progress label and the fileId/sha1 summary line', async () => {
+    const local = join(fx.workDir, 'logged.txt')
+    await writeFile(local, 'log-me')
+    let result: Awaited<ReturnType<typeof uploadCommand>> | undefined
+    const out = await captureStdout(async () => {
+      result = await uploadCommand(
+        fx.bucket,
+        makeInputs('upload', fx, { source: local, destination: 'logged.txt' }),
+      )
+    })
+    const first = result?.files[0]
+    expect(first?.contentSha1).toBeTruthy()
+    expect(out).toContain('upload[logged.txt]')
+    expect(out).toContain(`fileId=${first?.fileId} sha1=${first?.contentSha1}`)
+  })
+
+  it('downloads a prefix, logging the group, progress, and wrote lines per file', async () => {
+    await seedFile(fx, 'pre/a.txt', 'aaa')
+    await seedFile(fx, 'pre/b.txt', 'bbbb')
+    const destDir = join(fx.workDir, 'out')
+    let result: Awaited<ReturnType<typeof downloadCommand>> | undefined
+    const out = await captureStdout(async () => {
+      result = await downloadCommand(
+        fx.bucket,
+        makeInputs('download', fx, { source: 'pre/', destination: destDir }),
+      )
+    })
+    expect(result?.files).toHaveLength(2)
+    expect(result?.bytesTransferred).toBe(7) // 3 + 4
+    expect(out).toContain('::group::download b2://gh-action-cov/pre/a.txt')
+    expect(out).toContain('download[pre/a.txt]')
+    expect(out).toMatch(/ {2}wrote 3 bytes to .*a\.txt \(sha1=/)
+    expect(await readFile(join(destDir, 'a.txt'), 'utf8')).toBe('aaa')
+    expect(await readFile(join(destDir, 'b.txt'), 'utf8')).toBe('bbbb')
+  })
+
+  it('writes a single file into an existing directory destination by basename', async () => {
+    await seedFile(fx, 'one.txt', 'one')
+    const destDir = join(fx.workDir, 'existing')
+    await mkdir(destDir, { recursive: true })
+    const result = await downloadCommand(
+      fx.bucket,
+      makeInputs('download', fx, { source: 'one.txt', destination: destDir }),
+    )
+    expect(result.files[0]?.localPath).toBe(join(destDir, 'one.txt'))
+    expect(await readFile(join(destDir, 'one.txt'), 'utf8')).toBe('one')
+  })
+
+  it('writes a single file into a trailing-slash directory destination', async () => {
+    await seedFile(fx, 'two.txt', 'two')
+    const destDir = join(fx.workDir, 'slash')
+    const result = await downloadCommand(
+      fx.bucket,
+      makeInputs('download', fx, { source: 'two.txt', destination: `${destDir}/` }),
+    )
+    expect(result.files[0]?.localPath).toBe(join(destDir, 'two.txt'))
+    expect(await readFile(join(destDir, 'two.txt'), 'utf8')).toBe('two')
+  })
+
+  it('round-trips an SSE-C file: download decrypts with the same customer key', async () => {
+    const { parseSse } = await import('../../src/sse.ts')
+    const enc = parseSse(`C:${Buffer.alloc(32, 0x61).toString('base64')}`)
+    const local = join(fx.workDir, 'enc.txt')
+    await writeFile(local, 'secret-body')
+    await uploadCommand(
+      fx.bucket,
+      makeInputs('upload', fx, { source: local, destination: 'enc.txt', encryption: enc }),
+    )
+    const destDir = join(fx.workDir, 'dec')
+    const result = await downloadCommand(
+      fx.bucket,
+      makeInputs('download', fx, {
+        source: 'enc.txt',
+        destination: join(destDir, 'enc.txt'),
+        encryption: enc,
+      }),
+    )
+    expect(result.files[0]?.size).toBe(11)
+    expect(await readFile(join(destDir, 'enc.txt'), 'utf8')).toBe('secret-body')
+  })
+
+  it('rejects a Windows-reserved key segment in a prefix download on win32', async () => {
+    await seedFile(fx, 'win/con.txt', 'x')
+    const orig = process.platform
+    Object.defineProperty(process, 'platform', { value: 'win32', configurable: true })
+    try {
+      await expect(
+        downloadCommand(
+          fx.bucket,
+          makeInputs('download', fx, { source: 'win/', destination: join(fx.workDir, 'reserved') }),
+        ),
+      ).rejects.toThrow(/reserved or contains a Windows path character/)
+    } finally {
+      Object.defineProperty(process, 'platform', { value: orig, configurable: true })
+    }
+  })
+
+  it('rejects a Windows path-character key segment in a prefix download on win32', async () => {
+    await seedFile(fx, 'wc/a:b.txt', 'y')
+    const orig = process.platform
+    Object.defineProperty(process, 'platform', { value: 'win32', configurable: true })
+    try {
+      await expect(
+        downloadCommand(
+          fx.bucket,
+          makeInputs('download', fx, { source: 'wc/', destination: join(fx.workDir, 'illegal') }),
+        ),
+      ).rejects.toThrow(/reserved or contains a Windows path character/)
+    } finally {
+      Object.defineProperty(process, 'platform', { value: orig, configurable: true })
+    }
+  })
+
+  it('rejects a single-file download whose basename is Windows-reserved on win32', async () => {
+    await seedFile(fx, 'aux.txt', 'z')
+    const orig = process.platform
+    Object.defineProperty(process, 'platform', { value: 'win32', configurable: true })
+    try {
+      await expect(
+        downloadCommand(fx.bucket, makeInputs('download', fx, { source: 'aux.txt' })),
+      ).rejects.toThrow(/cannot be safely mapped/)
+    } finally {
+      Object.defineProperty(process, 'platform', { value: orig, configurable: true })
+    }
+  })
+
+  it('rejects a prefix download where one key is a file and another nests beneath it', async () => {
+    await seedFile(fx, 'fd/x', 'file-at-x')
+    await seedFile(fx, 'fd/x/child.txt', 'nested')
+    await expect(
+      downloadCommand(
+        fx.bucket,
+        makeInputs('download', fx, { source: 'fd/', destination: join(fx.workDir, 'nested') }),
+      ),
+    ).rejects.toThrow(/download path collision/)
+  })
+})
+
+// Windows refuses to rename over an existing leaf. Exercise the extracted
+// replace helper with a rename implementation that behaves that way, without
+// pinning the command-level download test to exact fs/promises calls.
+describe('download: win32 replace helper', () => {
+  it('replaces an existing leaf when win32 rename throws EEXIST', async () => {
+    const fx = await makeFixture('gh-action-win-rename')
+    try {
+      const tempPath = join(fx.workDir, 'fresh-content.tmp')
+      const dest = join(fx.workDir, 'leaf-target.txt')
+      await writeFile(tempPath, 'fresh-content')
+      await writeFile(dest, 'stale-content')
+
+      await replaceDownloadedFile(tempPath, dest, {
+        platform: 'win32',
+        renameFile: async (from, to) => {
+          try {
+            await readFile(to)
+          } catch (error) {
+            if (isFileNotFound(error)) return await rename(from, to)
+            throw error
+          }
+          const err = new Error('EEXIST: file already exists') as NodeJS.ErrnoException
+          err.code = 'EEXIST'
+          throw err
+        },
+      })
+
+      expect(await readFile(dest, 'utf8')).toBe('fresh-content')
+      await expect(readFile(tempPath)).rejects.toThrow(/ENOENT/u)
+    } finally {
+      await rm(fx.workDir, { recursive: true, force: true })
+    }
+  })
+})
+
+function isFileNotFound(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT'
 }
