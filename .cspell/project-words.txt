@@ -57,6 +57,8 @@ streetsidesoftware
 prerelease
 workflow_dispatch
 checkout
+startgroup
+endgroup
 ncconfig
 nvmrc
 

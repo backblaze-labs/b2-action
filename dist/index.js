@@ -35912,6 +35912,7 @@ const external_node_stream_promises_namespaceObject = __WEBPACK_EXTERNAL_createR
 async function tryStat(path) {
     try {
         return await (0,promises_.stat)(path);
+        // Stryker disable next-line BlockStatement: emptying this catch is equivalent (tryStat returns undefined either way), and the explicit return satisfies noImplicitReturns.
     }
     catch {
         return undefined;

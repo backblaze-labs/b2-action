@@ -10,6 +10,7 @@ import { stat } from 'node:fs/promises'
 export async function tryStat(path: string): Promise<Stats | undefined> {
   try {
     return await stat(path)
+    // Stryker disable next-line BlockStatement: emptying this catch is equivalent (tryStat returns undefined either way), and the explicit return satisfies noImplicitReturns.
   } catch {
     return undefined
   }
