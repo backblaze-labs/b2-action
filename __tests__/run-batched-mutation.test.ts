@@ -1,12 +1,20 @@
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { access, mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join, relative } from 'node:path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
+
+const scriptPath = join(
+  dirname(fileURLToPath(import.meta.url)),
+  '..',
+  'scripts/run-batched-mutation.mjs',
+)
 
 // @ts-expect-error scripts are dependency-free JavaScript, not typed modules.
 const runner = (await import('../scripts/run-batched-mutation-lib.mjs')) as {
   defaultPnpmCommand: (platform?: NodeJS.Platform) => string
+  isEntrypoint: (metaUrl: string, argv1: string | undefined) => boolean
   runBatchedMutation: (options?: {
     command?: string
     cwd?: string
@@ -28,6 +36,13 @@ describe('batched mutation runner', () => {
     expect(runner.defaultPnpmCommand('darwin')).toBe('pnpm')
     expect(runner.defaultPnpmCommand('linux')).toBe('pnpm')
     expect(runner.defaultPnpmCommand('win32')).toBe('pnpm.cmd')
+  })
+
+  it('normalizes entrypoint paths before comparing them', () => {
+    expect(
+      runner.isEntrypoint(pathToFileURL(scriptPath).href, relative(process.cwd(), scriptPath)),
+    ).toBe(true)
+    expect(runner.isEntrypoint(pathToFileURL(scriptPath).href, undefined)).toBe(false)
   })
 
   it('disables per-file Stryker break exits before enforcing the aggregate gate', async () => {

@@ -13,9 +13,17 @@
  * update them here and in the runner tests.
  */
 import { execFileSync } from 'node:child_process'
-import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { resolve } from 'node:path'
-import { pathToFileURL } from 'node:url'
+import { fileURLToPath } from 'node:url'
 
 export const REPORT = 'reports/mutation/mutation.json'
 export const BY_FILE_DIR = 'reports/mutation/by-file'
@@ -188,7 +196,12 @@ export function numericThreshold(value) {
 }
 
 export function isEntrypoint(metaUrl, argv1) {
-  return argv1 !== undefined && pathToFileURL(resolve(argv1)).href === metaUrl
+  if (argv1 === undefined) return false
+  try {
+    return realpathSync(fileURLToPath(metaUrl)) === realpathSync(resolve(argv1))
+  } catch {
+    return false
+  }
 }
 
 function zero() {
