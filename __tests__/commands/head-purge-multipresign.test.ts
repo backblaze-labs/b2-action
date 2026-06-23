@@ -6,7 +6,7 @@ import { type PresignedFile, presignCommand } from '../../src/commands/presign.t
 import { purgeCommand } from '../../src/commands/purge.ts'
 import { uploadCommand } from '../../src/commands/upload.ts'
 import { setSummaryJsonOutput } from '../../src/outputs.ts'
-import { captureStdout, makeFixture, makeInputs, type TestFixture } from '../_helpers.ts'
+import { captureStdout, makeFixture, makeInputs, seedFile, type TestFixture } from '../_helpers.ts'
 
 function inputs(action: Parameters<typeof makeInputs>[0], over: Record<string, unknown> = {}) {
   return makeInputs(action, { bucket: 'gh-action-hpx', ...over })
@@ -82,6 +82,67 @@ describe('purge command', () => {
     await expect(purgeCommand(fx.bucket, inputs('purge'))).rejects.toThrow(
       /'allow-bucket-purge' must be true/,
     )
+  })
+
+  it('purges the whole bucket when allow-bucket-purge is set, warning loudly', async () => {
+    await seedFile(fx, 'a/x.txt', 'x')
+    await seedFile(fx, 'top.txt', 'y')
+    let result: Awaited<ReturnType<typeof purgeCommand>> | undefined
+    const out = await captureStdout(async () => {
+      result = await purgeCommand(fx.bucket, inputs('purge', { allowBucketPurge: true }))
+    })
+    expect(result?.errors).toBe(0)
+    expect(result?.files.length).toBeGreaterThanOrEqual(2)
+    expect(result?.files.every((f) => f.action === 'upload' && !f.skipped)).toBe(true)
+    expect(out).toContain('::warning::')
+    expect(out).toContain('permanently delete EVERY version in bucket "gh-action-hpx"')
+    expect(out).toContain('::group::purge b2://gh-action-hpx/ (all versions)')
+    expect(out).toMatch(/ {2}purged top\.txt \(/)
+    const after = await fx.bucket.listFileVersions({})
+    expect(after.files).toHaveLength(0)
+  })
+
+  it('previews a whole-bucket purge with no warning under dry-run', async () => {
+    await seedFile(fx, 'a/x.txt', 'x')
+    let result: Awaited<ReturnType<typeof purgeCommand>> | undefined
+    const out = await captureStdout(async () => {
+      result = await purgeCommand(
+        fx.bucket,
+        inputs('purge', { allowBucketPurge: true, dryRun: true }),
+      )
+    })
+    expect(result?.files.length).toBeGreaterThan(0)
+    expect(result?.files.every((f) => f.skipped && f.action === 'skip')).toBe(true)
+    expect(out).not.toContain('::warning::')
+    expect(out).toContain('::group::dry-run b2://gh-action-hpx/ (all versions)')
+    expect(out).toMatch(/ {2}would purge a\/x\.txt \(/)
+    const after = await fx.bucket.listFileVersions({})
+    expect(after.files.length).toBeGreaterThan(0)
+  })
+
+  it('appends a trailing slash to a prefix source that lacks one', async () => {
+    // 'log' must become prefix 'log/', so 'log/inside.txt' is purged but the
+    // sibling 'logs.txt' (which a bare 'log' prefix would also match) survives.
+    await seedFile(fx, 'log/inside.txt', 'in')
+    await seedFile(fx, 'logs.txt', 'out')
+    const result = await purgeCommand(fx.bucket, inputs('purge', { source: 'log' }))
+    expect(result.errors).toBe(0)
+    const inside = await fx.bucket.listFileVersions({ prefix: 'log/' })
+    expect(inside.files).toHaveLength(0)
+    const sibling = await fx.bucket.listFileVersions({ prefix: 'logs.txt' })
+    expect(sibling.files.length).toBeGreaterThan(0)
+  })
+
+  it('warns with the failed-purge message when a version cannot be deleted', async () => {
+    await seedFile(fx, 'pf/a.txt', 'a')
+    fx.sim.injectFailure({ on: 'b2_delete_file_version', status: 500, code: 'internal_error' })
+    let result: Awaited<ReturnType<typeof purgeCommand>> | undefined
+    const out = await captureStdout(async () => {
+      result = await purgeCommand(fx.bucket, inputs('purge', { source: 'pf/' }))
+    })
+    expect(result?.errors).toBeGreaterThanOrEqual(1)
+    expect(out).toContain('::warning::')
+    expect(out).toContain('failed to purge')
   })
 })
 
