@@ -22,6 +22,15 @@
  */
 import { execFileSync } from 'node:child_process'
 import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
+
+// Resolve Stryker's CLI entry and run it with this Node binary directly. Going
+// through `pnpm exec` proved fragile in CI (a stray "--thresholds.break" arg
+// surfaced), so we invoke Stryker without any package-manager layer.
+const require = createRequire(import.meta.url)
+const STRYKER_CLI = require
+  .resolve('@stryker-mutator/core/package.json')
+  .replace(/package\.json$/, 'bin/stryker.js')
 
 const REPORT = 'reports/mutation/mutation.json'
 const BY_FILE_DIR = 'reports/mutation/by-file'
@@ -55,12 +64,9 @@ for (const file of files) {
   rmSync(REPORT, { force: true })
   try {
     // Per-file break threshold is irrelevant here; we aggregate and gate below.
-    // Stryker still writes the JSON report before any threshold-based exit.
-    execFileSync(
-      'pnpm',
-      ['exec', 'stryker', 'run', '--mutate', file, '--reporters', 'clear-text,json'],
-      { stdio: 'inherit' },
-    )
+    // Stryker still writes its JSON report (configured in stryker.conf.json)
+    // before any threshold-based exit.
+    execFileSync(process.execPath, [STRYKER_CLI, 'run', '--mutate', file], { stdio: 'inherit' })
   } catch {
     // Non-zero exit is expected when a single file is below its break
     // threshold. A genuine crash is caught by the missing-report check below.
