@@ -151,17 +151,11 @@ export function runBatchedMutation({
 }
 
 export function strykerArgs(file) {
-  return [
-    'exec',
-    'stryker',
-    'run',
-    '--mutate',
-    file,
-    '--reporters',
-    REPORTERS,
-    '--thresholds.break',
-    '0',
-  ]
+  // No `--thresholds.break` here: Stryker 9.x removed dot-notation CLI options,
+  // so passing it makes the per-file run fail with "unknown option". A per-file
+  // run dropping below the configured break threshold is expected and harmless
+  // (the caller catches the non-zero exit and gates on the aggregate instead).
+  return ['exec', 'stryker', 'run', '--mutate', file, '--reporters', REPORTERS]
 }
 
 export function defaultPnpmCommand(platform = process.platform) {

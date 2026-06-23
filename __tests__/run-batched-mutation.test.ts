@@ -45,14 +45,25 @@ describe('batched mutation runner', () => {
     expect(runner.isEntrypoint(pathToFileURL(scriptPath).href, undefined)).toBe(false)
   })
 
-  it('disables per-file Stryker break exits before enforcing the aggregate gate', async () => {
+  it('invokes Stryker per file without the unsupported --thresholds.break flag', async () => {
     const result = await runFixture({ statuses: ['Killed'] })
 
     expect(result.exitCode).toBe(0)
     expect(result.command).toBe('pnpm')
     expect(result.args).toEqual(runner.strykerArgs('src/example.ts'))
-    expect(result.args).toContain('--thresholds.break')
-    expect(result.args).toContain('0')
+    // Stryker 9.x removed dot-notation CLI options, so passing --thresholds.break
+    // makes every per-file run fail with "unknown option". The runner catches
+    // per-file break exits and gates on the aggregate instead.
+    expect(result.args).not.toContain('--thresholds.break')
+    expect(result.args).toEqual([
+      'exec',
+      'stryker',
+      'run',
+      '--mutate',
+      'src/example.ts',
+      '--reporters',
+      'clear-text,json',
+    ])
   })
 
   it('fails all-error reports instead of treating an empty valid denominator as 100%', async () => {
