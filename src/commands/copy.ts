@@ -62,23 +62,20 @@ export async function copyCommand(
   try {
     const recommendedPartSize = client.accountInfo.getRecommendedPartSize()
     const isLarge = hit.contentLength > recommendedPartSize
+    const copyOptions = {
+      sourceFileId: hit.fileId,
+      fileName: destination,
+      ...(sourceBucketName !== destinationBucket.name
+        ? { destinationBucketId: destinationBucket.id }
+        : {}),
+    }
 
     const result = isLarge
       ? await destinationBucket.copyLargeFile({
-          sourceFileId: hit.fileId,
-          fileName: destination,
-          ...(sourceBucketName !== destinationBucket.name
-            ? { destinationBucketId: destinationBucket.id }
-            : {}),
+          ...copyOptions,
           ...(signal !== undefined ? { signal } : {}),
         })
-      : await destinationBucket.copyFile({
-          sourceFileId: hit.fileId,
-          fileName: destination,
-          ...(sourceBucketName !== destinationBucket.name
-            ? { destinationBucketId: destinationBucket.id }
-            : {}),
-        })
+      : await destinationBucket.copyFile(copyOptions)
 
     core.info(`  copied → fileId=${result.fileId}, size=${result.contentLength}`)
     return {
