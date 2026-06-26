@@ -67,6 +67,9 @@ export async function copyCommand(
       ? await destinationBucket.copyLargeFile({
           sourceFileId: hit.fileId,
           fileName: destination,
+          ...(sourceBucketName !== destinationBucket.name
+            ? { destinationBucketId: destinationBucket.id }
+            : {}),
           ...(signal !== undefined ? { signal } : {}),
         })
       : await destinationBucket.copyFile({

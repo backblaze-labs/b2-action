@@ -3,10 +3,10 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { B2Client } from '@backblaze-labs/b2-sdk'
 import { B2Simulator } from '@backblaze-labs/b2-sdk/simulator'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { copyCommand } from '../../src/commands/copy.ts'
 import { uploadCommand } from '../../src/commands/upload.ts'
-import { makeInputs } from '../_helpers.ts'
+import { MULTIPART_PART_SIZE, makeInputs } from '../_helpers.ts'
 
 interface Fixture {
   workDir: string
@@ -15,8 +15,10 @@ interface Fixture {
   client: B2Client
 }
 
-async function makeFixture(): Promise<Fixture> {
-  const sim = new B2Simulator()
+async function makeFixture(
+  simOptions: { minimumPartSize?: number; recommendedPartSize?: number } = {},
+): Promise<Fixture> {
+  const sim = new B2Simulator(simOptions)
   const client = new B2Client({
     applicationKeyId: 'test-key-id',
     applicationKey: 'test-key',
@@ -38,7 +40,10 @@ async function makeFixture(): Promise<Fixture> {
 describe('copy command (cross-bucket)', () => {
   let fx: Fixture
   beforeEach(async () => {
-    fx = await makeFixture()
+    fx = await makeFixture({
+      minimumPartSize: MULTIPART_PART_SIZE,
+      recommendedPartSize: MULTIPART_PART_SIZE,
+    })
   })
   afterEach(async () => {
     await rm(fx.workDir, { recursive: true, force: true })
@@ -76,6 +81,48 @@ describe('copy command (cross-bucket)', () => {
 
     const remoteDest = await fx.destBucket.listFileNames({ prefix: 'archive/' })
     expect(remoteDest.files.some((f) => f.fileName === 'archive/app.tar.gz')).toBe(true)
+  })
+
+  it('copies a large file from one bucket to another', async () => {
+    const local = join(fx.workDir, 'large-cross.bin')
+    await writeFile(local, 'x'.repeat(MULTIPART_PART_SIZE * 3))
+    await uploadCommand(
+      fx.sourceBucket,
+      makeInputs('upload', {
+        bucket: 'src-bucket',
+        source: local,
+        destination: 'releases/v1/large.bin',
+        partSize: MULTIPART_PART_SIZE,
+      }),
+    )
+
+    const copyLargeSpy = vi.spyOn(fx.destBucket, 'copyLargeFile')
+    try {
+      const result = await copyCommand(
+        fx.client,
+        fx.destBucket,
+        makeInputs('copy', {
+          bucket: 'dest-bucket',
+          sourceBucket: 'src-bucket',
+          source: 'releases/v1/large.bin',
+          destination: 'archive/large.bin',
+        }),
+      )
+
+      expect(result.sourceBucket).toBe('src-bucket')
+      expect(result.destinationBucket).toBe('dest-bucket')
+      expect(copyLargeSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ destinationBucketId: fx.destBucket.id }),
+      )
+
+      const remoteDest = await fx.destBucket.listFileNames({ prefix: 'archive/' })
+      expect(remoteDest.files.some((f) => f.fileName === 'archive/large.bin')).toBe(true)
+
+      const remoteSrc = await fx.sourceBucket.listFileNames({ prefix: 'archive/' })
+      expect(remoteSrc.files.some((f) => f.fileName === 'archive/large.bin')).toBe(false)
+    } finally {
+      copyLargeSpy.mockRestore()
+    }
   })
 
   it('falls back to same-bucket when source-bucket is unset', async () => {
