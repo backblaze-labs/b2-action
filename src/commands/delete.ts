@@ -2,6 +2,7 @@ import * as core from '@actions/core'
 import type { Bucket } from '@backblaze-labs/b2-sdk'
 import { findFileByName } from '../client.ts'
 import { type ParsedInputs, requireSource } from '../inputs.ts'
+import { deleteAllVersions } from './delete-all.ts'
 
 /** One entry in {@link DeleteResult.files}. */
 export interface DeletedFile {
@@ -26,7 +27,7 @@ export interface DeleteResult {
  *
  * Modes:
  *   - If `source` ends with `/`, treat it as a prefix and delete every version
- *     matching it. Streams via {@link Bucket.deleteAll}.
+ *     matching it.
  *   - Otherwise delete the single file by name. We look up the latest version
  *     via `listFileNames` to get its `fileId` and call `deleteFileVersion`.
  *
@@ -42,15 +43,16 @@ export async function deleteCommand(
   const isPrefix = source.endsWith('/')
 
   if (isPrefix) {
-    return deletePrefix(bucket, source, inputs.dryRun, signal)
+    return deletePrefix(bucket, source, inputs.dryRun, inputs.bypassGovernance, signal)
   }
-  return deleteOne(bucket, source, inputs.dryRun)
+  return deleteOne(bucket, source, inputs.dryRun, inputs.bypassGovernance)
 }
 
 async function deletePrefix(
   bucket: Bucket,
   prefix: string,
   dryRun: boolean,
+  bypassGovernance: boolean,
   signal?: AbortSignal,
 ): Promise<DeleteResult> {
   const files: DeletedFile[] = []
@@ -58,9 +60,10 @@ async function deletePrefix(
 
   core.startGroup(`${dryRun ? 'dry-run' : 'delete'} prefix b2://${bucket.name}/${prefix}`)
   try {
-    for await (const event of bucket.deleteAll({
+    for await (const event of deleteAllVersions(bucket, {
       prefix,
       dryRun,
+      bypassGovernance,
       ...(signal !== undefined ? { signal } : {}),
     })) {
       if (event.type === 'delete') {
@@ -81,7 +84,12 @@ async function deletePrefix(
   return { files, errors }
 }
 
-async function deleteOne(bucket: Bucket, fileName: string, dryRun: boolean): Promise<DeleteResult> {
+async function deleteOne(
+  bucket: Bucket,
+  fileName: string,
+  dryRun: boolean,
+  bypassGovernance: boolean,
+): Promise<DeleteResult> {
   const hit = await findFileByName(bucket, fileName)
 
   core.startGroup(`${dryRun ? 'dry-run' : 'delete'} b2://${bucket.name}/${fileName}`)
@@ -93,7 +101,11 @@ async function deleteOne(bucket: Bucket, fileName: string, dryRun: boolean): Pro
         errors: 0,
       }
     }
-    await bucket.deleteFileVersion(fileName, hit.fileId)
+    if (bypassGovernance) {
+      await bucket.deleteFileVersion(fileName, hit.fileId, { bypassGovernance: true })
+    } else {
+      await bucket.deleteFileVersion(fileName, hit.fileId)
+    }
     core.info(`  deleted ${fileName} (${hit.fileId})`)
     return {
       files: [{ fileName, fileId: hit.fileId, skipped: false }],

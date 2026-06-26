@@ -1,6 +1,7 @@
 import * as core from '@actions/core'
 import type { Bucket } from '@backblaze-labs/b2-sdk'
 import type { ParsedInputs } from '../inputs.ts'
+import { deleteAllVersions } from './delete-all.ts'
 
 /** One entry in {@link PurgeResult.files}. */
 export interface PurgedFile {
@@ -63,9 +64,10 @@ export async function purgeCommand(
     const opts = {
       ...(prefix !== '' ? { prefix } : {}),
       dryRun,
+      bypassGovernance: inputs.bypassGovernance,
       ...(signal !== undefined ? { signal } : {}),
     }
-    for await (const event of bucket.deleteAll(opts)) {
+    for await (const event of deleteAllVersions(bucket, opts)) {
       if (event.type === 'delete') {
         files.push({
           fileName: event.fileName,

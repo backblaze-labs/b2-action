@@ -6,7 +6,14 @@ import { type PresignedFile, presignCommand } from '../../src/commands/presign.t
 import { purgeCommand } from '../../src/commands/purge.ts'
 import { uploadCommand } from '../../src/commands/upload.ts'
 import { setSummaryJsonOutput } from '../../src/outputs.ts'
-import { captureStdout, makeFixture, makeInputs, seedFile, type TestFixture } from '../_helpers.ts'
+import {
+  captureStdout,
+  makeFixture,
+  makeInputs,
+  seedFile,
+  seedGovernanceRetainedFile,
+  type TestFixture,
+} from '../_helpers.ts'
 
 function inputs(action: Parameters<typeof makeInputs>[0], over: Record<string, unknown> = {}) {
   return makeInputs(action, { bucket: 'gh-action-hpx', ...over })
@@ -76,6 +83,27 @@ describe('purge command', () => {
     expect(result.files.every((f) => f.skipped)).toBe(true)
     const after = await fx.bucket.listFileVersions({ prefix: 'p/' })
     expect(after.files.length).toBeGreaterThan(0)
+  })
+
+  it('requires bypass-governance to purge governance-retained versions', async () => {
+    await seedGovernanceRetainedFile(fx, 'locked-purge/a.txt')
+    await seedGovernanceRetainedFile(fx, 'locked-purge/b.txt')
+
+    const blocked = await purgeCommand(fx.bucket, inputs('purge', { source: 'locked-purge/' }))
+    expect(blocked.errors).toBe(2)
+    const afterBlocked = await fx.bucket.listFileVersions({ prefix: 'locked-purge/' })
+    expect(afterBlocked.files).toHaveLength(2)
+
+    const result = await purgeCommand(
+      fx.bucket,
+      inputs('purge', { source: 'locked-purge/', bypassGovernance: true }),
+    )
+    expect(result.errors).toBe(0)
+    expect(result.files).toHaveLength(2)
+    expect(result.files.every((f) => f.action === 'upload' && !f.skipped)).toBe(true)
+
+    const afterBypass = await fx.bucket.listFileVersions({ prefix: 'locked-purge/' })
+    expect(afterBypass.files).toHaveLength(0)
   })
 
   it('refuses bucket-wide purge without explicit confirmation', async () => {
