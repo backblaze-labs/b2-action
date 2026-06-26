@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { B2Client } from '@backblaze-labs/b2-sdk'
 import { B2Simulator } from '@backblaze-labs/b2-sdk/simulator'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { copyCommand } from '../../src/commands/copy.ts'
 import { uploadCommand } from '../../src/commands/upload.ts'
 import { MULTIPART_PART_SIZE, makeInputs } from '../_helpers.ts'
@@ -96,33 +96,27 @@ describe('copy command (cross-bucket)', () => {
       }),
     )
 
-    const copyLargeSpy = vi.spyOn(fx.destBucket, 'copyLargeFile')
-    try {
-      const result = await copyCommand(
-        fx.client,
-        fx.destBucket,
-        makeInputs('copy', {
-          bucket: 'dest-bucket',
-          sourceBucket: 'src-bucket',
-          source: 'releases/v1/large.bin',
-          destination: 'archive/large.bin',
-        }),
-      )
+    const result = await copyCommand(
+      fx.client,
+      fx.destBucket,
+      makeInputs('copy', {
+        bucket: 'dest-bucket',
+        sourceBucket: 'src-bucket',
+        source: 'releases/v1/large.bin',
+        destination: 'archive/large.bin',
+      }),
+    )
 
-      expect(result.sourceBucket).toBe('src-bucket')
-      expect(result.destinationBucket).toBe('dest-bucket')
-      expect(copyLargeSpy).toHaveBeenCalledWith(
-        expect.objectContaining({ destinationBucketId: fx.destBucket.id }),
-      )
+    expect(result.sourceBucket).toBe('src-bucket')
+    expect(result.destinationBucket).toBe('dest-bucket')
+    expect(result.size).toBe(MULTIPART_PART_SIZE * 3)
 
-      const remoteDest = await fx.destBucket.listFileNames({ prefix: 'archive/' })
-      expect(remoteDest.files.some((f) => f.fileName === 'archive/large.bin')).toBe(true)
+    const remoteDest = await fx.destBucket.listFileNames({ prefix: 'archive/' })
+    const copiedFile = remoteDest.files.find((f) => f.fileName === 'archive/large.bin')
+    expect(copiedFile?.contentLength).toBe(MULTIPART_PART_SIZE * 3)
 
-      const remoteSrc = await fx.sourceBucket.listFileNames({ prefix: 'archive/' })
-      expect(remoteSrc.files.some((f) => f.fileName === 'archive/large.bin')).toBe(false)
-    } finally {
-      copyLargeSpy.mockRestore()
-    }
+    const remoteSrc = await fx.sourceBucket.listFileNames({ prefix: 'archive/' })
+    expect(remoteSrc.files.some((f) => f.fileName === 'archive/large.bin')).toBe(false)
   })
 
   it('falls back to same-bucket when source-bucket is unset', async () => {
