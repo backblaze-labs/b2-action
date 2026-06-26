@@ -6,6 +6,10 @@ import type {
   FileAction,
 } from '@backblaze-labs/b2-sdk'
 
+const DELETE_FAILED_MESSAGE = 'delete failed'
+const OUT_OF_PREFIX_MESSAGE = 'listed file is outside requested prefix'
+
+// SDK-deleteAll-compatible events with local extensions for this bypass-governance shim.
 export type DeleteAllVersionsDeleteEvent = DeleteAllDeleteEvent & {
   readonly action: FileAction
 }
@@ -38,6 +42,16 @@ export async function* deleteAllVersions(
     if (next.done === true) break
 
     const version = next.value
+    if (options.prefix !== undefined && !version.fileName.startsWith(options.prefix)) {
+      yield {
+        type: 'error',
+        fileName: version.fileName,
+        fileId: version.fileId,
+        message: OUT_OF_PREFIX_MESSAGE,
+      }
+      continue
+    }
+
     if (options.dryRun) {
       yield { type: 'skip', fileName: version.fileName, fileId: version.fileId }
       continue
@@ -58,12 +72,12 @@ export async function* deleteAllVersions(
         fileId: version.fileId,
         action: version.action,
       }
-    } catch (error) {
+    } catch {
       yield {
         type: 'error',
         fileName: version.fileName,
         fileId: version.fileId,
-        message: error instanceof Error ? error.message : String(error),
+        message: DELETE_FAILED_MESSAGE,
       }
     }
 

@@ -8,6 +8,7 @@ import { uploadCommand } from '../../src/commands/upload.ts'
 import type { ParsedInputs } from '../../src/inputs.ts'
 import {
   captureFailure,
+  captureStdout,
   makeFixture,
   makeInputs,
   seedFile,
@@ -168,6 +169,32 @@ describe('delete command', () => {
 
     const after = await fx.bucket.listFileVersions({ prefix: 'abort/' })
     expect(after.files).toHaveLength(1)
+  })
+
+  it('does not log raw per-version delete error text', async () => {
+    const encodedSecret = encodeURIComponent('app/key+secret=42')
+    const bucket = {
+      name: 'gh-action-misc',
+      paginateFileVersions: async function* () {
+        yield { fileName: 'p/a.txt', fileId: 'id-a', action: 'upload' }
+      },
+      deleteFileVersion: async () => {
+        throw new Error(`delete denied with ${encodedSecret}`)
+      },
+    } as unknown as Parameters<typeof deleteCommand>[0]
+    let result: Awaited<ReturnType<typeof deleteCommand>> | undefined
+
+    const out = await captureStdout(async () => {
+      result = await deleteCommand(bucket, {
+        ...baseInputs('delete'),
+        source: 'p/',
+      })
+    })
+
+    expect(result?.errors).toBe(1)
+    expect(out).toContain('failed to delete p/a.txt: delete failed')
+    expect(out).not.toContain(encodedSecret)
+    expect(out).not.toContain('app/key+secret=42')
   })
 
   it('throws when the file is not found', async () => {
