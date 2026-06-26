@@ -150,6 +150,26 @@ describe('delete command', () => {
     expect(after.files).toHaveLength(1)
   })
 
+  it('stops prefix deletes when the signal is already aborted', async () => {
+    await seedFile(fx, 'abort/a.txt', 'a')
+    const controller = new AbortController()
+    controller.abort(new Error('delete cancelled'))
+
+    await expect(
+      deleteCommand(
+        fx.bucket,
+        {
+          ...baseInputs('delete'),
+          source: 'abort/',
+        },
+        controller.signal,
+      ),
+    ).rejects.toThrow('delete cancelled')
+
+    const after = await fx.bucket.listFileVersions({ prefix: 'abort/' })
+    expect(after.files).toHaveLength(1)
+  })
+
   it('throws when the file is not found', async () => {
     await expect(
       deleteCommand(fx.bucket, { ...baseInputs('delete'), source: 'nope.txt' }),

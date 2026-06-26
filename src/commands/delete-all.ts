@@ -26,15 +26,24 @@ export async function* deleteAllVersions(
   bucket: Bucket,
   options: DeleteAllVersionsOptions,
 ): AsyncGenerator<DeleteAllVersionsEvent> {
-  for await (const version of bucket.paginateFileVersions({
+  const versions = bucket.paginateFileVersions({
     ...(options.prefix !== undefined ? { prefix: options.prefix } : {}),
     ...(options.signal !== undefined ? { signal: options.signal } : {}),
-  })) {
+  })
+
+  while (true) {
+    options.signal?.throwIfAborted()
+    const next = await versions.next()
+    options.signal?.throwIfAborted()
+    if (next.done === true) break
+
+    const version = next.value
     if (options.dryRun) {
       yield { type: 'skip', fileName: version.fileName, fileId: version.fileId }
       continue
     }
 
+    options.signal?.throwIfAborted()
     try {
       if (options.bypassGovernance) {
         await bucket.deleteFileVersion(version.fileName, version.fileId, {
@@ -57,5 +66,7 @@ export async function* deleteAllVersions(
         message: error instanceof Error ? error.message : String(error),
       }
     }
+
+    options.signal?.throwIfAborted()
   }
 }
