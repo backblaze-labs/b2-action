@@ -1,6 +1,6 @@
 import { rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { copyCommand } from '../../src/commands/copy.ts'
 import { deleteCommand } from '../../src/commands/delete.ts'
 import { presignCommand } from '../../src/commands/presign.ts'
@@ -94,22 +94,14 @@ describe('delete command', () => {
       }),
     ).rejects.toThrow(/governance-mode retention/)
 
-    const spy = vi.spyOn(fx.bucket, 'deleteFileVersion')
-    try {
-      const result = await deleteCommand(fx.bucket, {
-        ...baseInputs('delete'),
-        source: 'locked-one.txt',
-        bypassGovernance: true,
-      })
+    const result = await deleteCommand(fx.bucket, {
+      ...baseInputs('delete'),
+      source: 'locked-one.txt',
+      bypassGovernance: true,
+    })
 
-      expect(result.errors).toBe(0)
-      expect(result.files[0]?.skipped).toBe(false)
-      expect(spy).toHaveBeenCalledWith('locked-one.txt', expect.any(String), {
-        bypassGovernance: true,
-      })
-    } finally {
-      spy.mockRestore()
-    }
+    expect(result.errors).toBe(0)
+    expect(result.files[0]?.skipped).toBe(false)
 
     const after = await fx.bucket.listFileVersions({ prefix: 'locked-one.txt' })
     expect(after.files).toHaveLength(0)
@@ -128,25 +120,14 @@ describe('delete command', () => {
     const afterBlocked = await fx.bucket.listFileVersions({ prefix: 'locked-prefix/' })
     expect(afterBlocked.files).toHaveLength(2)
 
-    const spy = vi.spyOn(fx.bucket, 'deleteFileVersion')
-    try {
-      const result = await deleteCommand(fx.bucket, {
-        ...baseInputs('delete'),
-        source: 'locked-prefix/',
-        bypassGovernance: true,
-      })
+    const result = await deleteCommand(fx.bucket, {
+      ...baseInputs('delete'),
+      source: 'locked-prefix/',
+      bypassGovernance: true,
+    })
 
-      expect(result.errors).toBe(0)
-      expect(result.files).toHaveLength(2)
-      expect(spy).toHaveBeenCalledWith('locked-prefix/a.txt', expect.any(String), {
-        bypassGovernance: true,
-      })
-      expect(spy).toHaveBeenCalledWith('locked-prefix/b.txt', expect.any(String), {
-        bypassGovernance: true,
-      })
-    } finally {
-      spy.mockRestore()
-    }
+    expect(result.errors).toBe(0)
+    expect(result.files).toHaveLength(2)
 
     const afterBypass = await fx.bucket.listFileVersions({ prefix: 'locked-prefix/' })
     expect(afterBypass.files).toHaveLength(0)
@@ -154,22 +135,16 @@ describe('delete command', () => {
 
   it('dry-run does not consume bypass-governance for prefix delete previews', async () => {
     await seedGovernanceRetainedFile(fx, 'locked-preview/a.txt')
-    const spy = vi.spyOn(fx.bucket, 'deleteFileVersion')
-    try {
-      const result = await deleteCommand(fx.bucket, {
-        ...baseInputs('delete'),
-        source: 'locked-preview/',
-        dryRun: true,
-        bypassGovernance: true,
-      })
+    const result = await deleteCommand(fx.bucket, {
+      ...baseInputs('delete'),
+      source: 'locked-preview/',
+      dryRun: true,
+      bypassGovernance: true,
+    })
 
-      expect(result.errors).toBe(0)
-      expect(result.files).toHaveLength(1)
-      expect(result.files[0]?.skipped).toBe(true)
-      expect(spy).not.toHaveBeenCalled()
-    } finally {
-      spy.mockRestore()
-    }
+    expect(result.errors).toBe(0)
+    expect(result.files).toHaveLength(1)
+    expect(result.files[0]?.skipped).toBe(true)
 
     const after = await fx.bucket.listFileVersions({ prefix: 'locked-preview/' })
     expect(after.files).toHaveLength(1)

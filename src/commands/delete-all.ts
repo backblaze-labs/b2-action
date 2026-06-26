@@ -1,25 +1,4 @@
-import type { Bucket } from '@backblaze-labs/b2-sdk'
-
-export interface DeleteAllDeleteEvent {
-  type: 'delete'
-  fileName: string
-  fileId: string
-}
-
-export interface DeleteAllErrorEvent {
-  type: 'error'
-  fileName: string
-  fileId: string
-  message: string
-}
-
-export interface DeleteAllSkipEvent {
-  type: 'skip'
-  fileName: string
-  fileId: string
-}
-
-export type DeleteAllEvent = DeleteAllDeleteEvent | DeleteAllErrorEvent | DeleteAllSkipEvent
+import type { Bucket, DeleteAllEvent } from '@backblaze-labs/b2-sdk'
 
 export interface DeleteAllVersionsOptions {
   prefix?: string
