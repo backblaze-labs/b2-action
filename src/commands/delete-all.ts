@@ -72,7 +72,9 @@ export async function* deleteAllVersions(
         fileId: version.fileId,
         action: version.action,
       }
-    } catch {
+    } catch (error) {
+      options.signal?.throwIfAborted()
+      if (isAbortError(error)) throw error
       yield {
         type: 'error',
         fileName: version.fileName,
@@ -83,4 +85,8 @@ export async function* deleteAllVersions(
 
     options.signal?.throwIfAborted()
   }
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === 'AbortError'
 }

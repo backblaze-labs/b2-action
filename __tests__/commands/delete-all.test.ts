@@ -53,6 +53,31 @@ describe('deleteAllVersions', () => {
       bypassGovernance: true,
     })
   })
+
+  it('propagates cancellation from an in-flight delete', async () => {
+    const controller = new AbortController()
+    const abortReason = new Error('cancelled during delete')
+    const deleteFileVersion = vi.fn(async () => {
+      controller.abort(abortReason)
+      throw abortReason
+    })
+    const bucket = bucketWith([fileVersion('p/one.txt', 'id-1')], deleteFileVersion)
+    const events: DeleteAllVersionsEvent[] = []
+
+    await expect(async () => {
+      for await (const event of deleteAllVersions(bucket, {
+        prefix: 'p/',
+        dryRun: false,
+        bypassGovernance: true,
+        signal: controller.signal,
+      })) {
+        events.push(event)
+      }
+    }).rejects.toThrow('cancelled during delete')
+
+    expect(events).toEqual([])
+    expect(deleteFileVersion).toHaveBeenCalledTimes(1)
+  })
 })
 
 async function collect(

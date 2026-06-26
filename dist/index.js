@@ -35864,7 +35864,10 @@ async function* deleteAllVersions(bucket, options) {
                 action: version.action,
             };
         }
-        catch {
+        catch (error) {
+            options.signal?.throwIfAborted();
+            if (isAbortError(error))
+                throw error;
             yield {
                 type: 'error',
                 fileName: version.fileName,
@@ -35874,6 +35877,9 @@ async function* deleteAllVersions(bucket, options) {
         }
         options.signal?.throwIfAborted();
     }
+}
+function isAbortError(error) {
+    return error instanceof Error && error.name === 'AbortError';
 }
 
 ;// CONCATENATED MODULE: ./src/commands/delete.ts
