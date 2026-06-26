@@ -1,4 +1,19 @@
-import type { Bucket, DeleteAllEvent } from '@backblaze-labs/b2-sdk'
+import type {
+  Bucket,
+  DeleteAllDeleteEvent,
+  DeleteAllErrorEvent,
+  DeleteAllSkipEvent,
+  FileAction,
+} from '@backblaze-labs/b2-sdk'
+
+export type DeleteAllVersionsDeleteEvent = DeleteAllDeleteEvent & {
+  readonly action: FileAction
+}
+
+export type DeleteAllVersionsEvent =
+  | DeleteAllVersionsDeleteEvent
+  | DeleteAllErrorEvent
+  | DeleteAllSkipEvent
 
 export interface DeleteAllVersionsOptions {
   prefix?: string
@@ -10,7 +25,7 @@ export interface DeleteAllVersionsOptions {
 export async function* deleteAllVersions(
   bucket: Bucket,
   options: DeleteAllVersionsOptions,
-): AsyncGenerator<DeleteAllEvent> {
+): AsyncGenerator<DeleteAllVersionsEvent> {
   for await (const version of bucket.paginateFileVersions({
     ...(options.prefix !== undefined ? { prefix: options.prefix } : {}),
     ...(options.signal !== undefined ? { signal: options.signal } : {}),
@@ -28,7 +43,12 @@ export async function* deleteAllVersions(
       } else {
         await bucket.deleteFileVersion(version.fileName, version.fileId)
       }
-      yield { type: 'delete', fileName: version.fileName, fileId: version.fileId }
+      yield {
+        type: 'delete',
+        fileName: version.fileName,
+        fileId: version.fileId,
+        action: version.action,
+      }
     } catch (error) {
       yield {
         type: 'error',

@@ -1,5 +1,5 @@
 import * as core from '@actions/core'
-import type { Bucket } from '@backblaze-labs/b2-sdk'
+import type { Bucket, FileAction } from '@backblaze-labs/b2-sdk'
 import type { ParsedInputs } from '../inputs.ts'
 import { deleteAllVersions } from './delete-all.ts'
 
@@ -9,8 +9,8 @@ export interface PurgedFile {
   fileName: string
   /** B2 file ID of the version that was purged. */
   fileId: string
-  /** Which kind of version this entry refers to: an `upload` (real data), a `hide` marker, or a `skip` (dry-run). */
-  action: 'upload' | 'hide' | 'skip'
+  /** Which kind of version this entry refers to, or `skip` for dry-run previews. */
+  action: FileAction | 'skip'
   /** True for dry-run previews; the version was not actually purged. */
   skipped: boolean
 }
@@ -72,7 +72,7 @@ export async function purgeCommand(
         files.push({
           fileName: event.fileName,
           fileId: event.fileId,
-          action: 'upload',
+          action: event.action,
           skipped: false,
         })
         core.info(`  purged ${event.fileName} (${event.fileId})`)

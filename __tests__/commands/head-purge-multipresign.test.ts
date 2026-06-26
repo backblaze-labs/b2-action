@@ -69,6 +69,7 @@ describe('purge command', () => {
     const result = await purgeCommand(fx.bucket, inputs('purge', { source: 'z/' }))
     expect(result.errors).toBe(0)
     expect(result.files.length).toBeGreaterThanOrEqual(3) // upload-a + hide-a + upload-b
+    expect(result.files.map((f) => f.action)).toEqual(expect.arrayContaining(['upload', 'hide']))
 
     const after = await fx.bucket.listFileVersions({ prefix: 'z/' })
     expect(after.files).toHaveLength(0)

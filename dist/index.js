@@ -35838,7 +35838,12 @@ async function* deleteAllVersions(bucket, options) {
             else {
                 await bucket.deleteFileVersion(version.fileName, version.fileId);
             }
-            yield { type: 'delete', fileName: version.fileName, fileId: version.fileId };
+            yield {
+                type: 'delete',
+                fileName: version.fileName,
+                fileId: version.fileId,
+                action: version.action,
+            };
         }
         catch (error) {
             yield {
@@ -36663,7 +36668,7 @@ async function purgeCommand(bucket, inputs, signal) {
                 files.push({
                     fileName: event.fileName,
                     fileId: event.fileId,
-                    action: 'upload',
+                    action: event.action,
                     skipped: false,
                 });
                 info(`  purged ${event.fileName} (${event.fileId})`);
