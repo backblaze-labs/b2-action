@@ -69,16 +69,18 @@ For one self-contained example per verb (each is also a live integration test), 
 This Action follows [semantic versioning](https://semver.org) and maintains a floating major tag. Pick the ref style that matches your risk tolerance:
 
 - **`@v1`** tracks the latest `1.x` release. It is convenient and picks up patches automatically, but it is a **mutable** tag: it is moved to each new release, so the code that runs can change without any change to your workflow.
-- **`@v1.0.1`** is a pinned, SSH-signed release tag, so it shows as **Verified** on GitHub and is easy to audit. Note that a Git tag is still a movable ref, so treat this as a stable, verifiable pointer rather than an immutability guarantee.
+- **`@vX.Y.Z`** is a pinned, SSH-signed release tag, so it shows as **Verified** on GitHub and is easy to audit. Note that a Git tag is still a movable ref, so treat this as a stable, verifiable pointer rather than an immutability guarantee.
 - **`@<full-commit-sha>`** is fully immutable and is what we recommend for anything beyond experimentation. It guarantees the exact code that runs cannot change underneath you, even if a tag is moved. If you enable [Dependabot](https://docs.github.com/en/code-security/dependabot) GitHub Actions updates in your repository, it keeps SHA pins current and rewrites the trailing version comment for you.
 
 ```yaml
 # Recommended for production: pin to a full-length commit SHA.
 # With Dependabot GitHub Actions updates enabled, it bumps the SHA + comment for you.
-- uses: backblaze-labs/b2-action@<commit-sha> # v1.0.1
+- uses: backblaze-labs/b2-action@<commit-sha> # vX.Y.Z
 ```
 
 This is the same supply-chain practice this Action applies to its own workflows: every third-party action it depends on is SHA-pinned. The worked examples below use `@v1` for brevity; swap in a commit SHA (or a pinned `@vX.Y.Z`) for production workflows.
+
+Exact-version releases publish an attested `dist/index.js` asset for provenance checks; see [RELEASE.md](./RELEASE.md#verifying-release-provenance).
 
 ---
 
@@ -95,7 +97,7 @@ This is the same supply-chain practice this Action applies to its own workflows:
 | `hide` | Soft-delete via hide marker. Underlying data preserved until lifecycle. | `source`, `bucket` |
 | `unhide` | Restore a hidden file by deleting its top hide marker. | `source`, `bucket` |
 | `verify` | HEAD-request the remote whole-file SHA-1 and compare to `expected-sha1` or `destination` (local file). No body transfer; multipart objects cannot be verified when B2 does not expose a whole-file SHA-1. | `source`, `bucket`, plus one of `expected-sha1` / `destination` |
-| `presign` | Time-limited download URL via `b2_get_download_authorization`. URL is masked. Prefix mode returns one URL per file. | `source`, `bucket` |
+| `presign` | Time-limited download URL via `b2_get_download_authorization`. The live URL is masked and exposed only as `presigned-url`; prefix mode exposes only the first generated URL. | `source`, `bucket` |
 | `retention` | Apply Object Lock retention + legal hold to a file. | `source`, `bucket`, plus `retention-mode` and/or `legal-hold` |
 | `head` | Fetch object metadata (size, sha1, contentType, fileInfo) via HEAD. No body transfer. | `source`, `bucket` |
 | `purge` | Permanently delete every file version under a prefix, including hide markers and history. Whole-bucket purge requires `allow-bucket-purge: true`. Supports `dry-run` and `bypass-governance` for governance-retained versions. | `source` or `allow-bucket-purge`, `bucket` |

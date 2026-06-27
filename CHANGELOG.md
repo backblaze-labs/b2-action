@@ -43,6 +43,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Documentation
 
 - README: added a "Pinning and versioning" section recommending consumers pin `backblaze-labs/b2-action` to a commit SHA (or a signed `@vX.Y.Z` tag) rather than the mutable `@v1` floating tag, mirroring the supply-chain practice the Action applies to its own workflows.
+- README: use version-neutral exact-tag examples, link release provenance checks, and clarify that prefix-mode `presign` exposes only the first live URL via the masked `presigned-url` output.
 - README: document that exact-name `copy`, single-file `delete`, and `retention` operate only when the latest exact-name version is an upload; a latest hide marker is reported with the same `File not found` diagnostic as an absent name so default logs do not reveal hidden-object existence. ([#31](https://github.com/backblaze-labs/b2-action/issues/31))
 
 ## [1.0.1] - 2026-05-29
