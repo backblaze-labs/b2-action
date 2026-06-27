@@ -90,7 +90,7 @@ This is the same supply-chain practice this Action applies to its own workflows:
 | `download` | Single-file or prefix-bulk download. | `source`, `bucket` |
 | `sync` | Mirror a local directory ↔ a B2 prefix. Direction auto-detected. | `source`, `destination`, `bucket` |
 | `copy` | Server-side copy. Same bucket by default; cross-bucket with `source-bucket`. | `source`, `destination`, `bucket` |
-| `delete` | Single file by name, or prefix-bulk via `b2_list_file_versions`. Supports `dry-run`. | `source`, `bucket` |
+| `delete` | Single file by name, or prefix-bulk via `b2_list_file_versions`. Supports `dry-run` and `bypass-governance` for governance-retained versions. | `source`, `bucket` |
 | `list` | List files under a prefix; emits JSON for downstream steps. | `bucket` (and usually `source`) |
 | `hide` | Soft-delete via hide marker. Underlying data preserved until lifecycle. | `source`, `bucket` |
 | `unhide` | Restore a hidden file by deleting its top hide marker. | `source`, `bucket` |
@@ -98,7 +98,7 @@ This is the same supply-chain practice this Action applies to its own workflows:
 | `presign` | Time-limited download URL via `b2_get_download_authorization`. URL is masked. Prefix mode returns one URL per file. | `source`, `bucket` |
 | `retention` | Apply Object Lock retention + legal hold to a file. | `source`, `bucket`, plus `retention-mode` and/or `legal-hold` |
 | `head` | Fetch object metadata (size, sha1, contentType, fileInfo) via HEAD. No body transfer. | `source`, `bucket` |
-| `purge` | Permanently delete every file version under a prefix, including hide markers and history. Whole-bucket purge requires `allow-bucket-purge: true`. Supports `dry-run`. | `source` or `allow-bucket-purge`, `bucket` |
+| `purge` | Permanently delete every file version under a prefix, including hide markers and history. Whole-bucket purge requires `allow-bucket-purge: true`. Supports `dry-run` and `bypass-governance` for governance-retained versions. | `source` or `allow-bucket-purge`, `bucket` |
 
 Exact-name `copy`, single-file `delete`, and `retention` operate only when the latest exact-name version is an upload. If that latest version is a hide marker, these commands do not search older upload history under the same name; they fail with the same `File not found` diagnostic used for absent names so default workflow logs do not reveal hidden-object existence. Run `unhide` first to restore the prior upload, or use `purge` when you need to remove hide markers and historical versions.
 
@@ -322,6 +322,8 @@ If you don't need customer-managed keys, **`sse: B2`** (SSE-B2, B2-managed) is t
     legal-hold: 'on'
 ```
 
+Set `bypass-governance: true` to shorten governance-mode retention or to remove governance-retained versions with `delete` or `purge`. The B2 application key must include the `bypassGovernance` capability, in addition to the delete or retention capabilities required by the selected verb.
+
 ### Chain outputs
 
 ```yaml
@@ -371,7 +373,7 @@ If you don't need customer-managed keys, **`sse: B2`** (SSE-B2, B2-managed) is t
 | `retention-mode` | no | | `retention` mode: `compliance` \| `governance` \| `none`. |
 | `retention-until` | no | | `retention` ISO 8601 expiry (required when mode is compliance/governance). |
 | `legal-hold` | no | | `retention` legal-hold value: `on` \| `off`. |
-| `bypass-governance` | no | `false` | Allow shortening a governance retention (requires the capability). |
+| `bypass-governance` | no | `false` | Allow governance-mode retention bypass for retention changes and `delete`/`purge` removals. Requires the B2 application key to include `bypassGovernance`. |
 
 \* Either set the input or one of the env-var fallbacks.
 

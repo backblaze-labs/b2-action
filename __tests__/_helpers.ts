@@ -161,6 +161,24 @@ export async function seedFile(fx: TestFixture, key: string, body: string): Prom
   await uploadCommand(fx.bucket, makeInputs('upload', fx, { source: local, destination: key }))
 }
 
+/** Seed a file and place its latest version under future governance retention. */
+export async function seedGovernanceRetainedFile(
+  fx: TestFixture,
+  key: string,
+  body = 'governance-retained',
+): Promise<string> {
+  await seedFile(fx, key, body)
+  const latest = await fx.bucket.getFileInfoByName(key)
+  if (latest === null) {
+    throw new Error(`Seeded file not found: ${key}`)
+  }
+  await fx.bucket.updateFileRetention(key, latest.fileId, {
+    mode: 'governance',
+    retainUntilTimestamp: Date.now() + 24 * 60 * 60 * 1000,
+  })
+  return latest.fileId
+}
+
 /** Seed multiple files in one call. Iterates `entries` in declaration order. */
 export async function seedFiles(fx: TestFixture, entries: Record<string, string>): Promise<void> {
   for (const [key, body] of Object.entries(entries)) {

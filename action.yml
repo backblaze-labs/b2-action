@@ -99,7 +99,7 @@ inputs:
     description: 'Legal hold status for `retention`: on | off.'
     required: false
   bypass-governance:
-    description: 'Allow shortening a governance-mode retention (requires bypassGovernance capability).'
+    description: 'Allow governance-mode retention bypass for retention changes and delete/purge operations (requires bypassGovernance capability).'
     required: false
     default: 'false'
 

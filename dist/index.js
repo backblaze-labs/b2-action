@@ -35819,7 +35819,71 @@ async function copyCommand(client, destinationBucket, inputs, signal) {
     }
 }
 
+;// CONCATENATED MODULE: ./src/commands/delete-all.ts
+const DELETE_FAILED_MESSAGE = 'delete failed';
+const OUT_OF_PREFIX_MESSAGE = 'listed file is outside requested prefix';
+async function* deleteAllVersions(bucket, options) {
+    const versions = bucket.paginateFileVersions({
+        ...(options.prefix !== undefined ? { prefix: options.prefix } : {}),
+        ...(options.signal !== undefined ? { signal: options.signal } : {}),
+    });
+    while (true) {
+        options.signal?.throwIfAborted();
+        const next = await versions.next();
+        options.signal?.throwIfAborted();
+        if (next.done === true)
+            break;
+        const version = next.value;
+        if (options.prefix !== undefined && !version.fileName.startsWith(options.prefix)) {
+            yield {
+                type: 'error',
+                fileName: version.fileName,
+                fileId: version.fileId,
+                message: OUT_OF_PREFIX_MESSAGE,
+            };
+            continue;
+        }
+        if (options.dryRun) {
+            yield { type: 'skip', fileName: version.fileName, fileId: version.fileId };
+            continue;
+        }
+        options.signal?.throwIfAborted();
+        try {
+            if (options.bypassGovernance) {
+                await bucket.deleteFileVersion(version.fileName, version.fileId, {
+                    bypassGovernance: true,
+                });
+            }
+            else {
+                await bucket.deleteFileVersion(version.fileName, version.fileId);
+            }
+            yield {
+                type: 'delete',
+                fileName: version.fileName,
+                fileId: version.fileId,
+                action: version.action,
+            };
+        }
+        catch (error) {
+            options.signal?.throwIfAborted();
+            if (isAbortError(error))
+                throw error;
+            yield {
+                type: 'error',
+                fileName: version.fileName,
+                fileId: version.fileId,
+                message: DELETE_FAILED_MESSAGE,
+            };
+        }
+        options.signal?.throwIfAborted();
+    }
+}
+function isAbortError(error) {
+    return error instanceof Error && error.name === 'AbortError';
+}
+
 ;// CONCATENATED MODULE: ./src/commands/delete.ts
+
 
 
 
@@ -35828,7 +35892,7 @@ async function copyCommand(client, destinationBucket, inputs, signal) {
  *
  * Modes:
  *   - If `source` ends with `/`, treat it as a prefix and delete every version
- *     matching it. Streams via {@link Bucket.deleteAll}.
+ *     matching it.
  *   - Otherwise delete the single file by name. We look up the latest version
  *     via `listFileNames` to get its `fileId` and call `deleteFileVersion`.
  *
@@ -35839,18 +35903,19 @@ async function deleteCommand(bucket, inputs, signal) {
     const source = requireSource(inputs.source, 'delete', 'a B2 file name or prefix');
     const isPrefix = source.endsWith('/');
     if (isPrefix) {
-        return deletePrefix(bucket, source, inputs.dryRun, signal);
+        return deletePrefix(bucket, source, inputs.dryRun, inputs.bypassGovernance, signal);
     }
-    return deleteOne(bucket, source, inputs.dryRun);
+    return deleteOne(bucket, source, inputs.dryRun, inputs.bypassGovernance);
 }
-async function deletePrefix(bucket, prefix, dryRun, signal) {
+async function deletePrefix(bucket, prefix, dryRun, bypassGovernance, signal) {
     const files = [];
     let errors = 0;
     startGroup(`${dryRun ? 'dry-run' : 'delete'} prefix b2://${bucket.name}/${prefix}`);
     try {
-        for await (const event of bucket.deleteAll({
+        for await (const event of deleteAllVersions(bucket, {
             prefix,
             dryRun,
+            bypassGovernance,
             ...(signal !== undefined ? { signal } : {}),
         })) {
             if (event.type === 'delete') {
@@ -35872,7 +35937,7 @@ async function deletePrefix(bucket, prefix, dryRun, signal) {
     }
     return { files, errors };
 }
-async function deleteOne(bucket, fileName, dryRun) {
+async function deleteOne(bucket, fileName, dryRun, bypassGovernance) {
     const hit = await findFileByName(bucket, fileName);
     startGroup(`${dryRun ? 'dry-run' : 'delete'} b2://${bucket.name}/${fileName}`);
     try {
@@ -35883,7 +35948,12 @@ async function deleteOne(bucket, fileName, dryRun) {
                 errors: 0,
             };
         }
-        await bucket.deleteFileVersion(fileName, hit.fileId);
+        if (bypassGovernance) {
+            await bucket.deleteFileVersion(fileName, hit.fileId, { bypassGovernance: true });
+        }
+        else {
+            await bucket.deleteFileVersion(fileName, hit.fileId);
+        }
         info(`  deleted ${fileName} (${hit.fileId})`);
         return {
             files: [{ fileName, fileId: hit.fileId, skipped: false }],
@@ -36585,6 +36655,7 @@ async function presignOne(client, bucket, fileName, ttlSeconds, authPrefix) {
 
 ;// CONCATENATED MODULE: ./src/commands/purge.ts
 
+
 /**
  * Permanently delete every file version (including hide markers and historic
  * uploads) under a prefix. Differs from `delete` in that `delete`'s
@@ -36615,14 +36686,15 @@ async function purgeCommand(bucket, inputs, signal) {
         const opts = {
             ...(prefix !== '' ? { prefix } : {}),
             dryRun,
+            bypassGovernance: inputs.bypassGovernance,
             ...(signal !== undefined ? { signal } : {}),
         };
-        for await (const event of bucket.deleteAll(opts)) {
+        for await (const event of deleteAllVersions(bucket, opts)) {
             if (event.type === 'delete') {
                 files.push({
                     fileName: event.fileName,
                     fileId: event.fileId,
-                    action: 'upload',
+                    action: event.action,
                     skipped: false,
                 });
                 info(`  purged ${event.fileName} (${event.fileId})`);
