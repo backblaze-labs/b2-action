@@ -168,7 +168,7 @@ export async function listVersionsCommand(
   try {
     const versions = bucket.paginateFileVersions({
       prefix,
-      pageSize: Math.min(1000, maxResults),
+      pageSize: Math.min(1000, maxResults + 1),
       ...(signal !== undefined ? { signal } : {}),
     })
 

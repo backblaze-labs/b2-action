@@ -183,7 +183,7 @@ describe('list-versions command', () => {
 
     expect(paginateFileVersions).toHaveBeenCalledWith({
       prefix: 'history/',
-      pageSize: 10,
+      pageSize: 11,
       signal: controller.signal,
     })
   })
