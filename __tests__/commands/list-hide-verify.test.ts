@@ -1,8 +1,13 @@
 import { rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import type { Bucket, FileVersion } from '@backblaze-labs/b2-sdk'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { hideCommand } from '../../src/commands/hide.ts'
-import { listCommand, listVersionsCommand } from '../../src/commands/list.ts'
+import {
+  LIST_VERSIONS_MAX_RESULTS,
+  listCommand,
+  listVersionsCommand,
+} from '../../src/commands/list.ts'
 import { unhideCommand } from '../../src/commands/unhide.ts'
 import { uploadCommand } from '../../src/commands/upload.ts'
 import { verifyCommand } from '../../src/commands/verify.ts'
@@ -10,6 +15,29 @@ import { makeFixture, makeInputs, seedFile, type TestFixture } from '../_helpers
 
 function inputs(action: Parameters<typeof makeInputs>[0], over: Record<string, unknown> = {}) {
   return makeInputs(action, { bucket: 'gh-action-listhide', ...over })
+}
+
+type PaginateFileVersionsOptions = Parameters<Bucket['paginateFileVersions']>[0]
+
+function fileVersion(over: Partial<FileVersion> = {}): FileVersion {
+  return {
+    accountId: 'account' as FileVersion['accountId'],
+    action: 'upload',
+    bucketId: 'bucket' as FileVersion['bucketId'],
+    contentLength: 1,
+    contentMd5: null,
+    contentSha1: 'sha1',
+    contentType: 'text/plain',
+    fileId: 'id-default' as FileVersion['fileId'],
+    fileInfo: {},
+    fileName: 'version.txt',
+    fileRetention: { isClientAuthorizedToRead: true, value: null },
+    legalHold: { isClientAuthorizedToRead: true, value: null },
+    replicationStatus: null,
+    serverSideEncryption: { mode: 'none' },
+    uploadTimestamp: 1,
+    ...over,
+  }
 }
 
 describe('list command', () => {
@@ -111,6 +139,53 @@ describe('list-versions command', () => {
 
     expect(result.files).toHaveLength(2)
     expect(result.truncated).toBe(true)
+  })
+
+  it('rejects oversized max-results before starting pagination', async () => {
+    const paginateFileVersions = vi.fn()
+    const bucket = { name: 'gh-action-list-versions', paginateFileVersions } as unknown as Bucket
+
+    await expect(
+      listVersionsCommand(
+        bucket,
+        inputs('list-versions', { maxResults: LIST_VERSIONS_MAX_RESULTS + 1 }),
+      ),
+    ).rejects.toThrow(`max-results for list-versions must be <= ${LIST_VERSIONS_MAX_RESULTS}`)
+
+    expect(paginateFileVersions).not.toHaveBeenCalled()
+  })
+
+  it('honors cancellation during a multi-page version scan', async () => {
+    const controller = new AbortController()
+    const abortReason = new Error('list cancelled')
+    const paginateFileVersions = vi.fn(async function* (options?: PaginateFileVersionsOptions) {
+      expect(options?.signal).toBe(controller.signal)
+      yield fileVersion({
+        fileName: 'history/page-1.txt',
+        fileId: 'id-page-1' as FileVersion['fileId'],
+      })
+      await Promise.resolve()
+      controller.abort(abortReason)
+      yield fileVersion({
+        fileName: 'history/page-2.txt',
+        fileId: 'id-page-2' as FileVersion['fileId'],
+      })
+    })
+    const bucket = { name: 'gh-action-list-versions', paginateFileVersions } as unknown as Bucket
+
+    await expect(
+      listVersionsCommand(
+        bucket,
+        inputs('list-versions', { source: 'history/', maxResults: 10 }),
+        controller.signal,
+      ),
+    ).rejects.toThrow('list cancelled')
+
+    expect(paginateFileVersions).toHaveBeenCalledWith({
+      prefix: 'history/',
+      pageSize: 10,
+      signal: controller.signal,
+    })
   })
 })
 

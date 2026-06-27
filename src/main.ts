@@ -232,7 +232,7 @@ export async function run(): Promise<void> {
         return
       }
       case 'list-versions': {
-        const result = await listVersionsCommand(bucket, inputs)
+        const result = await listVersionsCommand(bucket, inputs, signal)
         core.setOutput('files-listed', String(result.files.length))
         setFileCountOutput(result.files.length)
         if (result.truncated) {

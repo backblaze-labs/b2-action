@@ -36483,6 +36483,8 @@ async function hideCommand(bucket, inputs) {
 
 ;// CONCATENATED MODULE: ./src/commands/list.ts
 
+/** Hard cap on list-versions entries retained in memory before summary output. */
+const LIST_VERSIONS_MAX_RESULTS = 10_000;
 /**
  * List file names under a prefix.
  *
@@ -36564,17 +36566,28 @@ async function hasVisibleUploadAfter(bucket, prefix, startFileName) {
  * flattened by `paginateFileVersions`; this command stops after `max-results`
  * and reads one extra item only to determine whether the output was truncated.
  */
-async function listVersionsCommand(bucket, inputs) {
+async function listVersionsCommand(bucket, inputs, signal) {
     const prefix = inputs.source ?? '';
     const maxResults = inputs.maxResults;
+    if (maxResults > LIST_VERSIONS_MAX_RESULTS) {
+        throw new Error(`max-results for list-versions must be <= ${LIST_VERSIONS_MAX_RESULTS}; received ${maxResults}`);
+    }
     const files = [];
     let truncated = false;
     startGroup(`list-versions b2://${bucket.name}/${prefix} (max ${maxResults})`);
     try {
-        for await (const f of bucket.paginateFileVersions({
+        const versions = bucket.paginateFileVersions({
             prefix,
             pageSize: Math.min(1000, maxResults),
-        })) {
+            ...(signal !== undefined ? { signal } : {}),
+        });
+        while (true) {
+            signal?.throwIfAborted();
+            const next = await versions.next();
+            signal?.throwIfAborted();
+            if (next.done === true)
+                break;
+            const f = next.value;
             if (files.length >= maxResults) {
                 truncated = true;
                 break;
@@ -42162,7 +42175,7 @@ async function run() {
                 return;
             }
             case 'list-versions': {
-                const result = await listVersionsCommand(bucket, inputs);
+                const result = await listVersionsCommand(bucket, inputs, signal);
                 setOutput('files-listed', String(result.files.length));
                 setFileCountOutput(result.files.length);
                 if (result.truncated) {

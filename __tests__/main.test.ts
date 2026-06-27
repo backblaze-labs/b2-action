@@ -190,6 +190,20 @@ describe('main dispatcher', () => {
     )
   })
 
+  it('passes the cancellation signal to list-versions', async () => {
+    const ctx = await loadMain()
+    let signal: AbortSignal | undefined
+    ctx.parseInputs.mockReturnValue(inputs('list-versions'))
+    ctx.commands.listVersionsCommand.mockImplementation(async (_bucket, _inputs, commandSignal) => {
+      signal = commandSignal
+      return { files: [], truncated: false }
+    })
+
+    await ctx.run()
+
+    expect(signal).toBeInstanceOf(AbortSignal)
+  })
+
   it('reports a SIGTERM-triggered command abort through setFailed', async () => {
     const ctx = await loadMain()
     ctx.parseInputs.mockReturnValue(inputs('upload'))

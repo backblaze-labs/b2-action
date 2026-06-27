@@ -60,7 +60,7 @@ The **official** Backblaze B2 GitHub Action. TypeScript-native, built on [`@back
     destination: releases/${{ github.ref_name }}/app.tar.gz
 ```
 
-For one self-contained example per verb (each is also a live integration test), see [.github/workflows/](./.github/workflows/README.md). Below is the full reference.
+For self-contained workflow examples that also run as live integration tests, see [.github/workflows/](./.github/workflows/README.md). Below is the full reference.
 
 ---
 
@@ -362,7 +362,7 @@ Set `bypass-governance: true` to shorten governance-mode retention or to remove 
 | `application-key` | no\* | | B2 application key. Falls back to `$B2_APPLICATION_KEY`. |
 | `bucket` | yes | | Destination bucket name. |
 | `source-bucket` | copy only | `bucket` | Source bucket for cross-bucket copy. |
-| `source` | command-dependent | | Local path/glob (upload/sync up); B2 file name or prefix (everything else). Prefix downloads reject keys with empty, `.`, `..`, or control-character path segments. For whole-bucket purge, omit `source` or set `/` and set `allow-bucket-purge: true`. |
+| `source` | command-dependent | | Local path/glob (upload/sync up); B2 file name or prefix (download/sync down/copy/delete/presign/list/list-versions/hide/unhide/verify/retention/head/purge). Prefix downloads reject keys with empty, `.`, `..`, or control-character path segments. For whole-bucket purge, omit `source` or set `/` and set `allow-bucket-purge: true`. |
 | `destination` | command-dependent | | B2 file/prefix (upload/sync up/copy); local path (download/sync down/verify). Upload destinations are not normalized by the action; SDK/B2 key validation errors are surfaced rather than silently rewriting `/` characters. |
 | `include` | no | | CSV of glob patterns to include (upload). |
 | `exclude` | no | `.git/**` | CSV of glob patterns to exclude (upload). |
@@ -379,7 +379,7 @@ Set `bypass-governance: true` to shorten governance-mode retention or to remove 
 | `compare-mode` | no | `modtime` | Sync comparison: `modtime` \| `size` \| `none`. |
 | `keep-mode` | no | `no-delete` | Sync deletion of orphans: `no-delete` \| `delete` \| `keep-days`. |
 | `direction` | no | `auto` | Sync direction: `auto` \| `up` (local→B2) \| `down` (B2→local). |
-| `max-results` | no | `1000` | `list`, `list-versions`, and prefix `presign` upper bound. Must be a positive decimal integer. Truncation is reported in the step summary. |
+| `max-results` | no | `1000` | `list`, `list-versions`, and prefix `presign` upper bound. Must be a positive decimal integer. `list-versions` rejects values above 10000 before listing. Truncation is reported in the step summary. |
 | `expected-sha1` | no | | `verify` literal 40-character hexadecimal SHA-1 to compare against; malformed values fail the action before comparison. Non-comparable remote SHA-1 headers such as `none` or `unverified:<sha1>` publish `verified=false` outputs before failing the step. |
 | `retention-mode` | no | | `retention` mode: `compliance` \| `governance` \| `none`. |
 | `retention-until` | no | | `retention` ISO 8601 expiry (required when mode is compliance/governance). |

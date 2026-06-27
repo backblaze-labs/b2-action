@@ -2,6 +2,9 @@ import * as core from '@actions/core'
 import type { Bucket, FileAction } from '@backblaze-labs/b2-sdk'
 import type { ParsedInputs } from '../inputs.ts'
 
+/** Hard cap on list-versions entries retained in memory before summary output. */
+export const LIST_VERSIONS_MAX_RESULTS = 10_000
+
 /** One entry in {@link ListResult.files}. Mirrors the SDK's per-version metadata. */
 export interface ListedFile {
   /** B2 file name (the key). */
@@ -148,18 +151,34 @@ async function hasVisibleUploadAfter(
 export async function listVersionsCommand(
   bucket: Bucket,
   inputs: ParsedInputs,
+  signal?: AbortSignal,
 ): Promise<ListVersionsResult> {
   const prefix = inputs.source ?? ''
   const maxResults = inputs.maxResults
+  if (maxResults > LIST_VERSIONS_MAX_RESULTS) {
+    throw new Error(
+      `max-results for list-versions must be <= ${LIST_VERSIONS_MAX_RESULTS}; received ${maxResults}`,
+    )
+  }
+
   const files: ListedFileVersion[] = []
   let truncated = false
 
   core.startGroup(`list-versions b2://${bucket.name}/${prefix} (max ${maxResults})`)
   try {
-    for await (const f of bucket.paginateFileVersions({
+    const versions = bucket.paginateFileVersions({
       prefix,
       pageSize: Math.min(1000, maxResults),
-    })) {
+      ...(signal !== undefined ? { signal } : {}),
+    })
+
+    while (true) {
+      signal?.throwIfAborted()
+      const next = await versions.next()
+      signal?.throwIfAborted()
+      if (next.done === true) break
+
+      const f = next.value
       if (files.length >= maxResults) {
         truncated = true
         break

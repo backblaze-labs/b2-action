@@ -110,8 +110,9 @@ export interface ParsedInputs {
   sourceBucket: string | undefined
   /**
    * Verb-dependent source. Upload/sync: a local path or glob. Download/copy/
-   * delete/presign/list/hide/unhide/verify/retention/head/purge: a B2 file
-   * name or prefix (trailing `/` means prefix mode for verbs that support it).
+   * delete/presign/list/list-versions/hide/unhide/verify/retention/head/purge:
+   * a B2 file name or prefix (trailing `/` means prefix mode for verbs that
+   * support it).
    */
   source: string | undefined
   /**
@@ -151,7 +152,7 @@ export interface ParsedInputs {
   keepMode: KeepMode
   /** Direction of a `sync` (auto-detected when set to `auto`). */
   syncDirection: SyncDirection
-  /** Cap on listed/presigned entries for `list` and prefix `presign`. */
+  /** Cap on listed/presigned entries for `list`, `list-versions`, and prefix `presign`. */
   maxResults: number
   /** Literal SHA-1 to compare against in `verify` (when set, no local read). */
   expectedSha1: string | undefined

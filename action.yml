@@ -22,7 +22,7 @@ inputs:
     description: 'Source bucket for cross-bucket copy. Defaults to `bucket`.'
     required: false
   source:
-    description: 'Command-dependent. upload/sync (up): local path or glob. download/sync (down)/copy/delete/presign/list/hide/unhide/verify/retention/head/purge: B2 file name or prefix. Prefix downloads reject keys with empty, `.`, `..`, or control-character path segments. For whole-bucket purge, omit source or set `/` and set allow-bucket-purge: true.'
+    description: 'Command-dependent. upload/sync (up): local path or glob. download/sync (down)/copy/delete/presign/list/list-versions/hide/unhide/verify/retention/head/purge: B2 file name or prefix. Prefix downloads reject keys with empty, `.`, `..`, or control-character path segments. For whole-bucket purge, omit source or set `/` and set allow-bucket-purge: true.'
     required: false
   destination:
     description: 'Command-dependent. upload/sync (up): B2 file name or prefix; SDK/B2 key validation errors are surfaced rather than silently rewriting `/` characters. download/sync (down): local path or directory. copy: destination B2 file name. verify: local file to compare against the remote SHA-1.'
@@ -83,7 +83,7 @@ inputs:
     required: false
     default: 'auto'
   max-results:
-    description: 'Maximum number of files returned by `list`, `list-versions`, and prefix `presign`. Must be a positive decimal integer. Default 1000.'
+    description: 'Maximum number of files returned by `list`, `list-versions`, and prefix `presign`. Must be a positive decimal integer. `list-versions` rejects values above 10000 before listing. Default 1000.'
     required: false
     default: '1000'
   expected-sha1:
