@@ -1,5 +1,5 @@
 import * as core from '@actions/core'
-import type { Bucket } from '@backblaze-labs/b2-sdk'
+import type { Bucket, FileAction } from '@backblaze-labs/b2-sdk'
 import type { ParsedInputs } from '../inputs.ts'
 
 /** One entry in {@link ListResult.files}. Mirrors the SDK's per-version metadata. */
@@ -20,11 +20,39 @@ export interface ListedFile {
   fileInfo: Record<string, string>
 }
 
+/** One entry in {@link ListVersionsResult.files}. Mirrors a B2 file version. */
+export interface ListedFileVersion {
+  /** B2 file name (the key). */
+  fileName: string
+  /** B2 file ID for this exact version. */
+  fileId: string
+  /** Action that created this version (`upload`, `hide`, `copy`, etc.). */
+  action: FileAction
+  /** Byte size of this version. Hide markers are typically zero bytes. */
+  contentLength: number
+  /** Whole-file SHA-1, or `null` when unavailable. */
+  contentSha1: string | null
+  /** Server-side upload timestamp in milliseconds since the epoch. */
+  uploadTimestamp: number
+  /** Content-Type recorded for this version. */
+  contentType: string
+  /** Custom `X-Bz-Info-*` headers recorded for this version. */
+  fileInfo: Record<string, string>
+}
+
 /** Result of {@link listCommand}. */
 export interface ListResult {
   /** Files matching the prefix, capped by `maxResults`. */
   files: ListedFile[]
   /** True when more visible upload files exist beyond `maxResults`. Use to detect pagination. */
+  truncated: boolean
+}
+
+/** Result of {@link listVersionsCommand}. */
+export interface ListVersionsResult {
+  /** File versions matching the prefix, capped by `maxResults`. */
+  files: ListedFileVersion[]
+  /** True when more versions exist beyond `maxResults`. Use to detect pagination. */
   truncated: boolean
 }
 
@@ -108,4 +136,50 @@ async function hasVisibleUploadAfter(
   }
 
   return false
+}
+
+/**
+ * List every version under a prefix, including historical versions and hide markers.
+ *
+ * `source` is the prefix. The SDK's two-cursor `listFileVersions` pagination is
+ * flattened by `paginateFileVersions`; this command stops after `max-results`
+ * and reads one extra item only to determine whether the output was truncated.
+ */
+export async function listVersionsCommand(
+  bucket: Bucket,
+  inputs: ParsedInputs,
+): Promise<ListVersionsResult> {
+  const prefix = inputs.source ?? ''
+  const maxResults = inputs.maxResults
+  const files: ListedFileVersion[] = []
+  let truncated = false
+
+  core.startGroup(`list-versions b2://${bucket.name}/${prefix} (max ${maxResults})`)
+  try {
+    for await (const f of bucket.paginateFileVersions({
+      prefix,
+      pageSize: Math.min(1000, maxResults),
+    })) {
+      if (files.length >= maxResults) {
+        truncated = true
+        break
+      }
+
+      files.push({
+        fileName: f.fileName,
+        fileId: f.fileId,
+        action: f.action,
+        contentLength: f.contentLength,
+        contentSha1: f.contentSha1,
+        uploadTimestamp: f.uploadTimestamp,
+        contentType: f.contentType,
+        fileInfo: f.fileInfo,
+      })
+    }
+
+    return { files, truncated }
+  } finally {
+    core.info(`  ${files.length} file version(s) listed`)
+    core.endGroup()
+  }
 }

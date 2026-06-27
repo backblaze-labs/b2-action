@@ -8,7 +8,7 @@ import { deleteCommand } from './commands/delete.ts'
 import { downloadCommand } from './commands/download.ts'
 import { headCommand } from './commands/head.ts'
 import { hideCommand } from './commands/hide.ts'
-import { listCommand } from './commands/list.ts'
+import { listCommand, listVersionsCommand } from './commands/list.ts'
 import { type PresignedFile, presignCommand } from './commands/presign.ts'
 import { purgeCommand } from './commands/purge.ts'
 import { retentionCommand } from './commands/retention.ts'
@@ -226,6 +226,32 @@ export async function run(): Promise<void> {
             fileId: f.fileId,
             sha1: f.contentSha1,
             status: f.contentType,
+          })),
+        })
+        setSummaryJsonOutput(result.files)
+        return
+      }
+      case 'list-versions': {
+        const result = await listVersionsCommand(bucket, inputs)
+        core.setOutput('files-listed', String(result.files.length))
+        setFileCountOutput(result.files.length)
+        if (result.truncated) {
+          core.warning(
+            `list-versions result truncated at max-results=${inputs.maxResults}; raise it to see more`,
+          )
+        }
+        await writeStepSummary({
+          title: `Backblaze B2: list-versions (${result.files.length}${result.truncated ? '+' : ''})`,
+          totals: {
+            files: result.files.length,
+            bytes: result.files.reduce((s, f) => s + f.contentLength, 0),
+          },
+          ...stepSummaryRows(result.files, (f) => ({
+            fileName: f.fileName,
+            size: f.contentLength,
+            fileId: f.fileId,
+            sha1: f.contentSha1,
+            status: f.action,
           })),
         })
         setSummaryJsonOutput(result.files)

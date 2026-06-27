@@ -2,7 +2,7 @@ import { rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { hideCommand } from '../../src/commands/hide.ts'
-import { listCommand } from '../../src/commands/list.ts'
+import { listCommand, listVersionsCommand } from '../../src/commands/list.ts'
 import { unhideCommand } from '../../src/commands/unhide.ts'
 import { uploadCommand } from '../../src/commands/upload.ts'
 import { verifyCommand } from '../../src/commands/verify.ts'
@@ -57,6 +57,60 @@ describe('list command', () => {
 
     expect(result.files.map((f) => f.fileName)).toEqual(['a.txt', 'b.txt'])
     expect(result.truncated).toBe(false)
+  })
+})
+
+describe('list-versions command', () => {
+  let fx: TestFixture
+  beforeEach(async () => {
+    fx = await makeFixture('gh-action-list-versions')
+  })
+  afterEach(async () => {
+    await rm(fx.workDir, { recursive: true, force: true })
+  })
+
+  it('returns all versions under a prefix including hide markers', async () => {
+    await seedFile(fx, 'logs/a.txt', 'first')
+    await seedFile(fx, 'logs/a.txt', 'second')
+    await fx.bucket.hideFile('logs/a.txt')
+    await seedFile(fx, 'logs/b.txt', 'third')
+    await seedFile(fx, 'cache/c.txt', 'outside')
+
+    const result = await listVersionsCommand(
+      fx.bucket,
+      inputs('list-versions', { source: 'logs/' }),
+    )
+
+    expect(result.truncated).toBe(false)
+    expect(result.files).toHaveLength(4)
+    expect(result.files.every((f) => f.fileName.startsWith('logs/'))).toBe(true)
+    expect(result.files.map((f) => f.action)).toEqual(expect.arrayContaining(['hide', 'upload']))
+
+    const aVersions = result.files.filter((f) => f.fileName === 'logs/a.txt')
+    expect(aVersions).toHaveLength(3)
+    expect(aVersions.map((f) => f.action)).toEqual(expect.arrayContaining(['hide', 'upload']))
+    expect(
+      result.files.every(
+        (f) =>
+          f.fileId !== '' &&
+          Number.isInteger(f.uploadTimestamp) &&
+          Number.isInteger(f.contentLength),
+      ),
+    ).toBe(true)
+  })
+
+  it('caps versions at max-results and reports truncation', async () => {
+    for (let i = 0; i < 3; i++) {
+      await seedFile(fx, `history/f${i}.txt`, `body-${i}`)
+    }
+
+    const result = await listVersionsCommand(
+      fx.bucket,
+      inputs('list-versions', { source: 'history/', maxResults: 2 }),
+    )
+
+    expect(result.files).toHaveLength(2)
+    expect(result.truncated).toBe(true)
   })
 })
 

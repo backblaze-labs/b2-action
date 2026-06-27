@@ -2,10 +2,10 @@
 
 [![CI](https://github.com/backblaze-labs/b2-action/actions/workflows/ci.yml/badge.svg)](https://github.com/backblaze-labs/b2-action/actions/workflows/ci.yml) [![Release](https://github.com/backblaze-labs/b2-action/actions/workflows/release.yml/badge.svg)](https://github.com/backblaze-labs/b2-action/actions/workflows/release.yml) [![Marketplace](https://img.shields.io/github/v/release/backblaze-labs/b2-action?label=marketplace&color=red&logo=githubactions&logoColor=white)](https://github.com/marketplace/actions/backblaze-b2-cloud-storage-action) [![Latest release](https://img.shields.io/github/v/release/backblaze-labs/b2-action?display_name=tag&sort=semver&color=blue)](https://github.com/backblaze-labs/b2-action/releases/latest) [![License: MIT](https://img.shields.io/badge/license-MIT-yellow.svg)](./LICENSE) [![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen.svg)](./vitest.config.ts) [![Docs](https://img.shields.io/github/deployments/backblaze-labs/b2-action/github-pages?label=docs&logo=readthedocs&logoColor=white)](https://backblaze-labs.github.io/b2-action/)
 
-The **official** Backblaze B2 GitHub Action. TypeScript-native, built on [`@backblaze-labs/b2-sdk`](https://github.com/backblaze-labs/b2-sdk-typescript). Thirteen verbs covering every B2 operation a CI workflow needs.
+The **official** Backblaze B2 GitHub Action. TypeScript-native, built on [`@backblaze-labs/b2-sdk`](https://github.com/backblaze-labs/b2-sdk-typescript). Fourteen verbs covering every B2 operation a CI workflow needs.
 
 - **Node 24 action.** No Docker. Sub-second cold start.
-- **Thirteen verbs.** `upload`, `download`, `sync`, `copy`, `delete`, `list`, `hide`, `unhide`, `verify`, `presign`, `retention`, `head`, `purge`: pick via the `action` input.
+- **Fourteen verbs.** `upload`, `download`, `sync`, `copy`, `delete`, `list`, `list-versions`, `hide`, `unhide`, `verify`, `presign`, `retention`, `head`, `purge`: pick via the `action` input.
 - **Resumable multipart uploads** for any file size; streaming I/O so multi-GB payloads don't buffer in RAM.
 - **Server-side everything.** `copy` (same-bucket or cross-bucket) and `delete` operations stay server-side; bytes never traverse the runner.
 - **Server-side encryption.** SSE-B2 (managed) and SSE-C (customer key, base64).
@@ -94,6 +94,7 @@ Exact-version releases publish an attested `dist/index.js` asset for provenance 
 | `copy` | Server-side copy. Same bucket by default; cross-bucket with `source-bucket`. | `source`, `destination`, `bucket` |
 | `delete` | Single file by name, or prefix-bulk via `b2_list_file_versions`. Supports `dry-run` and `bypass-governance` for governance-retained versions. | `source`, `bucket` |
 | `list` | List files under a prefix; emits JSON for downstream steps. | `bucket` (and usually `source`) |
+| `list-versions` | List every file version under a prefix, including historical versions and hide markers; emits `fileId`, `action`, `uploadTimestamp`, and `contentLength` for each version. | `bucket` (and usually `source`) |
 | `hide` | Soft-delete via hide marker. Underlying data preserved until lifecycle. | `source`, `bucket` |
 | `unhide` | Restore a hidden file by deleting its top hide marker. | `source`, `bucket` |
 | `verify` | HEAD-request the remote whole-file SHA-1 and compare to `expected-sha1` or `destination` (local file). No body transfer; multipart objects cannot be verified when B2 does not expose a whole-file SHA-1. | `source`, `bucket`, plus one of `expected-sha1` / `destination` |
@@ -207,6 +208,14 @@ Exact-name `copy`, single-file `delete`, and `retention` operate only when the l
   uses: backblaze-labs/b2-action@v1
   with:
     action: list
+    bucket: my-bucket
+    source: tmp/
+    max-results: 5000
+
+- id: history
+  uses: backblaze-labs/b2-action@v1
+  with:
+    action: list-versions
     bucket: my-bucket
     source: tmp/
     max-results: 5000
@@ -348,7 +357,7 @@ Set `bypass-governance: true` to shorten governance-mode retention or to remove 
 
 | Input | Required | Default | Description |
 | --- | --- | --- | --- |
-| `action` | yes | | One of 13: `upload`, `download`, `sync`, `copy`, `delete`, `presign`, `list`, `hide`, `unhide`, `verify`, `retention`, `head`, `purge` |
+| `action` | yes | | One of 14: `upload`, `download`, `sync`, `copy`, `delete`, `presign`, `list`, `list-versions`, `hide`, `unhide`, `verify`, `retention`, `head`, `purge` |
 | `application-key-id` | no\* | | B2 application key ID. Falls back to `$B2_APPLICATION_KEY_ID`. |
 | `application-key` | no\* | | B2 application key. Falls back to `$B2_APPLICATION_KEY`. |
 | `bucket` | yes | | Destination bucket name. |
@@ -370,7 +379,7 @@ Set `bypass-governance: true` to shorten governance-mode retention or to remove 
 | `compare-mode` | no | `modtime` | Sync comparison: `modtime` \| `size` \| `none`. |
 | `keep-mode` | no | `no-delete` | Sync deletion of orphans: `no-delete` \| `delete` \| `keep-days`. |
 | `direction` | no | `auto` | Sync direction: `auto` \| `up` (local→B2) \| `down` (B2→local). |
-| `max-results` | no | `1000` | `list` upper bound. Must be a positive decimal integer. Truncation is reported in the step summary. |
+| `max-results` | no | `1000` | `list`, `list-versions`, and prefix `presign` upper bound. Must be a positive decimal integer. Truncation is reported in the step summary. |
 | `expected-sha1` | no | | `verify` literal 40-character hexadecimal SHA-1 to compare against; malformed values fail the action before comparison. Non-comparable remote SHA-1 headers such as `none` or `unverified:<sha1>` publish `verified=false` outputs before failing the step. |
 | `retention-mode` | no | | `retention` mode: `compliance` \| `governance` \| `none`. |
 | `retention-until` | no | | `retention` ISO 8601 expiry (required when mode is compliance/governance). |
@@ -391,7 +400,7 @@ Set `bypass-governance: true` to shorten governance-mode retention or to remove 
 | `files-uploaded` | upload / sync up | Count. |
 | `files-downloaded` | download / sync down | Count. |
 | `files-deleted` | delete / purge / sync | Count. |
-| `files-listed` | list / prefix presign | Count returned (capped by `max-results`). |
+| `files-listed` | list / list-versions / prefix presign | Count returned (capped by `max-results`). |
 | `presigned-url` | presign | Time-limited download URL. Masked as a secret. This is the only structured output that carries the live presigned URL. |
 | `verified` | verify | `true` / `false`. |
 | `remote-sha1` | verify | Normalized comparable remote SHA-1, raw non-comparable B2 value such as `none` or `unverified:<sha1>`, or empty when B2 does not expose one. |
@@ -406,6 +415,8 @@ Set `bypass-governance: true` to shorten governance-mode retention or to remove 
 `summary-json` is complete-or-empty-on-truncation: it never changes shape and never carries a silently partial array. Consumers that parse `summary-json` as an array must first branch on `summary-json-truncated`; when it is `true`, the scalar count outputs (`file-count`, `files-listed`, `files-uploaded`, and the other verb-specific counts) remain the authoritative totals and may exceed the number of entries in `summary-json-preview`. Do not use `summary-json-preview` as an authoritative manifest for security-sensitive checks; fail or fetch a complete manifest another way.
 
 When truncated, `summary-json-notice` contains `{ "truncated": true, "reason": string, "totalCount": number, "previewCount": number, "previewOutput": "summary-json-preview" }`.
+
+For `list-versions`, each `summary-json` entry represents one exact B2 file version and includes `fileName`, `fileId`, `action`, `uploadTimestamp`, `contentLength`, `contentSha1`, `contentType`, and `fileInfo`.
 
 For every command, `summary-json` and `summary-json-preview` omit fields with credential-bearing names (`url`, fields ending in `url`, and fields containing `authorization`, `signature`, or `token`, ignoring case, underscores, and hyphens). If a future command needs to expose a similarly named non-secret value, it must project it to an explicit safe field name before emitting the summary.
 

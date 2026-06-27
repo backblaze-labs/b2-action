@@ -7,7 +7,7 @@ branding:
 
 inputs:
   action:
-    description: 'One of: upload | download | sync | copy | delete | presign | list | hide | unhide | verify | retention | head | purge'
+    description: 'One of: upload | download | sync | copy | delete | presign | list | list-versions | hide | unhide | verify | retention | head | purge'
     required: true
   application-key-id:
     description: 'B2 application key ID. If unset, falls back to the $B2_APPLICATION_KEY_ID env var.'
@@ -83,7 +83,7 @@ inputs:
     required: false
     default: 'auto'
   max-results:
-    description: 'Maximum number of files returned by `list`. Must be a positive decimal integer. Default 1000.'
+    description: 'Maximum number of files returned by `list`, `list-versions`, and prefix `presign`. Must be a positive decimal integer. Default 1000.'
     required: false
     default: '1000'
   expected-sha1:
@@ -121,7 +121,7 @@ outputs:
   files-deleted:
     description: 'Number of files deleted (delete / purge / sync).'
   files-listed:
-    description: 'Number of files returned by `list` or prefix `presign`.'
+    description: 'Number of files returned by `list`, file versions returned by `list-versions`, or files returned by prefix `presign`.'
   presigned-url:
     description: 'Presigned download URL (presign action). This is the only structured output that carries the live presigned URL.'
   verified:

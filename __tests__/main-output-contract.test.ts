@@ -49,6 +49,7 @@ const EXPECTED_OUTPUT_KEYS = {
     'summary-json-truncated',
   ],
   list: ['file-count', 'files-listed', 'summary-json', 'summary-json-truncated'],
+  'list-versions': ['file-count', 'files-listed', 'summary-json', 'summary-json-truncated'],
   hide: ['file-count', 'file-id', 'file-name', 'summary-json', 'summary-json-truncated'],
   unhide: ['file-count', 'file-id', 'file-name', 'summary-json', 'summary-json-truncated'],
   verify: [
@@ -154,7 +155,10 @@ function mockDispatcherPath(action: ActionName) {
   vi.doMock('../src/commands/copy.ts', () => ({ copyCommand: commands.copyCommand }))
   vi.doMock('../src/commands/delete.ts', () => ({ deleteCommand: commands.deleteCommand }))
   vi.doMock('../src/commands/presign.ts', () => ({ presignCommand: commands.presignCommand }))
-  vi.doMock('../src/commands/list.ts', () => ({ listCommand: commands.listCommand }))
+  vi.doMock('../src/commands/list.ts', () => ({
+    listCommand: commands.listCommand,
+    listVersionsCommand: commands.listVersionsCommand,
+  }))
   vi.doMock('../src/commands/hide.ts', () => ({ hideCommand: commands.hideCommand }))
   vi.doMock('../src/commands/unhide.ts', () => ({ unhideCommand: commands.unhideCommand }))
   vi.doMock('../src/commands/verify.ts', () => ({ verifyCommand: commands.verifyCommand }))
@@ -177,6 +181,7 @@ function commandMocks() {
     deleteCommand: vi.fn(),
     presignCommand: vi.fn(),
     listCommand: vi.fn(),
+    listVersionsCommand: vi.fn(),
     hideCommand: vi.fn(),
     unhideCommand: vi.fn(),
     verifyCommand: vi.fn(),
@@ -233,6 +238,12 @@ function applyCommandResult(commands: ReturnType<typeof commandMocks>, action: A
       return
     case 'list':
       commands.listCommand.mockResolvedValue({ files: [file], truncated: false })
+      return
+    case 'list-versions':
+      commands.listVersionsCommand.mockResolvedValue({
+        files: [{ ...file, action: 'hide', contentLength: file.size }],
+        truncated: false,
+      })
       return
     case 'hide':
       commands.hideCommand.mockResolvedValue(file)

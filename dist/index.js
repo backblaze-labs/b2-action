@@ -35504,6 +35504,7 @@ const VALID_ACTIONS = [
     'delete',
     'presign',
     'list',
+    'list-versions',
     'hide',
     'unhide',
     'verify',
@@ -35524,6 +35525,7 @@ const ACTION_EFFECTS = {
     delete: { kind: 'write', honorsDryRun: true },
     presign: { kind: 'read', honorsDryRun: false },
     list: { kind: 'read', honorsDryRun: false },
+    'list-versions': { kind: 'read', honorsDryRun: false },
     hide: { kind: 'write', honorsDryRun: false },
     unhide: { kind: 'write', honorsDryRun: false },
     verify: { kind: 'read', honorsDryRun: false },
@@ -36554,6 +36556,46 @@ async function hasVisibleUploadAfter(bucket, prefix, startFileName) {
         cursor = page.nextFileName ?? undefined;
     }
     return false;
+}
+/**
+ * List every version under a prefix, including historical versions and hide markers.
+ *
+ * `source` is the prefix. The SDK's two-cursor `listFileVersions` pagination is
+ * flattened by `paginateFileVersions`; this command stops after `max-results`
+ * and reads one extra item only to determine whether the output was truncated.
+ */
+async function listVersionsCommand(bucket, inputs) {
+    const prefix = inputs.source ?? '';
+    const maxResults = inputs.maxResults;
+    const files = [];
+    let truncated = false;
+    startGroup(`list-versions b2://${bucket.name}/${prefix} (max ${maxResults})`);
+    try {
+        for await (const f of bucket.paginateFileVersions({
+            prefix,
+            pageSize: Math.min(1000, maxResults),
+        })) {
+            if (files.length >= maxResults) {
+                truncated = true;
+                break;
+            }
+            files.push({
+                fileName: f.fileName,
+                fileId: f.fileId,
+                action: f.action,
+                contentLength: f.contentLength,
+                contentSha1: f.contentSha1,
+                uploadTimestamp: f.uploadTimestamp,
+                contentType: f.contentType,
+                fileInfo: f.fileInfo,
+            });
+        }
+        return { files, truncated };
+    }
+    finally {
+        info(`  ${files.length} file version(s) listed`);
+        endGroup();
+    }
 }
 
 ;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.1.0/node_modules/@backblaze-labs/b2-sdk/dist/s3/index.js
@@ -42114,6 +42156,30 @@ async function run() {
                         fileId: f.fileId,
                         sha1: f.contentSha1,
                         status: f.contentType,
+                    })),
+                });
+                setSummaryJsonOutput(result.files);
+                return;
+            }
+            case 'list-versions': {
+                const result = await listVersionsCommand(bucket, inputs);
+                setOutput('files-listed', String(result.files.length));
+                setFileCountOutput(result.files.length);
+                if (result.truncated) {
+                    warning(`list-versions result truncated at max-results=${inputs.maxResults}; raise it to see more`);
+                }
+                await writeStepSummary({
+                    title: `Backblaze B2: list-versions (${result.files.length}${result.truncated ? '+' : ''})`,
+                    totals: {
+                        files: result.files.length,
+                        bytes: result.files.reduce((s, f) => s + f.contentLength, 0),
+                    },
+                    ...stepSummaryRows(result.files, (f) => ({
+                        fileName: f.fileName,
+                        size: f.contentLength,
+                        fileId: f.fileId,
+                        sha1: f.contentSha1,
+                        status: f.action,
                     })),
                 });
                 setSummaryJsonOutput(result.files);

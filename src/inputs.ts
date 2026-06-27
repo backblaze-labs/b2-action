@@ -17,6 +17,7 @@ export type ActionName =
   | 'delete'
   | 'presign'
   | 'list'
+  | 'list-versions'
   | 'hide'
   | 'unhide'
   | 'verify'
@@ -32,6 +33,7 @@ const VALID_ACTIONS: readonly ActionName[] = [
   'delete',
   'presign',
   'list',
+  'list-versions',
   'hide',
   'unhide',
   'verify',
@@ -58,6 +60,7 @@ export const ACTION_EFFECTS = {
   delete: { kind: 'write', honorsDryRun: true },
   presign: { kind: 'read', honorsDryRun: false },
   list: { kind: 'read', honorsDryRun: false },
+  'list-versions': { kind: 'read', honorsDryRun: false },
   hide: { kind: 'write', honorsDryRun: false },
   unhide: { kind: 'write', honorsDryRun: false },
   verify: { kind: 'read', honorsDryRun: false },

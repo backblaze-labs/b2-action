@@ -12,7 +12,7 @@ import {
 } from '@backblaze-labs/b2-sdk/errors'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { DownloadedFile } from '../src/commands/download.ts'
-import type { ListedFile } from '../src/commands/list.ts'
+import type { ListedFile, ListedFileVersion } from '../src/commands/list.ts'
 import type { UploadedFile } from '../src/commands/upload.ts'
 import type { ActionName, ParsedInputs } from '../src/inputs.ts'
 import {
@@ -76,6 +76,7 @@ describe('main dispatcher', () => {
     'delete',
     'presign',
     'list',
+    'list-versions',
     'hide',
     'unhide',
     'verify',
@@ -617,6 +618,55 @@ describe('main dispatcher', () => {
       fileName: 'listed-99.txt',
       fileId: 'id-listed-99',
       status: 'application/octet-stream',
+    })
+  })
+
+  it('emits list-versions summaries with version action metadata', async () => {
+    const ctx = await loadMain()
+    const files = [
+      listedFileVersion({
+        fileName: 'versions/a.txt',
+        fileId: 'id-hide',
+        action: 'hide',
+        contentLength: 0,
+      }),
+      listedFileVersion({
+        fileName: 'versions/a.txt',
+        fileId: 'id-upload',
+        action: 'upload',
+        contentLength: 12,
+      }),
+    ]
+    ctx.parseInputs.mockReturnValue(inputs('list-versions', { maxResults: 1 }))
+    ctx.commands.listVersionsCommand.mockResolvedValue({ files, truncated: true })
+
+    await ctx.run()
+
+    expect(ctx.core.warning).toHaveBeenCalledWith(
+      'list-versions result truncated at max-results=1; raise it to see more',
+    )
+    expect(outputs(ctx)).toMatchObject({
+      'files-listed': '2',
+      'file-count': '2',
+      'summary-json': JSON.stringify(files),
+    })
+    expect(firstSummary(ctx)).toMatchObject({
+      title: 'Backblaze B2: list-versions (2+)',
+      totals: { files: 2, bytes: 12 },
+      rows: [
+        {
+          fileName: 'versions/a.txt',
+          fileId: 'id-hide',
+          size: 0,
+          status: 'hide',
+        },
+        {
+          fileName: 'versions/a.txt',
+          fileId: 'id-upload',
+          size: 12,
+          status: 'upload',
+        },
+      ],
     })
   })
 
@@ -1206,6 +1256,7 @@ async function loadMain() {
     deleteCommand: vi.fn(),
     presignCommand: vi.fn(),
     listCommand: vi.fn(),
+    listVersionsCommand: vi.fn(),
     hideCommand: vi.fn(),
     unhideCommand: vi.fn(),
     verifyCommand: vi.fn(),
@@ -1233,7 +1284,10 @@ async function loadMain() {
   vi.doMock('../src/commands/copy.ts', () => ({ copyCommand: commands.copyCommand }))
   vi.doMock('../src/commands/delete.ts', () => ({ deleteCommand: commands.deleteCommand }))
   vi.doMock('../src/commands/presign.ts', () => ({ presignCommand: commands.presignCommand }))
-  vi.doMock('../src/commands/list.ts', () => ({ listCommand: commands.listCommand }))
+  vi.doMock('../src/commands/list.ts', () => ({
+    listCommand: commands.listCommand,
+    listVersionsCommand: commands.listVersionsCommand,
+  }))
   vi.doMock('../src/commands/hide.ts', () => ({ hideCommand: commands.hideCommand }))
   vi.doMock('../src/commands/unhide.ts', () => ({ unhideCommand: commands.unhideCommand }))
   vi.doMock('../src/commands/verify.ts', () => ({ verifyCommand: commands.verifyCommand }))
@@ -1393,6 +1447,22 @@ function setupSuccessfulAction(ctx: LoadedMain, action: ActionName): Record<stri
         'summary-json': JSON.stringify(files),
       })
     }
+    case 'list-versions': {
+      const files = [
+        listedFileVersion({
+          fileName: 'versioned.txt',
+          fileId: 'id-list-version',
+          action: 'hide',
+          contentLength: 0,
+        }),
+      ]
+      ctx.commands.listVersionsCommand.mockResolvedValue({ files, truncated: true })
+      return completeSummaryOutput({
+        'files-listed': '1',
+        'file-count': '1',
+        'summary-json': JSON.stringify(files),
+      })
+    }
     case 'hide': {
       const result = { fileName: 'hidden.txt', fileId: 'id-hide' }
       ctx.commands.hideCommand.mockResolvedValue(result)
@@ -1536,6 +1606,26 @@ function listedFile(override: {
     fileName: override.fileName,
     fileId: override.fileId,
     size: override.size,
+    contentSha1: fileSha1(override),
+    uploadTimestamp: FIXTURE_UPLOAD_TS,
+    contentType: override.contentType ?? 'application/octet-stream',
+    fileInfo: {},
+  }
+}
+
+function listedFileVersion(override: {
+  fileName: string
+  fileId: string
+  action: ListedFileVersion['action']
+  contentLength: number
+  contentSha1?: string | null
+  contentType?: string
+}): ListedFileVersion {
+  return {
+    fileName: override.fileName,
+    fileId: override.fileId,
+    action: override.action,
+    contentLength: override.contentLength,
     contentSha1: fileSha1(override),
     uploadTimestamp: FIXTURE_UPLOAD_TS,
     contentType: override.contentType ?? 'application/octet-stream',
