@@ -20,6 +20,47 @@ function baseInputs(): ParsedInputs {
 }
 
 const MULTIPART_ABORT_REASON = 'test abort after multipart progress'
+type UploadCall = Parameters<Bucket['upload']>[0]
+
+interface CapturingUploadBucket {
+  bucket: Bucket
+  uploadCalls: UploadCall[]
+}
+
+function makeCapturingUploadBucket(resultFileInfo?: Record<string, string>): CapturingUploadBucket {
+  const uploadCalls: UploadCall[] = []
+  const commandBucket: Pick<Bucket, 'name' | 'upload'> = {
+    name: 'fake-bucket',
+    upload: async (options: UploadCall): Promise<FileVersion> => {
+      uploadCalls.push(options)
+      await options.source.toArrayBuffer()
+      return makeUploadFileVersion(options, resultFileInfo ?? options.fileInfo ?? {})
+    },
+  }
+
+  // uploadCommand only relies on the public command boundary captured above.
+  return { bucket: commandBucket as unknown as Bucket, uploadCalls }
+}
+
+function makeUploadFileVersion(options: UploadCall, fileInfo: Record<string, string>): FileVersion {
+  return {
+    accountId: 'account-id' as FileVersion['accountId'],
+    action: 'upload',
+    bucketId: 'bucket-id' as FileVersion['bucketId'],
+    contentLength: options.source.size,
+    contentMd5: null,
+    contentSha1: 'fake-sha1',
+    contentType: options.contentType ?? 'b2/x-auto',
+    fileId: 'fake-file-id' as FileVersion['fileId'],
+    fileInfo,
+    fileName: options.fileName,
+    fileRetention: { isClientAuthorizedToRead: true, value: null },
+    legalHold: { isClientAuthorizedToRead: true, value: null },
+    replicationStatus: null,
+    serverSideEncryption: { mode: 'none' },
+    uploadTimestamp: Date.now(),
+  }
+}
 
 describe('upload + download commands (B2Simulator)', () => {
   let fx: TestFixture
@@ -53,24 +94,9 @@ describe('upload + download commands (B2Simulator)', () => {
     const mtime = new Date('2026-02-03T04:05:06.789Z')
     await utimes(local, mtime, mtime)
     const expectedMtime = Math.trunc((await stat(local)).mtimeMs)
-    const uploadCalls: Array<Parameters<Bucket['upload']>[0]> = []
-    const fakeBucket = {
-      name: 'fake-bucket',
-      upload: async (options: Parameters<Bucket['upload']>[0]): Promise<FileVersion> => {
-        uploadCalls.push(options)
-        await options.source.toArrayBuffer()
-        return {
-          fileName: options.fileName,
-          fileId: 'fake-file-id',
-          contentLength: 7,
-          contentSha1: 'fake-sha1',
-          contentType: options.contentType ?? 'b2/x-auto',
-          fileInfo: { returned_by_sdk: 'yes' },
-        } as unknown as FileVersion
-      },
-    } as unknown as Bucket
+    const { bucket, uploadCalls } = makeCapturingUploadBucket()
 
-    const result = await uploadCommand(fakeBucket, {
+    const result = await uploadCommand(bucket, {
       ...baseInputs(),
       source: local,
       destination: 'metadata.txt',
@@ -99,8 +125,40 @@ describe('upload + download commands (B2Simulator)', () => {
       'b2-cache-control': 'public, max-age=31536000',
       'b2-content-disposition': 'attachment; filename="metadata.txt"',
       src_last_modified_millis: String(expectedMtime),
-      returned_by_sdk: 'yes',
     })
+  })
+
+  it('reports SDK-returned fileInfo without merging requested key casing', async () => {
+    const local = join(fx.workDir, 'case.txt')
+    await writeFile(local, 'case')
+    const { bucket } = makeCapturingUploadBucket({ build_sha: 'abc123' })
+
+    const result = await uploadCommand(bucket, {
+      ...baseInputs(),
+      source: local,
+      fileInfo: { Build_SHA: 'abc123' },
+    })
+
+    expect(result.files[0]?.fileInfo).toEqual({ build_sha: 'abc123' })
+  })
+
+  it('validates preserved mtime fileInfo before any upload call', async () => {
+    const local = join(fx.workDir, 'too-much-metadata.txt')
+    await writeFile(local, 'payload')
+    const { bucket, uploadCalls } = makeCapturingUploadBucket()
+
+    await expect(
+      uploadCommand(bucket, {
+        ...baseInputs(),
+        source: local,
+        fileInfo: {
+          build: 'x'.repeat(2048 - 'build'.length),
+        },
+        preserveMtime: true,
+      }),
+    ).rejects.toThrow(/Invalid fileInfo: total size/)
+
+    expect(uploadCalls).toHaveLength(0)
   })
 
   it('uploads to an explicit destination key', async () => {

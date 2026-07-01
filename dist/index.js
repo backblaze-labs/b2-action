@@ -35538,7 +35538,7 @@ const VALID_RETENTION_MODE = ['compliance', 'governance', 'none'];
 const VALID_LEGAL_HOLD = ['on', 'off'];
 const APPLICATION_KEY_ID_ENV = 'B2_APPLICATION_KEY_ID';
 const APPLICATION_KEY_ENV = 'B2_APPLICATION_KEY';
-const FILE_INFO_KEY_PATTERN = /^[a-zA-Z0-9_-]+$/;
+const FILE_INFO_KEY_PATTERN = /^[a-zA-Z0-9_.+-]+$/;
 const FILE_INFO_VALUE_MAX_BYTES = 2048;
 const FILE_INFO_TOTAL_MAX_BYTES = 2048;
 const CONTENT_HEADER_FILE_INFO_KEYS = [
@@ -35603,7 +35603,7 @@ function parseInputs() {
     const contentType = optional('content-type');
     const fileInfo = parseFileInfo(optional('file-info'));
     for (const [inputName, fileInfoKey] of CONTENT_HEADER_FILE_INFO_KEYS) {
-        addFileInfo(fileInfo, fileInfoKey, optional(inputName), inputName);
+        addFileInfo(fileInfo, fileInfoKey, optional(inputName), inputName, { allowReserved: true });
     }
     validateFileInfo(fileInfo);
     const preserveMtime = parseBool('preserve-mtime', getInput('preserve-mtime') || 'false');
@@ -35772,17 +35772,21 @@ function parseFileInfo(value) {
         }
         const key = pair.slice(0, equalsIndex).trim();
         const parsedValue = pair.slice(equalsIndex + 1).trim();
-        addFileInfo(fileInfo, key, parsedValue, 'file-info');
+        addFileInfo(fileInfo, key, parsedValue, 'file-info', { allowReserved: false });
     }
     return fileInfo;
 }
-function addFileInfo(fileInfo, key, value, inputName) {
+function addFileInfo(fileInfo, key, value, inputName, options) {
     if (value === undefined)
         return;
-    if (Object.hasOwn(fileInfo, key)) {
+    const canonicalKey = key.toLowerCase();
+    if (!options.allowReserved && canonicalKey.startsWith('b2-')) {
+        throw new Error(`Reserved fileInfo key "${key}" from '${inputName}' input must use the dedicated content header inputs`);
+    }
+    if (Object.hasOwn(fileInfo, canonicalKey)) {
         throw new Error(`Duplicate fileInfo key "${key}" from '${inputName}' input`);
     }
-    fileInfo[key] = value;
+    fileInfo[canonicalKey] = value;
 }
 function validateFileInfo(fileInfo) {
     let totalBytes = 0;
@@ -41292,11 +41296,14 @@ async function uploadCommand(bucket, inputs, signal) {
     // file's multipart upload sequential so total in-flight B2 requests remain
     // bounded by the user-supplied `concurrency` value.
     const partConcurrency = isSingleExplicitFile || files.length === 1 ? inputs.concurrency : 1;
-    const uploaded = await mapWithConcurrency(files, fileConcurrency, async (f) => {
+    const uploadPlans = await mapWithConcurrency(files, fileConcurrency, async (f) => {
         signal?.throwIfAborted();
-        const fileName = remapFileName(f, inputs.destination, isSingleExplicitFile);
-        const uploadLabel = `upload ${f.localPath} → b2://${bucket.name}/${fileName}`;
-        const groupedLog = files.length === 1 || fileConcurrency === 1;
+        return await prepareUploadPlan(f, inputs, isSingleExplicitFile);
+    });
+    const uploaded = await mapWithConcurrency(uploadPlans, fileConcurrency, async (plan) => {
+        signal?.throwIfAborted();
+        const uploadLabel = `upload ${plan.localPath} → b2://${bucket.name}/${plan.fileName}`;
+        const groupedLog = uploadPlans.length === 1 || fileConcurrency === 1;
         if (groupedLog) {
             startGroup(uploadLabel);
         }
@@ -41304,7 +41311,7 @@ async function uploadCommand(bucket, inputs, signal) {
             info(uploadLabel);
         }
         try {
-            return await uploadOne(bucket, f.localPath, fileName, inputs, partConcurrency, groupedLog, signal);
+            return await uploadOne(bucket, plan, inputs, partConcurrency, groupedLog, signal);
         }
         finally {
             if (groupedLog)
@@ -41406,11 +41413,22 @@ function remapFileName(file, destination, isSingleExplicitFile) {
         return dest;
     return `${dest}/${file.fileName}`;
 }
-async function uploadOne(bucket, localPath, fileName, inputs, partConcurrency, groupedLog, signal) {
-    const fileStat = await (0,promises_.stat)(localPath);
+async function prepareUploadPlan(file, inputs, isSingleExplicitFile) {
+    const fileStat = await (0,promises_.stat)(file.localPath);
     const size = fileStat.size;
     const lastModifiedMillis = inputs.preserveMtime ? Math.trunc(fileStat.mtimeMs) : undefined;
     const fileInfo = buildUploadFileInfo(inputs.fileInfo, lastModifiedMillis);
+    validateFileInfo(fileInfo);
+    return {
+        localPath: file.localPath,
+        fileName: remapFileName(file, inputs.destination, isSingleExplicitFile),
+        size,
+        lastModifiedMillis,
+        fileInfo,
+    };
+}
+async function uploadOne(bucket, plan, inputs, partConcurrency, groupedLog, signal) {
+    const { fileInfo, fileName, lastModifiedMillis, localPath, size } = plan;
     // Stream the file from disk. The SDK's `bucket.upload` routes files larger
     // than the recommended part size through `uploadLargeFile`, which now
     // detects non-sliceable sources (StreamSource) and reads the stream once,
@@ -41446,7 +41464,7 @@ async function uploadOne(bucket, localPath, fileName, inputs, partConcurrency, g
     const sha1 = result.contentSha1;
     const detailPrefix = groupedLog ? '  ' : '';
     info(`${detailPrefix}fileId=${result.fileId} sha1=${sha1 ?? 'multipart'}`);
-    const resultFileInfo = { ...fileInfo, ...result.fileInfo };
+    const resultFileInfo = Object.keys(result.fileInfo).length > 0 ? result.fileInfo : fileInfo;
     return {
         localPath,
         fileName: result.fileName,

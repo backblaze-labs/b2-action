@@ -104,20 +104,21 @@ describe('parseInputs', () => {
     expect(r.preserveMtime).toBe(true)
   })
 
-  it('parses fileInfo as csv when no newline is present', () => {
+  it('parses and canonicalizes fileInfo as csv when no newline is present', () => {
     setInput('action', 'upload')
     setInput('application-key-id', 'k')
     setInput('application-key', 's')
     setInput('bucket', 'b')
-    setInput('file-info', 'build_sha=abc123,source_ref=main')
+    setInput('file-info', 'Build_SHA=abc123,release.version=1.2.3,ci+owner=release')
 
     expect(parseInputs().fileInfo).toEqual({
       build_sha: 'abc123',
-      source_ref: 'main',
+      'release.version': '1.2.3',
+      'ci+owner': 'release',
     })
   })
 
-  it('rejects invalid or duplicate fileInfo keys', () => {
+  it('rejects invalid, reserved, or duplicate fileInfo keys', () => {
     setInput('action', 'upload')
     setInput('application-key-id', 'k')
     setInput('application-key', 's')
@@ -131,10 +132,27 @@ describe('parseInputs', () => {
     setInput('application-key-id', 'k')
     setInput('application-key', 's')
     setInput('bucket', 'b')
-    setInput('file-info', 'b2-cache-control=private')
-    setInput('cache-control', 'public')
+    setInput('file-info', 'b2-content-type=text/html')
 
-    expect(() => parseInputs()).toThrow(/Duplicate fileInfo key "b2-cache-control"/)
+    expect(() => parseInputs()).toThrow(/Reserved fileInfo key "b2-content-type"/)
+
+    resetInputEnv()
+    setInput('action', 'upload')
+    setInput('application-key-id', 'k')
+    setInput('application-key', 's')
+    setInput('bucket', 'b')
+    setInput('file-info', 'B2-Content-Type=text/html')
+
+    expect(() => parseInputs()).toThrow(/Reserved fileInfo key "B2-Content-Type"/)
+
+    resetInputEnv()
+    setInput('action', 'upload')
+    setInput('application-key-id', 'k')
+    setInput('application-key', 's')
+    setInput('bucket', 'b')
+    setInput('file-info', 'Owner=a\nowner=b')
+
+    expect(() => parseInputs()).toThrow(/Duplicate fileInfo key "owner"/)
 
     resetInputEnv()
     setInput('action', 'upload')

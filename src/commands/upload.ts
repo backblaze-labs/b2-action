@@ -7,7 +7,7 @@ import * as glob from '@actions/glob'
 import type { Bucket } from '@backblaze-labs/b2-sdk'
 import { StreamSource } from '@backblaze-labs/b2-sdk/streams'
 import { tryStat } from '../fs.ts'
-import { type ParsedInputs, requireSource } from '../inputs.ts'
+import { type ParsedInputs, requireSource, validateFileInfo } from '../inputs.ts'
 import { makeProgressListener } from '../progress.ts'
 
 /** One entry in {@link UploadResult.files}. */
@@ -72,26 +72,22 @@ export async function uploadCommand(
   // bounded by the user-supplied `concurrency` value.
   const partConcurrency = isSingleExplicitFile || files.length === 1 ? inputs.concurrency : 1
 
-  const uploaded = await mapWithConcurrency(files, fileConcurrency, async (f) => {
+  const uploadPlans = await mapWithConcurrency(files, fileConcurrency, async (f) => {
     signal?.throwIfAborted()
-    const fileName = remapFileName(f, inputs.destination, isSingleExplicitFile)
-    const uploadLabel = `upload ${f.localPath} → b2://${bucket.name}/${fileName}`
-    const groupedLog = files.length === 1 || fileConcurrency === 1
+    return await prepareUploadPlan(f, inputs, isSingleExplicitFile)
+  })
+
+  const uploaded = await mapWithConcurrency(uploadPlans, fileConcurrency, async (plan) => {
+    signal?.throwIfAborted()
+    const uploadLabel = `upload ${plan.localPath} → b2://${bucket.name}/${plan.fileName}`
+    const groupedLog = uploadPlans.length === 1 || fileConcurrency === 1
     if (groupedLog) {
       core.startGroup(uploadLabel)
     } else {
       core.info(uploadLabel)
     }
     try {
-      return await uploadOne(
-        bucket,
-        f.localPath,
-        fileName,
-        inputs,
-        partConcurrency,
-        groupedLog,
-        signal,
-      )
+      return await uploadOne(bucket, plan, inputs, partConcurrency, groupedLog, signal)
     } finally {
       if (groupedLog) core.endGroup()
     }
@@ -148,6 +144,14 @@ export interface ResolvedFile {
   localPath: string
   /** Path relative to the glob root, used when computing the B2 key. */
   fileName: string
+}
+
+interface UploadPlan {
+  localPath: string
+  fileName: string
+  size: number
+  lastModifiedMillis: number | undefined
+  fileInfo: Record<string, string>
 }
 
 async function resolveFiles(
@@ -220,19 +224,35 @@ export function remapFileName(
   return `${dest}/${file.fileName}`
 }
 
+async function prepareUploadPlan(
+  file: ResolvedFile,
+  inputs: ParsedInputs,
+  isSingleExplicitFile: boolean,
+): Promise<UploadPlan> {
+  const fileStat = await stat(file.localPath)
+  const size = fileStat.size
+  const lastModifiedMillis = inputs.preserveMtime ? Math.trunc(fileStat.mtimeMs) : undefined
+  const fileInfo = buildUploadFileInfo(inputs.fileInfo, lastModifiedMillis)
+  validateFileInfo(fileInfo)
+
+  return {
+    localPath: file.localPath,
+    fileName: remapFileName(file, inputs.destination, isSingleExplicitFile),
+    size,
+    lastModifiedMillis,
+    fileInfo,
+  }
+}
+
 async function uploadOne(
   bucket: Bucket,
-  localPath: string,
-  fileName: string,
+  plan: UploadPlan,
   inputs: ParsedInputs,
   partConcurrency: number,
   groupedLog: boolean,
   signal?: AbortSignal,
 ): Promise<UploadedFile> {
-  const fileStat = await stat(localPath)
-  const size = fileStat.size
-  const lastModifiedMillis = inputs.preserveMtime ? Math.trunc(fileStat.mtimeMs) : undefined
-  const fileInfo = buildUploadFileInfo(inputs.fileInfo, lastModifiedMillis)
+  const { fileInfo, fileName, lastModifiedMillis, localPath, size } = plan
 
   // Stream the file from disk. The SDK's `bucket.upload` routes files larger
   // than the recommended part size through `uploadLargeFile`, which now
@@ -272,7 +292,7 @@ async function uploadOne(
   const sha1 = result.contentSha1
   const detailPrefix = groupedLog ? '  ' : ''
   core.info(`${detailPrefix}fileId=${result.fileId} sha1=${sha1 ?? 'multipart'}`)
-  const resultFileInfo = { ...fileInfo, ...result.fileInfo }
+  const resultFileInfo = Object.keys(result.fileInfo).length > 0 ? result.fileInfo : fileInfo
 
   return {
     localPath,

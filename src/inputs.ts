@@ -84,7 +84,7 @@ const VALID_RETENTION_MODE: readonly RetentionMode[] = ['compliance', 'governanc
 const VALID_LEGAL_HOLD: readonly LegalHold[] = ['on', 'off']
 const APPLICATION_KEY_ID_ENV = 'B2_APPLICATION_KEY_ID'
 const APPLICATION_KEY_ENV = 'B2_APPLICATION_KEY'
-const FILE_INFO_KEY_PATTERN = /^[a-zA-Z0-9_-]+$/
+const FILE_INFO_KEY_PATTERN = /^[a-zA-Z0-9_.+-]+$/
 const FILE_INFO_VALUE_MAX_BYTES = 2048
 const FILE_INFO_TOTAL_MAX_BYTES = 2048
 const CONTENT_HEADER_FILE_INFO_KEYS = [
@@ -246,7 +246,7 @@ export function parseInputs(): ParsedInputs {
   const contentType = optional('content-type')
   const fileInfo = parseFileInfo(optional('file-info'))
   for (const [inputName, fileInfoKey] of CONTENT_HEADER_FILE_INFO_KEYS) {
-    addFileInfo(fileInfo, fileInfoKey, optional(inputName), inputName)
+    addFileInfo(fileInfo, fileInfoKey, optional(inputName), inputName, { allowReserved: true })
   }
   validateFileInfo(fileInfo)
   const preserveMtime = parseBool('preserve-mtime', core.getInput('preserve-mtime') || 'false')
@@ -449,10 +449,14 @@ export function parseFileInfo(value: string | undefined): Record<string, string>
     }
     const key = pair.slice(0, equalsIndex).trim()
     const parsedValue = pair.slice(equalsIndex + 1).trim()
-    addFileInfo(fileInfo, key, parsedValue, 'file-info')
+    addFileInfo(fileInfo, key, parsedValue, 'file-info', { allowReserved: false })
   }
 
   return fileInfo
+}
+
+interface AddFileInfoOptions {
+  allowReserved: boolean
 }
 
 function addFileInfo(
@@ -460,15 +464,22 @@ function addFileInfo(
   key: string,
   value: string | undefined,
   inputName: string,
+  options: AddFileInfoOptions,
 ): void {
   if (value === undefined) return
-  if (Object.hasOwn(fileInfo, key)) {
+  const canonicalKey = key.toLowerCase()
+  if (!options.allowReserved && canonicalKey.startsWith('b2-')) {
+    throw new Error(
+      `Reserved fileInfo key "${key}" from '${inputName}' input must use the dedicated content header inputs`,
+    )
+  }
+  if (Object.hasOwn(fileInfo, canonicalKey)) {
     throw new Error(`Duplicate fileInfo key "${key}" from '${inputName}' input`)
   }
-  fileInfo[key] = value
+  fileInfo[canonicalKey] = value
 }
 
-function validateFileInfo(fileInfo: Record<string, string>): void {
+export function validateFileInfo(fileInfo: Record<string, string>): void {
   let totalBytes = 0
   for (const [key, value] of Object.entries(fileInfo)) {
     if (!FILE_INFO_KEY_PATTERN.test(key)) {
