@@ -41296,7 +41296,6 @@ function glob_hashFiles(patterns_1) {
 
 
 
-
 /**
  * Upload one or more files to B2.
  *
@@ -41388,7 +41387,14 @@ async function resolveFiles(source, include, exclude) {
     const looksLikeGlob = /[*?[\]]/.test(source);
     if (explicitFile?.isFile() && !looksLikeGlob && include.length === 0) {
         return {
-            files: [{ localPath: (0,external_node_path_.resolve)(source), fileName: (0,external_node_path_.basename)(source) }],
+            files: [
+                {
+                    localPath: (0,external_node_path_.resolve)(source),
+                    fileName: (0,external_node_path_.basename)(source),
+                    size: explicitFile.size,
+                    mtimeMs: explicitFile.mtimeMs,
+                },
+            ],
             isSingleExplicitFile: true,
         };
     }
@@ -41417,7 +41423,7 @@ async function resolveFiles(source, include, exclude) {
         if (!s?.isFile())
             continue;
         const rel = (0,external_node_path_.relative)(root, m).split(external_node_path_.sep).join(external_node_path_.posix.sep);
-        out.push({ localPath: m, fileName: rel });
+        out.push({ localPath: m, fileName: rel, size: s.size, mtimeMs: s.mtimeMs });
     }
     out.sort(compareResolvedFiles);
     return { files: out, isSingleExplicitFile: false };
@@ -41446,9 +41452,8 @@ function remapFileName(file, destination, isSingleExplicitFile) {
     return `${dest}/${file.fileName}`;
 }
 async function prepareUploadPlan(file, inputs, isSingleExplicitFile) {
-    const fileStat = await (0,promises_.stat)(file.localPath);
-    const size = fileStat.size;
-    const lastModifiedMillis = inputs.preserveMtime ? Math.trunc(fileStat.mtimeMs) : undefined;
+    const size = file.size;
+    const lastModifiedMillis = inputs.preserveMtime ? Math.trunc(file.mtimeMs) : undefined;
     const fileInfo = buildUploadFileInfo(inputs.fileInfo, lastModifiedMillis);
     validateFileInfo(fileInfo, uploadFileInfoTotalMaxBytes(inputs.encryption));
     return {

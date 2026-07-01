@@ -1,5 +1,4 @@
 import { createReadStream } from 'node:fs'
-import { stat } from 'node:fs/promises'
 import { basename, posix, relative, resolve, sep } from 'node:path'
 import { Readable } from 'node:stream'
 import * as core from '@actions/core'
@@ -153,6 +152,10 @@ export interface ResolvedFile {
   localPath: string
   /** Path relative to the glob root, used when computing the B2 key. */
   fileName: string
+  /** Byte size captured while resolving the upload source. */
+  size: number
+  /** Modification time captured while resolving the upload source. */
+  mtimeMs: number
 }
 
 interface UploadPlan {
@@ -173,7 +176,14 @@ async function resolveFiles(
 
   if (explicitFile?.isFile() && !looksLikeGlob && include.length === 0) {
     return {
-      files: [{ localPath: resolve(source), fileName: basename(source) }],
+      files: [
+        {
+          localPath: resolve(source),
+          fileName: basename(source),
+          size: explicitFile.size,
+          mtimeMs: explicitFile.mtimeMs,
+        },
+      ],
       isSingleExplicitFile: true,
     }
   }
@@ -201,7 +211,7 @@ async function resolveFiles(
     // symlinks, races where a file is unlinked between glob and stat, etc.).
     if (!s?.isFile()) continue
     const rel = relative(root, m).split(sep).join(posix.sep)
-    out.push({ localPath: m, fileName: rel })
+    out.push({ localPath: m, fileName: rel, size: s.size, mtimeMs: s.mtimeMs })
   }
   out.sort(compareResolvedFiles)
   return { files: out, isSingleExplicitFile: false }
@@ -238,9 +248,8 @@ async function prepareUploadPlan(
   inputs: ParsedInputs,
   isSingleExplicitFile: boolean,
 ): Promise<UploadPlan> {
-  const fileStat = await stat(file.localPath)
-  const size = fileStat.size
-  const lastModifiedMillis = inputs.preserveMtime ? Math.trunc(fileStat.mtimeMs) : undefined
+  const size = file.size
+  const lastModifiedMillis = inputs.preserveMtime ? Math.trunc(file.mtimeMs) : undefined
   const fileInfo = buildUploadFileInfo(inputs.fileInfo, lastModifiedMillis)
   validateFileInfo(fileInfo, uploadFileInfoTotalMaxBytes(inputs.encryption))
 
