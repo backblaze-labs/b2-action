@@ -35754,8 +35754,9 @@ function splitCsv(value) {
         .filter((s) => s.length > 0);
 }
 /**
- * Parse upload fileInfo metadata from newline-delimited or CSV-style
- * `key=value` entries. Newline mode preserves commas inside values.
+ * Parse upload fileInfo metadata from newline-delimited or simple
+ * comma-separated `key=value` entries. Newline mode preserves commas inside
+ * values.
  *
  * @internal
  */
@@ -35811,7 +35812,13 @@ function validateFileInfo(fileInfo, totalMaxBytes = FILE_INFO_TOTAL_MAX_BYTES) {
         throw new Error(`Invalid fileInfo: ${entries.length} entries exceeds ${FILE_INFO_MAX_ENTRIES}`);
     }
     let totalBytes = 0;
+    const seenCanonicalKeys = new Set();
     for (const [key, value] of entries) {
+        const canonicalKey = key.toLowerCase();
+        if (seenCanonicalKeys.has(canonicalKey)) {
+            throw new Error(`Duplicate fileInfo key "${key}" from upload metadata`);
+        }
+        seenCanonicalKeys.add(canonicalKey);
         if (!FILE_INFO_KEY_PATTERN.test(key)) {
             throw new Error(`Invalid fileInfo key "${key}" from 'file-info'. Keys must match ${FILE_INFO_KEY_PATTERN.source}`);
         }
@@ -41500,8 +41507,18 @@ async function uploadOne(bucket, plan, inputs, partConcurrency, groupedLog, sign
     };
 }
 function buildUploadFileInfo(inputFileInfo, lastModifiedMillis) {
-    const fileInfo = { ...inputFileInfo };
+    const fileInfo = {};
+    for (const [key, value] of Object.entries(inputFileInfo)) {
+        const canonicalKey = key.toLowerCase();
+        if (Object.hasOwn(fileInfo, canonicalKey)) {
+            throw new Error(`Duplicate fileInfo key "${key}" from upload metadata`);
+        }
+        fileInfo[canonicalKey] = value;
+    }
     if (lastModifiedMillis !== undefined) {
+        if (Object.hasOwn(fileInfo, 'src_last_modified_millis')) {
+            throw new Error(`Duplicate fileInfo key "src_last_modified_millis" from 'preserve-mtime' input`);
+        }
         fileInfo.src_last_modified_millis = String(lastModifiedMillis);
     }
     return fileInfo;

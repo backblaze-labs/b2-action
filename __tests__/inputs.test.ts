@@ -104,7 +104,7 @@ describe('parseInputs', () => {
     expect(r.preserveMtime).toBe(true)
   })
 
-  it('parses and canonicalizes fileInfo as csv when no newline is present', () => {
+  it('parses and canonicalizes fileInfo as comma-separated pairs when no newline is present', () => {
     setInput('action', 'upload')
     setInput('application-key-id', 'k')
     setInput('application-key', 's')
@@ -153,6 +153,16 @@ describe('parseInputs', () => {
     setInput('application-key-id', 'k')
     setInput('application-key', 's')
     setInput('bucket', 'b')
+    setInput('file-info', 'B2-CONTENT-DISPOSITION=inline')
+    setInput('content-disposition', 'attachment; filename="app.tar.gz"')
+
+    expect(() => parseInputs()).toThrow(/Reserved fileInfo key "B2-CONTENT-DISPOSITION"/)
+
+    resetInputEnv()
+    setInput('action', 'upload')
+    setInput('application-key-id', 'k')
+    setInput('application-key', 's')
+    setInput('bucket', 'b')
     setInput('file-info', 'Owner=a\nowner=b')
 
     expect(() => parseInputs()).toThrow(/Duplicate fileInfo key "owner"/)
@@ -162,7 +172,7 @@ describe('parseInputs', () => {
     setInput('application-key-id', 'k')
     setInput('application-key', 's')
     setInput('bucket', 'b')
-    setInput('file-info', 'src_last_modified_millis=1')
+    setInput('file-info', 'SRC_LAST_MODIFIED_MILLIS=1')
     setInput('preserve-mtime', 'true')
 
     expect(() => parseInputs()).toThrow(/Duplicate fileInfo key "src_last_modified_millis"/)

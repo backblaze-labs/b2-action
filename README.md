@@ -382,7 +382,7 @@ Set `bypass-governance: true` to shorten governance-mode retention or to remove 
 | `part-size` | no | SDK default | Multipart part size in bytes. Must be a positive decimal integer. |
 | `resume` | no | `true` | Reserved. Currently not honored; the action's streaming upload source is non-sliceable, so retries do a full re-upload. Kept in the input surface so it can light up if a `BufferSource` fallback ships. |
 | `content-type` | no | `b2/x-auto` | MIME type for uploads. |
-| `file-info` | no | | Upload fileInfo metadata as newline- or CSV-delimited `key=value` pairs. Keys are normalized to lowercase, may contain letters, digits, and B2-supported special characters, cannot start with `b2-`, and must fit B2 fileInfo limits. Use `cache-control`, `content-disposition`, `content-language`, or `expires` for reserved `b2-*` response headers. |
+| `file-info` | no | | Upload fileInfo metadata as newline- or simple comma-separated `key=value` pairs. Use newline-separated entries when values contain commas. Keys are normalized to lowercase, may contain letters, digits, and B2-supported special characters, cannot start with `b2-`, and must fit B2 fileInfo limits. Use `cache-control`, `content-disposition`, `content-language`, or `expires` for reserved `b2-*` response headers. |
 | `cache-control` | no | | Cache-Control response header to store with uploaded files. |
 | `content-disposition` | no | | Content-Disposition response header to store with uploaded files. |
 | `content-language` | no | | Content-Language response header to store with uploaded files. |
@@ -431,6 +431,8 @@ Set `bypass-governance: true` to shorten governance-mode retention or to remove 
 | `retry-after` | classified SDK failures | Retry delay in seconds, clamped to 3600. Emitted only with `retryable=true`; network failures use a default backoff. |
 
 `summary-json` is complete-or-empty-on-truncation: it never changes shape and never carries a silently partial array. Consumers that parse `summary-json` as an array must first branch on `summary-json-truncated`; when it is `true`, the scalar count outputs (`file-count`, `files-listed`, `files-uploaded`, and the other verb-specific counts) remain the authoritative totals and may exceed the number of entries in `summary-json-preview`. Do not use `summary-json-preview` as an authoritative manifest for security-sensitive checks; fail or fetch a complete manifest another way.
+
+For upload entries, `fileInfo` contains SDK-returned metadata when B2 reports it; if the SDK response omits metadata, the action falls back to the canonical fileInfo submitted with the upload request.
 
 When truncated, `summary-json-notice` contains `{ "truncated": true, "reason": string, "totalCount": number, "previewCount": number, "previewOutput": "summary-json-preview" }`.
 

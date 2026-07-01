@@ -433,8 +433,9 @@ export function splitCsv(value: string | undefined): string[] {
 }
 
 /**
- * Parse upload fileInfo metadata from newline-delimited or CSV-style
- * `key=value` entries. Newline mode preserves commas inside values.
+ * Parse upload fileInfo metadata from newline-delimited or simple
+ * comma-separated `key=value` entries. Newline mode preserves commas inside
+ * values.
  *
  * @internal
  */
@@ -508,7 +509,14 @@ export function validateFileInfo(
   }
 
   let totalBytes = 0
+  const seenCanonicalKeys = new Set<string>()
   for (const [key, value] of entries) {
+    const canonicalKey = key.toLowerCase()
+    if (seenCanonicalKeys.has(canonicalKey)) {
+      throw new Error(`Duplicate fileInfo key "${key}" from upload metadata`)
+    }
+    seenCanonicalKeys.add(canonicalKey)
+
     if (!FILE_INFO_KEY_PATTERN.test(key)) {
       throw new Error(
         `Invalid fileInfo key "${key}" from 'file-info'. Keys must match ${FILE_INFO_KEY_PATTERN.source}`,

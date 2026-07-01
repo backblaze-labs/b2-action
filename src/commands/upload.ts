@@ -27,7 +27,11 @@ export interface UploadedFile {
   size: number
   /** Whole-file SHA-1, or `null` when the file was multipart-uploaded. */
   contentSha1: string | null
-  /** B2 fileInfo metadata set on the uploaded object. */
+  /**
+   * B2 fileInfo metadata for the uploaded object. This is the SDK-returned
+   * metadata when available; otherwise it falls back to the canonical metadata
+   * submitted in the upload request.
+   */
   fileInfo: Record<string, string>
 }
 
@@ -313,8 +317,20 @@ function buildUploadFileInfo(
   inputFileInfo: Record<string, string>,
   lastModifiedMillis: number | undefined,
 ): Record<string, string> {
-  const fileInfo = { ...inputFileInfo }
+  const fileInfo: Record<string, string> = {}
+  for (const [key, value] of Object.entries(inputFileInfo)) {
+    const canonicalKey = key.toLowerCase()
+    if (Object.hasOwn(fileInfo, canonicalKey)) {
+      throw new Error(`Duplicate fileInfo key "${key}" from upload metadata`)
+    }
+    fileInfo[canonicalKey] = value
+  }
   if (lastModifiedMillis !== undefined) {
+    if (Object.hasOwn(fileInfo, 'src_last_modified_millis')) {
+      throw new Error(
+        `Duplicate fileInfo key "src_last_modified_millis" from 'preserve-mtime' input`,
+      )
+    }
     fileInfo.src_last_modified_millis = String(lastModifiedMillis)
   }
   return fileInfo

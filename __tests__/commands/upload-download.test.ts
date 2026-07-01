@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { downloadCommand, replaceDownloadedFile } from '../../src/commands/download.ts'
 import { uploadCommand } from '../../src/commands/upload.ts'
 import type { ParsedInputs } from '../../src/inputs.ts'
+import { parseSse } from '../../src/sse.ts'
 import {
   captureStdout,
   makeFixture,
@@ -142,8 +143,30 @@ describe('upload + download commands (B2Simulator)', () => {
     expect(result.files[0]?.fileInfo).toEqual({ build_sha: 'abc123' })
   })
 
-  it('validates preserved mtime fileInfo before any upload call', async () => {
+  it('validates near-limit preserved mtime fileInfo before any upload call', async () => {
     const local = join(fx.workDir, 'too-much-metadata.txt')
+    await writeFile(local, 'payload')
+    const { bucket, uploadCalls } = makeCapturingUploadBucket()
+    const encryptedFileInfoBudget = 2048
+    const key = 'build'
+
+    await expect(
+      uploadCommand(bucket, {
+        ...baseInputs(),
+        source: local,
+        fileInfo: {
+          [key]: 'x'.repeat(encryptedFileInfoBudget - key.length),
+        },
+        encryption: parseSse('B2'),
+        preserveMtime: true,
+      }),
+    ).rejects.toThrow(/Invalid fileInfo value for "src_last_modified_millis"/)
+
+    expect(uploadCalls).toHaveLength(0)
+  })
+
+  it('rejects mixed-case preserved mtime duplicates before any upload call', async () => {
+    const local = join(fx.workDir, 'duplicate-metadata.txt')
     await writeFile(local, 'payload')
     const { bucket, uploadCalls } = makeCapturingUploadBucket()
 
@@ -152,11 +175,11 @@ describe('upload + download commands (B2Simulator)', () => {
         ...baseInputs(),
         source: local,
         fileInfo: {
-          build: 'x'.repeat(7000 - 'build'.length),
+          SRC_LAST_MODIFIED_MILLIS: '1',
         },
         preserveMtime: true,
       }),
-    ).rejects.toThrow(/Invalid fileInfo value/)
+    ).rejects.toThrow(/Duplicate fileInfo key "src_last_modified_millis"/)
 
     expect(uploadCalls).toHaveLength(0)
   })
@@ -902,7 +925,6 @@ describe('upload + download: log + branch coverage', () => {
   })
 
   it('round-trips an SSE-C file: download decrypts with the same customer key', async () => {
-    const { parseSse } = await import('../../src/sse.ts')
     const enc = parseSse(`C:${Buffer.alloc(32, 0x61).toString('base64')}`)
     const local = join(fx.workDir, 'enc.txt')
     await writeFile(local, 'secret-body')
