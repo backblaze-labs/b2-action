@@ -135,7 +135,9 @@ describe('parseInputs', () => {
     setInput('bucket', 'b')
     setInput('file-info', 'b2-content-type=text/html')
 
-    expect(() => parseInputs()).toThrow(/Reserved fileInfo key "b2-content-type"/)
+    expect(() => parseInputs()).toThrow(
+      /Reserved fileInfo key "b2-content-type".*dedicated upload inputs.*content-type/,
+    )
 
     resetInputEnv()
     setInput('action', 'upload')

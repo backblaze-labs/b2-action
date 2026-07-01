@@ -473,7 +473,7 @@ function addFileInfo(
   const canonicalKey = key.toLowerCase()
   if (!options.allowReserved && canonicalKey.startsWith('b2-')) {
     throw new Error(
-      `Reserved fileInfo key "${key}" from '${inputName}' input must use the dedicated content header inputs`,
+      `Reserved fileInfo key "${key}" from '${inputName}' input must use the dedicated upload inputs such as content-type, cache-control, content-disposition, content-language, or expires`,
     )
   }
   if (Object.hasOwn(fileInfo, canonicalKey)) {
