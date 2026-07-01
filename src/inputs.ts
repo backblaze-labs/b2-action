@@ -490,9 +490,11 @@ export function validateFileInfo(fileInfo: Record<string, string>): void {
 
     const keyBytes = utf8Encoder.encode(key).byteLength
     const valueBytes = utf8Encoder.encode(value).byteLength
-    if (valueBytes > FILE_INFO_VALUE_MAX_BYTES) {
+    const remainingValueBytes = Math.max(0, FILE_INFO_TOTAL_MAX_BYTES - totalBytes - keyBytes)
+    const valueLimit = Math.min(FILE_INFO_VALUE_MAX_BYTES, remainingValueBytes)
+    if (valueBytes > valueLimit) {
       throw new Error(
-        `Invalid fileInfo value for "${key}": ${valueBytes} bytes exceeds ${FILE_INFO_VALUE_MAX_BYTES}`,
+        `Invalid fileInfo value for "${key}": ${valueBytes} bytes exceeds ${valueLimit}`,
       )
     }
     totalBytes += keyBytes + valueBytes

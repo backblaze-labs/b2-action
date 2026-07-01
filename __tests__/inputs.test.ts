@@ -163,6 +163,17 @@ describe('parseInputs', () => {
     setInput('preserve-mtime', 'true')
 
     expect(() => parseInputs()).toThrow(/Duplicate fileInfo key "src_last_modified_millis"/)
+
+    resetInputEnv()
+    setInput('action', 'upload')
+    setInput('application-key-id', 'k')
+    setInput('application-key', 's')
+    setInput('bucket', 'b')
+    setInput('file-info', `build=${'x'.repeat(2048)}`)
+
+    expect(() => parseInputs()).toThrow(
+      /Invalid fileInfo value for "build": 2048 bytes exceeds 2043/,
+    )
   })
 
   it('parses booleans and integers', () => {

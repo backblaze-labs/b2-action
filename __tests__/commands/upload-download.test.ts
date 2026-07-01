@@ -156,7 +156,7 @@ describe('upload + download commands (B2Simulator)', () => {
         },
         preserveMtime: true,
       }),
-    ).rejects.toThrow(/Invalid fileInfo: total size/)
+    ).rejects.toThrow(/Invalid fileInfo value/)
 
     expect(uploadCalls).toHaveLength(0)
   })
