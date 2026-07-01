@@ -35790,11 +35790,21 @@ function addFileInfo(fileInfo, key, value, inputName, options) {
     }
     fileInfo[canonicalKey] = value;
 }
+/**
+ * Return the upload fileInfo byte budget for the active encryption mode.
+ *
+ * @internal
+ */
 function uploadFileInfoTotalMaxBytes(encryption) {
     return encryption === undefined
         ? FILE_INFO_TOTAL_MAX_BYTES
         : FILE_INFO_TOTAL_MAX_BYTES_WITH_ENCRYPTION;
 }
+/**
+ * Validate upload fileInfo metadata before forwarding it to the B2 SDK.
+ *
+ * @internal
+ */
 function validateFileInfo(fileInfo, totalMaxBytes = FILE_INFO_TOTAL_MAX_BYTES) {
     const entries = Object.entries(fileInfo);
     if (entries.length > FILE_INFO_MAX_ENTRIES) {
