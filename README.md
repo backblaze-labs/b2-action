@@ -382,7 +382,7 @@ Set `bypass-governance: true` to shorten governance-mode retention or to remove 
 | `part-size` | no | SDK default | Multipart part size in bytes. Must be a positive decimal integer. |
 | `resume` | no | `true` | Reserved. Currently not honored; the action's streaming upload source is non-sliceable, so retries do a full re-upload. Kept in the input surface so it can light up if a `BufferSource` fallback ships. |
 | `content-type` | no | `b2/x-auto` | MIME type for uploads. |
-| `file-info` | no | | Upload fileInfo metadata as newline- or CSV-delimited `key=value` pairs. Keys are normalized to lowercase, may contain letters, digits, dots, plus signs, underscores, and hyphens, and cannot start with `b2-`; use the explicit response-header inputs below instead. |
+| `file-info` | no | | Upload fileInfo metadata as newline- or CSV-delimited `key=value` pairs. Keys are normalized to lowercase, may contain letters, digits, and B2-supported special characters, cannot start with `b2-`, and must fit B2 fileInfo limits. Use `cache-control`, `content-disposition`, `content-language`, or `expires` for reserved `b2-*` response headers. |
 | `cache-control` | no | | Cache-Control response header to store with uploaded files. |
 | `content-disposition` | no | | Content-Disposition response header to store with uploaded files. |
 | `content-language` | no | | Content-Language response header to store with uploaded files. |

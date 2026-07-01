@@ -109,12 +109,13 @@ describe('parseInputs', () => {
     setInput('application-key-id', 'k')
     setInput('application-key', 's')
     setInput('bucket', 'b')
-    setInput('file-info', 'Build_SHA=abc123,release.version=1.2.3,ci+owner=release')
+    setInput('file-info', "Build_SHA=abc123,release.version=1.2.3,ci+owner=release,ci!role=o'clock")
 
     expect(parseInputs().fileInfo).toEqual({
       build_sha: 'abc123',
       'release.version': '1.2.3',
       'ci+owner': 'release',
+      'ci!role': "o'clock",
     })
   })
 
@@ -170,10 +171,29 @@ describe('parseInputs', () => {
     setInput('application-key', 's')
     setInput('bucket', 'b')
     setInput('file-info', `build=${'x'.repeat(2048)}`)
+    setInput('sse', 'B2')
 
     expect(() => parseInputs()).toThrow(
       /Invalid fileInfo value for "build": 2048 bytes exceeds 2043/,
     )
+
+    resetInputEnv()
+    setInput('action', 'upload')
+    setInput('application-key-id', 'k')
+    setInput('application-key', 's')
+    setInput('bucket', 'b')
+    setInput('file-info', `${'k'.repeat(51)}=v`)
+
+    expect(() => parseInputs()).toThrow(/Invalid fileInfo key "k{51}": 51 bytes exceeds 50/)
+
+    resetInputEnv()
+    setInput('action', 'upload')
+    setInput('application-key-id', 'k')
+    setInput('application-key', 's')
+    setInput('bucket', 'b')
+    setInput('file-info', Array.from({ length: 11 }, (_, i) => `k${i}=v`).join('\n'))
+
+    expect(() => parseInputs()).toThrow(/Invalid fileInfo: 11 entries exceeds 10/)
   })
 
   it('parses booleans and integers', () => {

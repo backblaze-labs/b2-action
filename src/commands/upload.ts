@@ -7,7 +7,12 @@ import * as glob from '@actions/glob'
 import type { Bucket } from '@backblaze-labs/b2-sdk'
 import { StreamSource } from '@backblaze-labs/b2-sdk/streams'
 import { tryStat } from '../fs.ts'
-import { type ParsedInputs, requireSource, validateFileInfo } from '../inputs.ts'
+import {
+  type ParsedInputs,
+  requireSource,
+  uploadFileInfoTotalMaxBytes,
+  validateFileInfo,
+} from '../inputs.ts'
 import { makeProgressListener } from '../progress.ts'
 
 /** One entry in {@link UploadResult.files}. */
@@ -233,7 +238,7 @@ async function prepareUploadPlan(
   const size = fileStat.size
   const lastModifiedMillis = inputs.preserveMtime ? Math.trunc(fileStat.mtimeMs) : undefined
   const fileInfo = buildUploadFileInfo(inputs.fileInfo, lastModifiedMillis)
-  validateFileInfo(fileInfo)
+  validateFileInfo(fileInfo, uploadFileInfoTotalMaxBytes(inputs.encryption))
 
   return {
     localPath: file.localPath,

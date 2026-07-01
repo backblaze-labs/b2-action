@@ -84,9 +84,11 @@ const VALID_RETENTION_MODE: readonly RetentionMode[] = ['compliance', 'governanc
 const VALID_LEGAL_HOLD: readonly LegalHold[] = ['on', 'off']
 const APPLICATION_KEY_ID_ENV = 'B2_APPLICATION_KEY_ID'
 const APPLICATION_KEY_ENV = 'B2_APPLICATION_KEY'
-const FILE_INFO_KEY_PATTERN = /^[a-zA-Z0-9_.+-]+$/
-const FILE_INFO_VALUE_MAX_BYTES = 2048
-const FILE_INFO_TOTAL_MAX_BYTES = 2048
+const FILE_INFO_KEY_PATTERN = /^[a-zA-Z0-9_.`~!#$%^&*'|+-]+$/
+const FILE_INFO_KEY_MAX_BYTES = 50
+const FILE_INFO_MAX_ENTRIES = 10
+const FILE_INFO_TOTAL_MAX_BYTES = 7000
+const FILE_INFO_TOTAL_MAX_BYTES_WITH_ENCRYPTION = 2048
 const CONTENT_HEADER_FILE_INFO_KEYS = [
   ['cache-control', 'b2-cache-control'],
   ['content-disposition', 'b2-content-disposition'],
@@ -243,19 +245,20 @@ export function parseInputs(): ParsedInputs {
   const presignTtlSeconds = parsePositiveInt('presign-ttl', core.getInput('presign-ttl') || '3600')
   const maxResults = parsePositiveInt('max-results', core.getInput('max-results') || '1000')
 
+  const endpoint = optional('endpoint')
+  const sse = optional('sse')
+  const encryption = parseSse(sse)
+
   const contentType = optional('content-type')
   const fileInfo = parseFileInfo(optional('file-info'))
   for (const [inputName, fileInfoKey] of CONTENT_HEADER_FILE_INFO_KEYS) {
     addFileInfo(fileInfo, fileInfoKey, optional(inputName), inputName, { allowReserved: true })
   }
-  validateFileInfo(fileInfo)
+  validateFileInfo(fileInfo, uploadFileInfoTotalMaxBytes(encryption))
   const preserveMtime = parseBool('preserve-mtime', core.getInput('preserve-mtime') || 'false')
   if (preserveMtime && Object.hasOwn(fileInfo, 'src_last_modified_millis')) {
     throw new Error(`Duplicate fileInfo key "src_last_modified_millis" from 'preserve-mtime' input`)
   }
-  const endpoint = optional('endpoint')
-  const sse = optional('sse')
-  const encryption = parseSse(sse)
   const expectedSha1 = optional('expected-sha1')
   const retentionUntil = optional('retention-until')
 
@@ -479,9 +482,23 @@ function addFileInfo(
   fileInfo[canonicalKey] = value
 }
 
-export function validateFileInfo(fileInfo: Record<string, string>): void {
+export function uploadFileInfoTotalMaxBytes(encryption: EncryptionSetting | undefined): number {
+  return encryption === undefined
+    ? FILE_INFO_TOTAL_MAX_BYTES
+    : FILE_INFO_TOTAL_MAX_BYTES_WITH_ENCRYPTION
+}
+
+export function validateFileInfo(
+  fileInfo: Record<string, string>,
+  totalMaxBytes = FILE_INFO_TOTAL_MAX_BYTES,
+): void {
+  const entries = Object.entries(fileInfo)
+  if (entries.length > FILE_INFO_MAX_ENTRIES) {
+    throw new Error(`Invalid fileInfo: ${entries.length} entries exceeds ${FILE_INFO_MAX_ENTRIES}`)
+  }
+
   let totalBytes = 0
-  for (const [key, value] of Object.entries(fileInfo)) {
+  for (const [key, value] of entries) {
     if (!FILE_INFO_KEY_PATTERN.test(key)) {
       throw new Error(
         `Invalid fileInfo key "${key}" from 'file-info'. Keys must match ${FILE_INFO_KEY_PATTERN.source}`,
@@ -489,21 +506,24 @@ export function validateFileInfo(fileInfo: Record<string, string>): void {
     }
 
     const keyBytes = utf8Encoder.encode(key).byteLength
-    const valueBytes = utf8Encoder.encode(value).byteLength
-    const remainingValueBytes = Math.max(0, FILE_INFO_TOTAL_MAX_BYTES - totalBytes - keyBytes)
-    const valueLimit = Math.min(FILE_INFO_VALUE_MAX_BYTES, remainingValueBytes)
-    if (valueBytes > valueLimit) {
+    if (keyBytes > FILE_INFO_KEY_MAX_BYTES) {
       throw new Error(
-        `Invalid fileInfo value for "${key}": ${valueBytes} bytes exceeds ${valueLimit}`,
+        `Invalid fileInfo key "${key}": ${keyBytes} bytes exceeds ${FILE_INFO_KEY_MAX_BYTES}`,
+      )
+    }
+
+    const valueBytes = utf8Encoder.encode(value).byteLength
+    const remainingValueBytes = Math.max(0, totalMaxBytes - totalBytes - keyBytes)
+    if (valueBytes > remainingValueBytes) {
+      throw new Error(
+        `Invalid fileInfo value for "${key}": ${valueBytes} bytes exceeds ${remainingValueBytes}`,
       )
     }
     totalBytes += keyBytes + valueBytes
   }
 
-  if (totalBytes > FILE_INFO_TOTAL_MAX_BYTES) {
-    throw new Error(
-      `Invalid fileInfo: total size ${totalBytes} bytes exceeds ${FILE_INFO_TOTAL_MAX_BYTES}`,
-    )
+  if (totalBytes > totalMaxBytes) {
+    throw new Error(`Invalid fileInfo: total size ${totalBytes} bytes exceeds ${totalMaxBytes}`)
   }
 }
 

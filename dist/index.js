@@ -35538,9 +35538,11 @@ const VALID_RETENTION_MODE = ['compliance', 'governance', 'none'];
 const VALID_LEGAL_HOLD = ['on', 'off'];
 const APPLICATION_KEY_ID_ENV = 'B2_APPLICATION_KEY_ID';
 const APPLICATION_KEY_ENV = 'B2_APPLICATION_KEY';
-const FILE_INFO_KEY_PATTERN = /^[a-zA-Z0-9_.+-]+$/;
-const FILE_INFO_VALUE_MAX_BYTES = 2048;
-const FILE_INFO_TOTAL_MAX_BYTES = 2048;
+const FILE_INFO_KEY_PATTERN = /^[a-zA-Z0-9_.`~!#$%^&*'|+-]+$/;
+const FILE_INFO_KEY_MAX_BYTES = 50;
+const FILE_INFO_MAX_ENTRIES = 10;
+const FILE_INFO_TOTAL_MAX_BYTES = 7000;
+const FILE_INFO_TOTAL_MAX_BYTES_WITH_ENCRYPTION = 2048;
 const CONTENT_HEADER_FILE_INFO_KEYS = [
     ['cache-control', 'b2-cache-control'],
     ['content-disposition', 'b2-content-disposition'],
@@ -35600,19 +35602,19 @@ function parseInputs() {
     const bypassGovernance = parseBool('bypass-governance', getInput('bypass-governance') || 'false');
     const presignTtlSeconds = parsePositiveInt('presign-ttl', getInput('presign-ttl') || '3600');
     const maxResults = parsePositiveInt('max-results', getInput('max-results') || '1000');
+    const endpoint = optional('endpoint');
+    const sse = optional('sse');
+    const encryption = parseSse(sse);
     const contentType = optional('content-type');
     const fileInfo = parseFileInfo(optional('file-info'));
     for (const [inputName, fileInfoKey] of CONTENT_HEADER_FILE_INFO_KEYS) {
         addFileInfo(fileInfo, fileInfoKey, optional(inputName), inputName, { allowReserved: true });
     }
-    validateFileInfo(fileInfo);
+    validateFileInfo(fileInfo, uploadFileInfoTotalMaxBytes(encryption));
     const preserveMtime = parseBool('preserve-mtime', getInput('preserve-mtime') || 'false');
     if (preserveMtime && Object.hasOwn(fileInfo, 'src_last_modified_millis')) {
         throw new Error(`Duplicate fileInfo key "src_last_modified_millis" from 'preserve-mtime' input`);
     }
-    const endpoint = optional('endpoint');
-    const sse = optional('sse');
-    const encryption = parseSse(sse);
     const expectedSha1 = optional('expected-sha1');
     const retentionUntil = optional('retention-until');
     const compareMode = parseEnum('compare-mode', (getInput('compare-mode') || 'modtime').toLowerCase(), VALID_COMPARE);
@@ -35788,23 +35790,34 @@ function addFileInfo(fileInfo, key, value, inputName, options) {
     }
     fileInfo[canonicalKey] = value;
 }
-function validateFileInfo(fileInfo) {
+function uploadFileInfoTotalMaxBytes(encryption) {
+    return encryption === undefined
+        ? FILE_INFO_TOTAL_MAX_BYTES
+        : FILE_INFO_TOTAL_MAX_BYTES_WITH_ENCRYPTION;
+}
+function validateFileInfo(fileInfo, totalMaxBytes = FILE_INFO_TOTAL_MAX_BYTES) {
+    const entries = Object.entries(fileInfo);
+    if (entries.length > FILE_INFO_MAX_ENTRIES) {
+        throw new Error(`Invalid fileInfo: ${entries.length} entries exceeds ${FILE_INFO_MAX_ENTRIES}`);
+    }
     let totalBytes = 0;
-    for (const [key, value] of Object.entries(fileInfo)) {
+    for (const [key, value] of entries) {
         if (!FILE_INFO_KEY_PATTERN.test(key)) {
             throw new Error(`Invalid fileInfo key "${key}" from 'file-info'. Keys must match ${FILE_INFO_KEY_PATTERN.source}`);
         }
         const keyBytes = inputs_utf8Encoder.encode(key).byteLength;
+        if (keyBytes > FILE_INFO_KEY_MAX_BYTES) {
+            throw new Error(`Invalid fileInfo key "${key}": ${keyBytes} bytes exceeds ${FILE_INFO_KEY_MAX_BYTES}`);
+        }
         const valueBytes = inputs_utf8Encoder.encode(value).byteLength;
-        const remainingValueBytes = Math.max(0, FILE_INFO_TOTAL_MAX_BYTES - totalBytes - keyBytes);
-        const valueLimit = Math.min(FILE_INFO_VALUE_MAX_BYTES, remainingValueBytes);
-        if (valueBytes > valueLimit) {
-            throw new Error(`Invalid fileInfo value for "${key}": ${valueBytes} bytes exceeds ${valueLimit}`);
+        const remainingValueBytes = Math.max(0, totalMaxBytes - totalBytes - keyBytes);
+        if (valueBytes > remainingValueBytes) {
+            throw new Error(`Invalid fileInfo value for "${key}": ${valueBytes} bytes exceeds ${remainingValueBytes}`);
         }
         totalBytes += keyBytes + valueBytes;
     }
-    if (totalBytes > FILE_INFO_TOTAL_MAX_BYTES) {
-        throw new Error(`Invalid fileInfo: total size ${totalBytes} bytes exceeds ${FILE_INFO_TOTAL_MAX_BYTES}`);
+    if (totalBytes > totalMaxBytes) {
+        throw new Error(`Invalid fileInfo: total size ${totalBytes} bytes exceeds ${totalMaxBytes}`);
     }
 }
 /**
@@ -41420,7 +41433,7 @@ async function prepareUploadPlan(file, inputs, isSingleExplicitFile) {
     const size = fileStat.size;
     const lastModifiedMillis = inputs.preserveMtime ? Math.trunc(fileStat.mtimeMs) : undefined;
     const fileInfo = buildUploadFileInfo(inputs.fileInfo, lastModifiedMillis);
-    validateFileInfo(fileInfo);
+    validateFileInfo(fileInfo, uploadFileInfoTotalMaxBytes(inputs.encryption));
     return {
         localPath: file.localPath,
         fileName: remapFileName(file, inputs.destination, isSingleExplicitFile),

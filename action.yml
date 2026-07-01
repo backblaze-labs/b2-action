@@ -49,7 +49,7 @@ inputs:
     description: 'Content-Type for uploads. Defaults to "b2/x-auto" (B2 auto-detects).'
     required: false
   file-info:
-    description: 'Custom upload fileInfo metadata as newline- or comma-separated key=value pairs. Keys are normalized to lowercase, may contain letters, digits, dots, plus signs, underscores, and hyphens, and cannot start with b2-.'
+    description: "Custom upload fileInfo metadata as newline- or comma-separated key=value pairs. Keys are normalized to lowercase, may contain letters, digits, and B2-supported special characters (-_.`~!#$%^&*'|+), cannot start with b2-, and must fit B2 fileInfo limits. Use cache-control/content-disposition/content-language/expires for reserved b2-* response headers."
     required: false
   cache-control:
     description: 'Cache-Control response header to store with uploaded files.'

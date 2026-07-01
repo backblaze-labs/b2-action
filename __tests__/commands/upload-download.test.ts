@@ -152,7 +152,7 @@ describe('upload + download commands (B2Simulator)', () => {
         ...baseInputs(),
         source: local,
         fileInfo: {
-          build: 'x'.repeat(2048 - 'build'.length),
+          build: 'x'.repeat(7000 - 'build'.length),
         },
         preserveMtime: true,
       }),
