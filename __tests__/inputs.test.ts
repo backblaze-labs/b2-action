@@ -76,6 +76,77 @@ describe('parseInputs', () => {
     expect(r.exclude).toEqual(['**/*.log'])
   })
 
+  it('parses upload fileInfo and content header inputs', () => {
+    setInput('action', 'upload')
+    setInput('application-key-id', 'k')
+    setInput('application-key', 's')
+    setInput('bucket', 'b')
+    setInput(
+      'file-info',
+      ['build_sha=abc123', 'source_ref=refs/heads/main', 'owner=ci,release'].join('\n'),
+    )
+    setInput('cache-control', 'public, max-age=31536000')
+    setInput('content-disposition', 'attachment; filename="app.tar.gz"')
+    setInput('content-language', 'en-US')
+    setInput('expires', 'Wed, 21 Oct 2030 07:28:00 GMT')
+    setInput('preserve-mtime', 'yes')
+
+    const r = parseInputs()
+    expect(r.fileInfo).toEqual({
+      build_sha: 'abc123',
+      source_ref: 'refs/heads/main',
+      owner: 'ci,release',
+      'b2-cache-control': 'public, max-age=31536000',
+      'b2-content-disposition': 'attachment; filename="app.tar.gz"',
+      'b2-content-language': 'en-US',
+      'b2-expires': 'Wed, 21 Oct 2030 07:28:00 GMT',
+    })
+    expect(r.preserveMtime).toBe(true)
+  })
+
+  it('parses fileInfo as csv when no newline is present', () => {
+    setInput('action', 'upload')
+    setInput('application-key-id', 'k')
+    setInput('application-key', 's')
+    setInput('bucket', 'b')
+    setInput('file-info', 'build_sha=abc123,source_ref=main')
+
+    expect(parseInputs().fileInfo).toEqual({
+      build_sha: 'abc123',
+      source_ref: 'main',
+    })
+  })
+
+  it('rejects invalid or duplicate fileInfo keys', () => {
+    setInput('action', 'upload')
+    setInput('application-key-id', 'k')
+    setInput('application-key', 's')
+    setInput('bucket', 'b')
+    setInput('file-info', 'bad key=value')
+
+    expect(() => parseInputs()).toThrow(/Invalid fileInfo key "bad key"/)
+
+    resetInputEnv()
+    setInput('action', 'upload')
+    setInput('application-key-id', 'k')
+    setInput('application-key', 's')
+    setInput('bucket', 'b')
+    setInput('file-info', 'b2-cache-control=private')
+    setInput('cache-control', 'public')
+
+    expect(() => parseInputs()).toThrow(/Duplicate fileInfo key "b2-cache-control"/)
+
+    resetInputEnv()
+    setInput('action', 'upload')
+    setInput('application-key-id', 'k')
+    setInput('application-key', 's')
+    setInput('bucket', 'b')
+    setInput('file-info', 'src_last_modified_millis=1')
+    setInput('preserve-mtime', 'true')
+
+    expect(() => parseInputs()).toThrow(/Duplicate fileInfo key "src_last_modified_millis"/)
+  })
+
   it('parses booleans and integers', () => {
     setInput('action', 'upload')
     setInput('application-key-id', 'k')

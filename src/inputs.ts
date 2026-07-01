@@ -84,6 +84,16 @@ const VALID_RETENTION_MODE: readonly RetentionMode[] = ['compliance', 'governanc
 const VALID_LEGAL_HOLD: readonly LegalHold[] = ['on', 'off']
 const APPLICATION_KEY_ID_ENV = 'B2_APPLICATION_KEY_ID'
 const APPLICATION_KEY_ENV = 'B2_APPLICATION_KEY'
+const FILE_INFO_KEY_PATTERN = /^[a-zA-Z0-9_-]+$/
+const FILE_INFO_VALUE_MAX_BYTES = 2048
+const FILE_INFO_TOTAL_MAX_BYTES = 2048
+const CONTENT_HEADER_FILE_INFO_KEYS = [
+  ['cache-control', 'b2-cache-control'],
+  ['content-disposition', 'b2-content-disposition'],
+  ['content-language', 'b2-content-language'],
+  ['expires', 'b2-expires'],
+] as const
+const utf8Encoder = new TextEncoder()
 
 /**
  * The fully-parsed, fully-validated action surface. Built by
@@ -128,6 +138,10 @@ export interface ParsedInputs {
   resume: boolean
   /** Content-Type to set on uploaded objects. Undefined leaves B2's auto-detect. */
   contentType: string | undefined
+  /** Custom B2 fileInfo metadata (`X-Bz-Info-*`) to set on uploaded objects. */
+  fileInfo: Record<string, string>
+  /** Preserve each local file's mtime as B2 `src_last_modified_millis`. */
+  preserveMtime: boolean
   /** Preview without executing (sync/delete/purge). */
   dryRun: boolean
   /** Permit whole-bucket purge when `source` is empty or `/`. */
@@ -230,6 +244,15 @@ export function parseInputs(): ParsedInputs {
   const maxResults = parsePositiveInt('max-results', core.getInput('max-results') || '1000')
 
   const contentType = optional('content-type')
+  const fileInfo = parseFileInfo(optional('file-info'))
+  for (const [inputName, fileInfoKey] of CONTENT_HEADER_FILE_INFO_KEYS) {
+    addFileInfo(fileInfo, fileInfoKey, optional(inputName), inputName)
+  }
+  validateFileInfo(fileInfo)
+  const preserveMtime = parseBool('preserve-mtime', core.getInput('preserve-mtime') || 'false')
+  if (preserveMtime && Object.hasOwn(fileInfo, 'src_last_modified_millis')) {
+    throw new Error(`Duplicate fileInfo key "src_last_modified_millis" from 'preserve-mtime' input`)
+  }
   const endpoint = optional('endpoint')
   const sse = optional('sse')
   const encryption = parseSse(sse)
@@ -276,6 +299,8 @@ export function parseInputs(): ParsedInputs {
     partSize,
     resume,
     contentType,
+    fileInfo,
+    preserveMtime,
     dryRun,
     allowBucketPurge,
     presignTtlSeconds,
@@ -402,6 +427,71 @@ export function splitCsv(value: string | undefined): string[] {
     .split(',')
     .map((s) => s.trim())
     .filter((s) => s.length > 0)
+}
+
+/**
+ * Parse upload fileInfo metadata from newline-delimited or CSV-style
+ * `key=value` entries. Newline mode preserves commas inside values.
+ *
+ * @internal
+ */
+export function parseFileInfo(value: string | undefined): Record<string, string> {
+  if (value === undefined || value.trim() === '') return {}
+  const pairs = /[\r\n]/.test(value) ? value.split(/\r?\n|\r/) : value.split(',')
+  const fileInfo: Record<string, string> = {}
+
+  for (const rawPair of pairs) {
+    const pair = rawPair.trim()
+    if (pair === '') continue
+    const equalsIndex = pair.indexOf('=')
+    if (equalsIndex <= 0) {
+      throw new Error(`Invalid 'file-info' entry "${pair}". Expected key=value.`)
+    }
+    const key = pair.slice(0, equalsIndex).trim()
+    const parsedValue = pair.slice(equalsIndex + 1).trim()
+    addFileInfo(fileInfo, key, parsedValue, 'file-info')
+  }
+
+  return fileInfo
+}
+
+function addFileInfo(
+  fileInfo: Record<string, string>,
+  key: string,
+  value: string | undefined,
+  inputName: string,
+): void {
+  if (value === undefined) return
+  if (Object.hasOwn(fileInfo, key)) {
+    throw new Error(`Duplicate fileInfo key "${key}" from '${inputName}' input`)
+  }
+  fileInfo[key] = value
+}
+
+function validateFileInfo(fileInfo: Record<string, string>): void {
+  let totalBytes = 0
+  for (const [key, value] of Object.entries(fileInfo)) {
+    if (!FILE_INFO_KEY_PATTERN.test(key)) {
+      throw new Error(
+        `Invalid fileInfo key "${key}" from 'file-info'. Keys must match ${FILE_INFO_KEY_PATTERN.source}`,
+      )
+    }
+
+    const keyBytes = utf8Encoder.encode(key).byteLength
+    const valueBytes = utf8Encoder.encode(value).byteLength
+    if (valueBytes > FILE_INFO_VALUE_MAX_BYTES) {
+      throw new Error(
+        `Invalid fileInfo value for "${key}": ${valueBytes} bytes exceeds ${FILE_INFO_VALUE_MAX_BYTES}`,
+      )
+    }
+    totalBytes += keyBytes + valueBytes
+  }
+
+  if (totalBytes > FILE_INFO_TOTAL_MAX_BYTES) {
+    throw new Error(
+      `Invalid fileInfo: total size ${totalBytes} bytes exceeds ${FILE_INFO_TOTAL_MAX_BYTES}`,
+    )
+  }
 }
 
 /**

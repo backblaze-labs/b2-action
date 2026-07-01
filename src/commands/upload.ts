@@ -22,6 +22,8 @@ export interface UploadedFile {
   size: number
   /** Whole-file SHA-1, or `null` when the file was multipart-uploaded. */
   contentSha1: string | null
+  /** B2 fileInfo metadata set on the uploaded object. */
+  fileInfo: Record<string, string>
 }
 
 /** Result of {@link uploadCommand}. */
@@ -229,6 +231,8 @@ async function uploadOne(
 ): Promise<UploadedFile> {
   const fileStat = await stat(localPath)
   const size = fileStat.size
+  const lastModifiedMillis = inputs.preserveMtime ? Math.trunc(fileStat.mtimeMs) : undefined
+  const fileInfo = buildUploadFileInfo(inputs.fileInfo, lastModifiedMillis)
 
   // Stream the file from disk. The SDK's `bucket.upload` routes files larger
   // than the recommended part size through `uploadLargeFile`, which now
@@ -256,6 +260,8 @@ async function uploadOne(
     concurrency: partConcurrency,
     ...(inputs.partSize !== undefined ? { partSize: inputs.partSize } : {}),
     ...(inputs.contentType !== undefined ? { contentType: inputs.contentType } : {}),
+    ...(Object.keys(fileInfo).length > 0 ? { fileInfo } : {}),
+    ...(lastModifiedMillis !== undefined ? { lastModifiedMillis } : {}),
     ...(inputs.encryption !== undefined ? { serverSideEncryption: inputs.encryption } : {}),
     ...(signal !== undefined ? { signal } : {}),
     onProgress,
@@ -266,6 +272,7 @@ async function uploadOne(
   const sha1 = result.contentSha1
   const detailPrefix = groupedLog ? '  ' : ''
   core.info(`${detailPrefix}fileId=${result.fileId} sha1=${sha1 ?? 'multipart'}`)
+  const resultFileInfo = { ...fileInfo, ...result.fileInfo }
 
   return {
     localPath,
@@ -273,5 +280,17 @@ async function uploadOne(
     fileId: result.fileId,
     size,
     contentSha1: sha1,
+    fileInfo: resultFileInfo,
   }
+}
+
+function buildUploadFileInfo(
+  inputFileInfo: Record<string, string>,
+  lastModifiedMillis: number | undefined,
+): Record<string, string> {
+  const fileInfo = { ...inputFileInfo }
+  if (lastModifiedMillis !== undefined) {
+    fileInfo.src_last_modified_millis = String(lastModifiedMillis)
+  }
+  return fileInfo
 }

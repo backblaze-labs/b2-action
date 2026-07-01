@@ -118,6 +118,22 @@ describe('main dispatcher', () => {
     expect(summary?.rows?.at(-1)?.fileName).toBe('uploaded-99.txt')
   })
 
+  it('surfaces upload fileInfo in summary-json', async () => {
+    const ctx = await loadMain()
+    const file = uploadedFile({
+      fileName: 'metadata.txt',
+      fileId: 'id-metadata',
+      size: 7,
+      fileInfo: { build_sha: 'abc123', 'b2-cache-control': 'public, max-age=31536000' },
+    })
+    ctx.parseInputs.mockReturnValue(inputs('upload'))
+    ctx.commands.uploadCommand.mockResolvedValue({ files: [file], bytesTransferred: file.size })
+
+    await ctx.run()
+
+    expect(JSON.parse(outputs(ctx)['summary-json'] ?? '[]')).toEqual([file])
+  })
+
   it('passes endpoint only when the parsed input supplies one', async () => {
     const ctx = await loadMain()
     const files = [
@@ -1515,6 +1531,7 @@ function uploadedFile(override: {
   fileId: string
   size: number
   contentSha1?: string | null
+  fileInfo?: Record<string, string>
 }): UploadedFile {
   return {
     localPath: `/tmp/${override.fileName}`,
@@ -1522,6 +1539,7 @@ function uploadedFile(override: {
     fileId: override.fileId,
     size: override.size,
     contentSha1: fileSha1(override),
+    fileInfo: override.fileInfo ?? {},
   }
 }
 

@@ -35538,6 +35538,16 @@ const VALID_RETENTION_MODE = ['compliance', 'governance', 'none'];
 const VALID_LEGAL_HOLD = ['on', 'off'];
 const APPLICATION_KEY_ID_ENV = 'B2_APPLICATION_KEY_ID';
 const APPLICATION_KEY_ENV = 'B2_APPLICATION_KEY';
+const FILE_INFO_KEY_PATTERN = /^[a-zA-Z0-9_-]+$/;
+const FILE_INFO_VALUE_MAX_BYTES = 2048;
+const FILE_INFO_TOTAL_MAX_BYTES = 2048;
+const CONTENT_HEADER_FILE_INFO_KEYS = [
+    ['cache-control', 'b2-cache-control'],
+    ['content-disposition', 'b2-content-disposition'],
+    ['content-language', 'b2-content-language'],
+    ['expires', 'b2-expires'],
+];
+const inputs_utf8Encoder = new TextEncoder();
 /**
  * Sensitive raw values that can appear in parser-scope errors before
  * {@link parseInputs} returns its structured output.
@@ -35591,6 +35601,15 @@ function parseInputs() {
     const presignTtlSeconds = parsePositiveInt('presign-ttl', getInput('presign-ttl') || '3600');
     const maxResults = parsePositiveInt('max-results', getInput('max-results') || '1000');
     const contentType = optional('content-type');
+    const fileInfo = parseFileInfo(optional('file-info'));
+    for (const [inputName, fileInfoKey] of CONTENT_HEADER_FILE_INFO_KEYS) {
+        addFileInfo(fileInfo, fileInfoKey, optional(inputName), inputName);
+    }
+    validateFileInfo(fileInfo);
+    const preserveMtime = parseBool('preserve-mtime', getInput('preserve-mtime') || 'false');
+    if (preserveMtime && Object.hasOwn(fileInfo, 'src_last_modified_millis')) {
+        throw new Error(`Duplicate fileInfo key "src_last_modified_millis" from 'preserve-mtime' input`);
+    }
     const endpoint = optional('endpoint');
     const sse = optional('sse');
     const encryption = parseSse(sse);
@@ -35615,6 +35634,8 @@ function parseInputs() {
         partSize,
         resume,
         contentType,
+        fileInfo,
+        preserveMtime,
         dryRun,
         allowBucketPurge,
         presignTtlSeconds,
@@ -35729,6 +35750,56 @@ function splitCsv(value) {
         .split(',')
         .map((s) => s.trim())
         .filter((s) => s.length > 0);
+}
+/**
+ * Parse upload fileInfo metadata from newline-delimited or CSV-style
+ * `key=value` entries. Newline mode preserves commas inside values.
+ *
+ * @internal
+ */
+function parseFileInfo(value) {
+    if (value === undefined || value.trim() === '')
+        return {};
+    const pairs = /[\r\n]/.test(value) ? value.split(/\r?\n|\r/) : value.split(',');
+    const fileInfo = {};
+    for (const rawPair of pairs) {
+        const pair = rawPair.trim();
+        if (pair === '')
+            continue;
+        const equalsIndex = pair.indexOf('=');
+        if (equalsIndex <= 0) {
+            throw new Error(`Invalid 'file-info' entry "${pair}". Expected key=value.`);
+        }
+        const key = pair.slice(0, equalsIndex).trim();
+        const parsedValue = pair.slice(equalsIndex + 1).trim();
+        addFileInfo(fileInfo, key, parsedValue, 'file-info');
+    }
+    return fileInfo;
+}
+function addFileInfo(fileInfo, key, value, inputName) {
+    if (value === undefined)
+        return;
+    if (Object.hasOwn(fileInfo, key)) {
+        throw new Error(`Duplicate fileInfo key "${key}" from '${inputName}' input`);
+    }
+    fileInfo[key] = value;
+}
+function validateFileInfo(fileInfo) {
+    let totalBytes = 0;
+    for (const [key, value] of Object.entries(fileInfo)) {
+        if (!FILE_INFO_KEY_PATTERN.test(key)) {
+            throw new Error(`Invalid fileInfo key "${key}" from 'file-info'. Keys must match ${FILE_INFO_KEY_PATTERN.source}`);
+        }
+        const keyBytes = inputs_utf8Encoder.encode(key).byteLength;
+        const valueBytes = inputs_utf8Encoder.encode(value).byteLength;
+        if (valueBytes > FILE_INFO_VALUE_MAX_BYTES) {
+            throw new Error(`Invalid fileInfo value for "${key}": ${valueBytes} bytes exceeds ${FILE_INFO_VALUE_MAX_BYTES}`);
+        }
+        totalBytes += keyBytes + valueBytes;
+    }
+    if (totalBytes > FILE_INFO_TOTAL_MAX_BYTES) {
+        throw new Error(`Invalid fileInfo: total size ${totalBytes} bytes exceeds ${FILE_INFO_TOTAL_MAX_BYTES}`);
+    }
 }
 /**
  * Parse the documented boolean input spellings accepted by this action.
@@ -41338,6 +41409,8 @@ function remapFileName(file, destination, isSingleExplicitFile) {
 async function uploadOne(bucket, localPath, fileName, inputs, partConcurrency, groupedLog, signal) {
     const fileStat = await (0,promises_.stat)(localPath);
     const size = fileStat.size;
+    const lastModifiedMillis = inputs.preserveMtime ? Math.trunc(fileStat.mtimeMs) : undefined;
+    const fileInfo = buildUploadFileInfo(inputs.fileInfo, lastModifiedMillis);
     // Stream the file from disk. The SDK's `bucket.upload` routes files larger
     // than the recommended part size through `uploadLargeFile`, which now
     // detects non-sliceable sources (StreamSource) and reads the stream once,
@@ -41362,6 +41435,8 @@ async function uploadOne(bucket, localPath, fileName, inputs, partConcurrency, g
         concurrency: partConcurrency,
         ...(inputs.partSize !== undefined ? { partSize: inputs.partSize } : {}),
         ...(inputs.contentType !== undefined ? { contentType: inputs.contentType } : {}),
+        ...(Object.keys(fileInfo).length > 0 ? { fileInfo } : {}),
+        ...(lastModifiedMillis !== undefined ? { lastModifiedMillis } : {}),
         ...(inputs.encryption !== undefined ? { serverSideEncryption: inputs.encryption } : {}),
         ...(signal !== undefined ? { signal } : {}),
         onProgress,
@@ -41371,13 +41446,22 @@ async function uploadOne(bucket, localPath, fileName, inputs, partConcurrency, g
     const sha1 = result.contentSha1;
     const detailPrefix = groupedLog ? '  ' : '';
     info(`${detailPrefix}fileId=${result.fileId} sha1=${sha1 ?? 'multipart'}`);
+    const resultFileInfo = { ...fileInfo, ...result.fileInfo };
     return {
         localPath,
         fileName: result.fileName,
         fileId: result.fileId,
         size,
         contentSha1: sha1,
+        fileInfo: resultFileInfo,
     };
+}
+function buildUploadFileInfo(inputFileInfo, lastModifiedMillis) {
+    const fileInfo = { ...inputFileInfo };
+    if (lastModifiedMillis !== undefined) {
+        fileInfo.src_last_modified_millis = String(lastModifiedMillis);
+    }
+    return fileInfo;
 }
 
 ;// CONCATENATED MODULE: ./src/commands/verify.ts

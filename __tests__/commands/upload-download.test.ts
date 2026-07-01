@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto'
-import { mkdir, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rename, rm, stat, symlink, utimes, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import type { ProgressEvent } from '@backblaze-labs/b2-sdk'
+import type { Bucket, FileVersion, ProgressEvent } from '@backblaze-labs/b2-sdk'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { downloadCommand, replaceDownloadedFile } from '../../src/commands/download.ts'
 import { uploadCommand } from '../../src/commands/upload.ts'
@@ -45,6 +45,62 @@ describe('upload + download commands (B2Simulator)', () => {
     expect(result.files[0]?.fileName).toBe('hello.txt')
     expect(result.files[0]?.fileId).toBeTruthy()
     expect(result.bytesTransferred).toBe(11)
+  })
+
+  it('passes fileInfo, content headers, and preserved mtime to upload', async () => {
+    const local = join(fx.workDir, 'metadata.txt')
+    await writeFile(local, 'payload')
+    const mtime = new Date('2026-02-03T04:05:06.789Z')
+    await utimes(local, mtime, mtime)
+    const expectedMtime = Math.trunc((await stat(local)).mtimeMs)
+    const uploadCalls: Array<Parameters<Bucket['upload']>[0]> = []
+    const fakeBucket = {
+      name: 'fake-bucket',
+      upload: async (options: Parameters<Bucket['upload']>[0]): Promise<FileVersion> => {
+        uploadCalls.push(options)
+        await options.source.toArrayBuffer()
+        return {
+          fileName: options.fileName,
+          fileId: 'fake-file-id',
+          contentLength: 7,
+          contentSha1: 'fake-sha1',
+          contentType: options.contentType ?? 'b2/x-auto',
+          fileInfo: { returned_by_sdk: 'yes' },
+        } as unknown as FileVersion
+      },
+    } as unknown as Bucket
+
+    const result = await uploadCommand(fakeBucket, {
+      ...baseInputs(),
+      source: local,
+      destination: 'metadata.txt',
+      contentType: 'text/plain',
+      fileInfo: {
+        build_sha: 'abc123',
+        'b2-cache-control': 'public, max-age=31536000',
+        'b2-content-disposition': 'attachment; filename="metadata.txt"',
+      },
+      preserveMtime: true,
+    })
+
+    const call = uploadCalls[0]
+    expect(call).toBeDefined()
+    if (call === undefined) throw new Error('upload call was not captured')
+    expect(call.contentType).toBe('text/plain')
+    expect(call.lastModifiedMillis).toBe(expectedMtime)
+    expect(call.fileInfo).toEqual({
+      build_sha: 'abc123',
+      'b2-cache-control': 'public, max-age=31536000',
+      'b2-content-disposition': 'attachment; filename="metadata.txt"',
+      src_last_modified_millis: String(expectedMtime),
+    })
+    expect(result.files[0]?.fileInfo).toEqual({
+      build_sha: 'abc123',
+      'b2-cache-control': 'public, max-age=31536000',
+      'b2-content-disposition': 'attachment; filename="metadata.txt"',
+      src_last_modified_millis: String(expectedMtime),
+      returned_by_sdk: 'yes',
+    })
   })
 
   it('uploads to an explicit destination key', async () => {

@@ -48,6 +48,25 @@ inputs:
   content-type:
     description: 'Content-Type for uploads. Defaults to "b2/x-auto" (B2 auto-detects).'
     required: false
+  file-info:
+    description: 'Custom upload fileInfo metadata as newline- or comma-separated key=value pairs. Keys become X-Bz-Info-* metadata and must contain only letters, digits, underscores, and hyphens.'
+    required: false
+  cache-control:
+    description: 'Cache-Control response header to store with uploaded files.'
+    required: false
+  content-disposition:
+    description: 'Content-Disposition response header to store with uploaded files.'
+    required: false
+  content-language:
+    description: 'Content-Language response header to store with uploaded files.'
+    required: false
+  expires:
+    description: 'Expires response header to store with uploaded files.'
+    required: false
+  preserve-mtime:
+    description: 'Store each uploaded file''s local modification time as B2 src_last_modified_millis. Default false.'
+    required: false
+    default: 'false'
   dry-run:
     description: 'Preview what would happen without executing (sync/delete/purge). Default false.'
     required: false

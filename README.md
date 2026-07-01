@@ -123,6 +123,27 @@ Exact-name `copy`, single-file `delete`, and `retention` operate only when the l
     destination: releases/${{ github.ref_name }}/app.tar.gz
 ```
 
+### Upload with metadata and content headers
+
+```yaml
+- uses: backblaze-labs/b2-action@v1
+  with:
+    action: upload
+    application-key-id: ${{ secrets.B2_APPLICATION_KEY_ID }}
+    application-key: ${{ secrets.B2_APPLICATION_KEY }}
+    bucket: my-bucket
+    source: ./build/app.tar.gz
+    destination: releases/${{ github.sha }}/app.tar.gz
+    content-type: application/gzip
+    file-info: |
+      build_sha=${{ github.sha }}
+      source_ref=${{ github.ref_name }}
+      owner=release-engineering
+    cache-control: public, max-age=31536000, immutable
+    content-disposition: attachment; filename="app.tar.gz"
+    preserve-mtime: true
+```
+
 ### Upload a directory with globs
 
 ```yaml
@@ -361,6 +382,12 @@ Set `bypass-governance: true` to shorten governance-mode retention or to remove 
 | `part-size` | no | SDK default | Multipart part size in bytes. Must be a positive decimal integer. |
 | `resume` | no | `true` | Reserved. Currently not honored; the action's streaming upload source is non-sliceable, so retries do a full re-upload. Kept in the input surface so it can light up if a `BufferSource` fallback ships. |
 | `content-type` | no | `b2/x-auto` | MIME type for uploads. |
+| `file-info` | no | | Upload fileInfo metadata as newline- or CSV-delimited `key=value` pairs. Keys become `X-Bz-Info-*` metadata and must contain only letters, digits, underscores, and hyphens. |
+| `cache-control` | no | | Cache-Control response header to store with uploaded files. |
+| `content-disposition` | no | | Content-Disposition response header to store with uploaded files. |
+| `content-language` | no | | Content-Language response header to store with uploaded files. |
+| `expires` | no | | Expires response header to store with uploaded files. |
+| `preserve-mtime` | no | `false` | Store each uploaded file's local modification time as B2 `src_last_modified_millis`. |
 | `dry-run` | no | `false` | Preview only (sync/delete/purge). |
 | `allow-bucket-purge` | purge only | `false` | Permit `purge` to target the entire bucket when `source` is empty or `/`. |
 | `presign-ttl` | no | `3600` | Presigned URL TTL in seconds. Must be a positive decimal integer. |
