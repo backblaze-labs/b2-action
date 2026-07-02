@@ -52,10 +52,10 @@ inputs:
     description: "Custom upload fileInfo metadata as newline- or simple comma-separated key=value pairs. Use newline-separated entries when values contain commas. Keys are normalized to lowercase, may contain letters, digits, and B2-supported special characters (-_.`~!#$%^&*'|+), cannot start with b2-, and must fit B2 fileInfo limits. Use cache-control/content-disposition/content-language/expires for reserved b2-* response headers."
     required: false
   cache-control:
-    description: 'Cache-Control header to store with uploads, or response override for presign/download.'
+    description: 'Cache-Control response header to store with uploaded files.'
     required: false
   content-disposition:
-    description: 'Content-Disposition header to store with uploads, or response override for presign/download, such as attachment; filename="report.pdf".'
+    description: 'Content-Disposition response header to store with uploaded files.'
     required: false
   content-language:
     description: 'Content-Language response header to store with uploaded files.'
@@ -63,8 +63,14 @@ inputs:
   expires:
     description: 'Expires response header to store with uploaded files.'
     required: false
+  response-content-disposition:
+    description: 'Response Content-Disposition override for presign/download, such as attachment; filename="report.pdf".'
+    required: false
   response-content-type:
     description: 'Response Content-Type override for presign/download.'
+    required: false
+  response-cache-control:
+    description: 'Response Cache-Control override for presign/download.'
     required: false
   preserve-mtime:
     description: 'Store each uploaded file''s local modification time as B2 src_last_modified_millis. Default false.'

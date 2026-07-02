@@ -139,11 +139,11 @@ export interface ParsedInputs {
   /** Preserve each local file's mtime as B2 `src_last_modified_millis`. */
   preserveMtime: boolean
   /** Response Content-Disposition override for `download` and `presign`. */
-  contentDisposition: string | undefined
+  responseContentDisposition: string | undefined
   /** Response Content-Type override for `download` and `presign`. */
   responseContentType: string | undefined
   /** Response Cache-Control override for `download` and `presign`. */
-  cacheControl: string | undefined
+  responseCacheControl: string | undefined
   /** Preview without executing (sync/delete/purge). */
   dryRun: boolean
   /** Permit whole-bucket purge when `source` is empty or `/`. */
@@ -247,8 +247,10 @@ export function parseInputs(): ParsedInputs {
 
   const contentType = optional('content-type')
   const contentDisposition = optional('content-disposition')
-  const responseContentType = optional('response-content-type')
   const cacheControl = optional('cache-control')
+  const responseContentDisposition = optional('response-content-disposition')
+  const responseContentType = optional('response-content-type')
+  const responseCacheControl = optional('response-cache-control')
   const endpoint = optional('endpoint')
   const sse = optional('sse')
   const encryption = parseSse(sse)
@@ -312,9 +314,9 @@ export function parseInputs(): ParsedInputs {
     contentType,
     fileInfo,
     preserveMtime,
-    contentDisposition,
+    responseContentDisposition,
     responseContentType,
-    cacheControl,
+    responseCacheControl,
     dryRun,
     allowBucketPurge,
     presignTtlSeconds,

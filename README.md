@@ -287,10 +287,10 @@ the step; comparable SHA-1 mismatches also fail.
     bucket: my-bucket
     source: reports/2026-q1.pdf
     presign-ttl: 7200
-    content-disposition: 'attachment; filename="q1-report.pdf"'
+    response-content-disposition: 'attachment; filename="q1-report.pdf"'
     response-content-type: application/pdf
 
-- run: curl --fail --show-error --location --remote-name --remote-header-name "${{ steps.link.outputs.presigned-url }}"
+- run: curl --fail --show-error --location "${{ steps.link.outputs.presigned-url }}" -o report.pdf
 ```
 
 ### Server-side encryption
@@ -385,11 +385,13 @@ Set `bypass-governance: true` to shorten governance-mode retention or to remove 
 | `resume` | no | `true` | Reserved. Currently not honored; the action's streaming upload source is non-sliceable, so retries do a full re-upload. Kept in the input surface so it can light up if a `BufferSource` fallback ships. |
 | `content-type` | no | `b2/x-auto` | MIME type for uploads. |
 | `file-info` | no | | Upload fileInfo metadata as newline- or simple comma-separated `key=value` pairs. Use newline-separated entries when values contain commas. Keys are normalized to lowercase, may contain letters, digits, and B2-supported special characters, cannot start with `b2-`, and must fit B2 fileInfo limits. Use `cache-control`, `content-disposition`, `content-language`, or `expires` for reserved `b2-*` response headers. |
-| `cache-control` | no | | Cache-Control header to store with uploads, or response override for `presign` and `download`. |
-| `content-disposition` | no | | Content-Disposition header to store with uploads, or response override for `presign` and `download`, such as `attachment; filename="report.pdf"`. |
+| `cache-control` | no | | Cache-Control response header to store with uploaded files. |
+| `content-disposition` | no | | Content-Disposition response header to store with uploaded files. |
 | `content-language` | no | | Content-Language response header to store with uploaded files. |
 | `expires` | no | | Expires response header to store with uploaded files. |
+| `response-content-disposition` | no | | Response Content-Disposition override for `presign` and `download`, such as `attachment; filename="report.pdf"`. |
 | `response-content-type` | no | | Response Content-Type override for `presign` and `download`. |
+| `response-cache-control` | no | | Response Cache-Control override for `presign` and `download`. |
 | `preserve-mtime` | no | `false` | Store each uploaded file's local modification time as B2 `src_last_modified_millis`. |
 | `dry-run` | no | `false` | Preview only (sync/delete/purge). |
 | `allow-bucket-purge` | purge only | `false` | Permit `purge` to target the entire bucket when `source` is empty or `/`. |

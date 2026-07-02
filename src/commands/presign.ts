@@ -1,5 +1,5 @@
 import * as core from '@actions/core'
-import type { B2Client, Bucket } from '@backblaze-labs/b2-sdk'
+import type { B2Client, Bucket, DownloadAuthorizationRequest } from '@backblaze-labs/b2-sdk'
 import { presignGetObjectUrl } from '@backblaze-labs/b2-sdk/s3'
 import {
   appendDownloadHeaderOverrides,
@@ -68,15 +68,12 @@ async function presignPrefix(
   const downloadOverrides = downloadHeaderOverridesFromInputs(inputs)
   // One auth token covers the whole prefix (that's exactly what
   // `b2_get_download_authorization` is designed for).
-  const auth = await client.raw.getDownloadAuthorization(
-    client.accountInfo.getApiUrl(),
-    client.accountInfo.getAuthToken(),
-    {
-      bucketId: bucket.id,
-      fileNamePrefix: prefix,
-      validDurationInSeconds: inputs.presignTtlSeconds,
-      ...downloadOverrides,
-    },
+  const auth = await getDownloadAuthorization(
+    client,
+    bucket,
+    prefix,
+    inputs.presignTtlSeconds,
+    downloadOverrides,
   )
   core.setSecret(auth.authorizationToken)
   const expiresAt = Math.floor(Date.now() / 1000) + inputs.presignTtlSeconds
@@ -126,15 +123,12 @@ async function presignOne(
   authPrefix: string,
   downloadOverrides: DownloadHeaderOverrides,
 ): Promise<PresignedFile> {
-  const auth = await client.raw.getDownloadAuthorization(
-    client.accountInfo.getApiUrl(),
-    client.accountInfo.getAuthToken(),
-    {
-      bucketId: bucket.id,
-      fileNamePrefix: authPrefix,
-      validDurationInSeconds: ttlSeconds,
-      ...downloadOverrides,
-    },
+  const auth = await getDownloadAuthorization(
+    client,
+    bucket,
+    authPrefix,
+    ttlSeconds,
+    downloadOverrides,
   )
   const downloadUrl = client.accountInfo.getDownloadUrl()
   const url = appendDownloadHeaderOverrides(
@@ -146,4 +140,25 @@ async function presignOne(
   const expiresAt = Math.floor(Date.now() / 1000) + ttlSeconds
   core.info(`presigned URL for ${fileName} valid for ${ttlSeconds}s (expires at ${expiresAt})`)
   return { fileName, url, expiresAt }
+}
+
+async function getDownloadAuthorization(
+  client: B2Client,
+  bucket: Bucket,
+  fileNamePrefix: string,
+  validDurationInSeconds: number,
+  downloadOverrides: DownloadHeaderOverrides,
+) {
+  const request = {
+    bucketId: bucket.id,
+    fileNamePrefix,
+    validDurationInSeconds,
+    ...downloadOverrides,
+  } satisfies DownloadAuthorizationRequest
+
+  return await client.raw.getDownloadAuthorization(
+    client.accountInfo.getApiUrl(),
+    client.accountInfo.getAuthToken(),
+    request,
+  )
 }

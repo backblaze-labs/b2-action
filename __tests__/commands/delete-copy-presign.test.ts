@@ -337,9 +337,9 @@ describe('presign command', () => {
     const result = await presignCommand(fx.client, fx.bucket, {
       ...baseInputs('presign'),
       source: 'reports/private-report.bin',
-      contentDisposition: 'attachment; filename="report.pdf"',
+      responseContentDisposition: 'attachment; filename="report.pdf"',
       responseContentType: 'application/pdf',
-      cacheControl: 'private, max-age=60',
+      responseCacheControl: 'private, max-age=60',
     })
 
     const request = getAuth.mock.calls[0]?.[2]
@@ -352,5 +352,37 @@ describe('presign command', () => {
     expect(url.searchParams.get('b2ContentDisposition')).toBe('attachment; filename="report.pdf"')
     expect(url.searchParams.get('b2ContentType')).toBe('application/pdf')
     expect(url.searchParams.get('b2CacheControl')).toBe('private, max-age=60')
+  })
+
+  it.each([
+    [
+      'response-content-disposition',
+      { responseContentDisposition: 'attachment; filename="safe.pdf"\r\nX-Evil: 1' },
+    ],
+    ['response-content-type', { responseContentType: 'text/plain\nX-Evil: 1' }],
+    ['response-cache-control', { responseCacheControl: 'private\u0000, max-age=60' }],
+  ] as const)('rejects malicious %s before presign authorization', async (inputName, override) => {
+    const getAuth = vi.fn()
+    const client = {
+      raw: { getDownloadAuthorization: getAuth },
+      accountInfo: {
+        getApiUrl: () => 'https://api.example.invalid',
+        getAuthToken: () => 'auth-token',
+        getDownloadUrl: () => 'https://download.example.invalid',
+      },
+    } as unknown as Parameters<typeof presignCommand>[0]
+    const bucket = {
+      id: 'bucket-id',
+      name: 'gh-action-misc',
+    } as unknown as Parameters<typeof presignCommand>[1]
+
+    await expect(
+      presignCommand(client, bucket, {
+        ...baseInputs('presign'),
+        source: 'reports/private-report.bin',
+        ...override,
+      }),
+    ).rejects.toThrow(inputName)
+    expect(getAuth).not.toHaveBeenCalled()
   })
 })
