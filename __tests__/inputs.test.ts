@@ -225,6 +225,21 @@ describe('parseInputs', () => {
     expect(r.dryRun).toBe(true)
   })
 
+  it('parses download response header overrides', () => {
+    setInput('action', 'download')
+    setInput('application-key-id', 'k')
+    setInput('application-key', 's')
+    setInput('bucket', 'b')
+    setInput('content-disposition', 'attachment; filename="report.pdf"')
+    setInput('response-content-type', 'application/pdf')
+    setInput('cache-control', 'max-age=60')
+
+    const r = parseInputs()
+    expect(r.contentDisposition).toBe('attachment; filename="report.pdf"')
+    expect(r.responseContentType).toBe('application/pdf')
+    expect(r.cacheControl).toBe('max-age=60')
+  })
+
   it('keeps an empty purge source only when whole-bucket purge is confirmed', () => {
     setInput('action', 'purge')
     setInput('application-key-id', 'k')

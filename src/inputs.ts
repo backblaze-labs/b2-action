@@ -89,12 +89,6 @@ const FILE_INFO_KEY_MAX_BYTES = 50
 const FILE_INFO_MAX_ENTRIES = 10
 const FILE_INFO_TOTAL_MAX_BYTES = 7000
 const FILE_INFO_TOTAL_MAX_BYTES_WITH_ENCRYPTION = 2048
-const CONTENT_HEADER_FILE_INFO_KEYS = [
-  ['cache-control', 'b2-cache-control'],
-  ['content-disposition', 'b2-content-disposition'],
-  ['content-language', 'b2-content-language'],
-  ['expires', 'b2-expires'],
-] as const
 const utf8Encoder = new TextEncoder()
 
 /**
@@ -144,6 +138,12 @@ export interface ParsedInputs {
   fileInfo: Record<string, string>
   /** Preserve each local file's mtime as B2 `src_last_modified_millis`. */
   preserveMtime: boolean
+  /** Response Content-Disposition override for `download` and `presign`. */
+  contentDisposition: string | undefined
+  /** Response Content-Type override for `download` and `presign`. */
+  responseContentType: string | undefined
+  /** Response Cache-Control override for `download` and `presign`. */
+  cacheControl: string | undefined
   /** Preview without executing (sync/delete/purge). */
   dryRun: boolean
   /** Permit whole-bucket purge when `source` is empty or `/`. */
@@ -245,15 +245,23 @@ export function parseInputs(): ParsedInputs {
   const presignTtlSeconds = parsePositiveInt('presign-ttl', core.getInput('presign-ttl') || '3600')
   const maxResults = parsePositiveInt('max-results', core.getInput('max-results') || '1000')
 
+  const contentType = optional('content-type')
+  const contentDisposition = optional('content-disposition')
+  const responseContentType = optional('response-content-type')
+  const cacheControl = optional('cache-control')
   const endpoint = optional('endpoint')
   const sse = optional('sse')
   const encryption = parseSse(sse)
 
-  const contentType = optional('content-type')
   const fileInfo = parseFileInfo(optional('file-info'))
-  for (const [inputName, fileInfoKey] of CONTENT_HEADER_FILE_INFO_KEYS) {
-    addFileInfo(fileInfo, fileInfoKey, optional(inputName), inputName, { allowReserved: true })
-  }
+  addFileInfo(fileInfo, 'b2-cache-control', cacheControl, 'cache-control', { allowReserved: true })
+  addFileInfo(fileInfo, 'b2-content-disposition', contentDisposition, 'content-disposition', {
+    allowReserved: true,
+  })
+  addFileInfo(fileInfo, 'b2-content-language', optional('content-language'), 'content-language', {
+    allowReserved: true,
+  })
+  addFileInfo(fileInfo, 'b2-expires', optional('expires'), 'expires', { allowReserved: true })
   validateFileInfo(fileInfo, uploadFileInfoTotalMaxBytes(encryption))
   const preserveMtime = parseBool('preserve-mtime', core.getInput('preserve-mtime') || 'false')
   if (preserveMtime && Object.hasOwn(fileInfo, 'src_last_modified_millis')) {
@@ -304,6 +312,9 @@ export function parseInputs(): ParsedInputs {
     contentType,
     fileInfo,
     preserveMtime,
+    contentDisposition,
+    responseContentType,
+    cacheControl,
     dryRun,
     allowBucketPurge,
     presignTtlSeconds,

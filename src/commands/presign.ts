@@ -1,6 +1,11 @@
 import * as core from '@actions/core'
 import type { B2Client, Bucket } from '@backblaze-labs/b2-sdk'
 import { presignGetObjectUrl } from '@backblaze-labs/b2-sdk/s3'
+import {
+  appendDownloadHeaderOverrides,
+  type DownloadHeaderOverrides,
+  downloadHeaderOverridesFromInputs,
+} from '../download-overrides.ts'
 import { type ParsedInputs, requireSource } from '../inputs.ts'
 
 /** One entry in {@link PresignResult.files}. */
@@ -45,7 +50,12 @@ export async function presignCommand(
     return presignPrefix(client, bucket, inputs, source)
   }
 
-  return { files: [await presignOne(client, bucket, source, inputs.presignTtlSeconds, source)] }
+  const downloadOverrides = downloadHeaderOverridesFromInputs(inputs)
+  return {
+    files: [
+      await presignOne(client, bucket, source, inputs.presignTtlSeconds, source, downloadOverrides),
+    ],
+  }
 }
 
 async function presignPrefix(
@@ -55,9 +65,19 @@ async function presignPrefix(
   prefix: string,
 ): Promise<PresignResult> {
   const downloadUrl = client.accountInfo.getDownloadUrl()
+  const downloadOverrides = downloadHeaderOverridesFromInputs(inputs)
   // One auth token covers the whole prefix (that's exactly what
   // `b2_get_download_authorization` is designed for).
-  const auth = await bucket.getDownloadAuthorization(prefix, inputs.presignTtlSeconds)
+  const auth = await client.raw.getDownloadAuthorization(
+    client.accountInfo.getApiUrl(),
+    client.accountInfo.getAuthToken(),
+    {
+      bucketId: bucket.id,
+      fileNamePrefix: prefix,
+      validDurationInSeconds: inputs.presignTtlSeconds,
+      ...downloadOverrides,
+    },
+  )
   core.setSecret(auth.authorizationToken)
   const expiresAt = Math.floor(Date.now() / 1000) + inputs.presignTtlSeconds
 
@@ -74,12 +94,15 @@ async function presignPrefix(
       })
       for (const f of page.files) {
         if (f.action !== 'upload') continue
-        const url = presignGetObjectUrl(
-          downloadUrl,
-          bucket.name,
-          f.fileName,
-          auth.authorizationToken,
-          inputs.presignTtlSeconds,
+        const url = appendDownloadHeaderOverrides(
+          presignGetObjectUrl(
+            downloadUrl,
+            bucket.name,
+            f.fileName,
+            auth.authorizationToken,
+            inputs.presignTtlSeconds,
+          ),
+          downloadOverrides,
         )
         core.setSecret(url)
         files.push({ fileName: f.fileName, url, expiresAt })
@@ -101,15 +124,22 @@ async function presignOne(
   fileName: string,
   ttlSeconds: number,
   authPrefix: string,
+  downloadOverrides: DownloadHeaderOverrides,
 ): Promise<PresignedFile> {
-  const auth = await bucket.getDownloadAuthorization(authPrefix, ttlSeconds)
+  const auth = await client.raw.getDownloadAuthorization(
+    client.accountInfo.getApiUrl(),
+    client.accountInfo.getAuthToken(),
+    {
+      bucketId: bucket.id,
+      fileNamePrefix: authPrefix,
+      validDurationInSeconds: ttlSeconds,
+      ...downloadOverrides,
+    },
+  )
   const downloadUrl = client.accountInfo.getDownloadUrl()
-  const url = presignGetObjectUrl(
-    downloadUrl,
-    bucket.name,
-    fileName,
-    auth.authorizationToken,
-    ttlSeconds,
+  const url = appendDownloadHeaderOverrides(
+    presignGetObjectUrl(downloadUrl, bucket.name, fileName, auth.authorizationToken, ttlSeconds),
+    downloadOverrides,
   )
   core.setSecret(auth.authorizationToken)
   core.setSecret(url)

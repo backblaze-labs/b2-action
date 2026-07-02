@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto'
 import { mkdir, readFile, rename, rm, stat, symlink, utimes, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { Bucket, FileVersion, ProgressEvent } from '@backblaze-labs/b2-sdk'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { downloadCommand, replaceDownloadedFile } from '../../src/commands/download.ts'
 import { uploadCommand } from '../../src/commands/upload.ts'
 import type { ParsedInputs } from '../../src/inputs.ts'
@@ -247,6 +247,27 @@ describe('upload + download commands (B2Simulator)', () => {
     expect(downloaded.files).toHaveLength(1)
     const got = await readFile(outPath)
     expect(got.equals(payload)).toBe(true)
+  })
+
+  it('passes response header overrides to downloads', async () => {
+    await seedFile(fx, 'reports/private-report.bin', 'download me as pdf')
+    const download = vi.spyOn(fx.bucket, 'download')
+
+    await downloadCommand(fx.bucket, {
+      ...baseInputs(),
+      action: 'download',
+      source: 'reports/private-report.bin',
+      destination: join(fx.workDir, 'report.pdf'),
+      contentDisposition: 'attachment; filename="report.pdf"',
+      responseContentType: 'application/pdf',
+      cacheControl: 'private, max-age=60',
+    })
+
+    expect(download.mock.calls[0]?.[1]).toMatchObject({
+      b2ContentDisposition: 'attachment; filename="report.pdf"',
+      b2ContentType: 'application/pdf',
+      b2CacheControl: 'private, max-age=60',
+    })
   })
 
   it('downloads every file under a prefix', async () => {
