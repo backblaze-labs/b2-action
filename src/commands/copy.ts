@@ -152,25 +152,31 @@ async function copyLargeFileWithSseB2Destination(
 
   try {
     let nextRangeIndex = 0
+    let stopCopyParts = false
     const workerCount = Math.min(options.concurrency, ranges.length)
     await Promise.all(
       Array.from({ length: workerCount }, async () => {
-        while (true) {
-          const range = ranges[nextRangeIndex]
-          nextRangeIndex += 1
-          if (range === undefined) return
+        try {
+          while (!stopCopyParts) {
+            const range = ranges[nextRangeIndex]
+            nextRangeIndex += 1
+            if (range === undefined) return
 
-          options.signal?.throwIfAborted()
-          const resp = await client.raw.copyPart(apiUrl, authToken, {
-            sourceFileId: options.sourceFile.fileId,
-            largeFileId: fileId(largeFileId),
-            partNumber: range.partNumber,
-            range: byteRangeHeader(range.start, range.end),
-            ...(options.sourceServerSideEncryption !== undefined
-              ? { sourceServerSideEncryption: options.sourceServerSideEncryption }
-              : {}),
-          })
-          partSha1s[range.partNumber - 1] = resp.contentSha1
+            options.signal?.throwIfAborted()
+            const resp = await client.raw.copyPart(apiUrl, authToken, {
+              sourceFileId: options.sourceFile.fileId,
+              largeFileId: fileId(largeFileId),
+              partNumber: range.partNumber,
+              range: byteRangeHeader(range.start, range.end),
+              ...(options.sourceServerSideEncryption !== undefined
+                ? { sourceServerSideEncryption: options.sourceServerSideEncryption }
+                : {}),
+            })
+            partSha1s[range.partNumber - 1] = resp.contentSha1
+          }
+        } catch (error) {
+          stopCopyParts = true
+          throw error
         }
       }),
     )

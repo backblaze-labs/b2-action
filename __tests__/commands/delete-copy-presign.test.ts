@@ -481,6 +481,7 @@ describe('copy command', () => {
     const destinationEncryption = parseSse('B2')
     const copyFile = vi.fn()
     const copyLargeFile = vi.fn()
+    let releaseFirstPart: (() => void) | undefined
     const startLargeFile = vi.fn(
       async (_apiUrl: string, _authToken: string, request: Record<string, unknown>) => ({
         fileId: 'large-file-id',
@@ -493,6 +494,11 @@ describe('copy command', () => {
     )
     const copyPart = vi.fn(
       async (_apiUrl: string, _authToken: string, request: Record<string, unknown>) => {
+        if (request.partNumber === 1) {
+          await new Promise<void>((resolve) => {
+            releaseFirstPart = resolve
+          })
+        }
         if (request.partNumber === 2) throw new Error('part failed')
         return {
           fileId: request.largeFileId,
@@ -551,9 +557,12 @@ describe('copy command', () => {
         concurrency: 2,
       }),
     ).rejects.toThrow('part failed')
+    releaseFirstPart?.()
+    await new Promise((resolve) => setTimeout(resolve, 0))
 
     expect(copyLargeFile).not.toHaveBeenCalled()
     expect(copyFile).not.toHaveBeenCalled()
+    expect(copyPart.mock.calls.map((call) => call[2].partNumber)).toEqual([1, 2])
     expect(finishLargeFile).not.toHaveBeenCalled()
     expect(cancelLargeFile).toHaveBeenCalledWith('https://api.example.test', 'auth-token', {
       fileId: 'large-file-id',
