@@ -158,6 +158,10 @@ export interface ParsedInputs {
   sse: string | undefined
   /** Parsed SSE specification ready to hand to the SDK. */
   encryption: EncryptionSetting | undefined
+  /** Raw `source-sse:` input value for copy source decryption. Retained for diagnostics. */
+  sourceSse: string | undefined
+  /** Parsed source SSE-C specification for `copy`. */
+  sourceEncryption: EncryptionSetting | undefined
   /** How `sync` compares files. */
   compareMode: CompareMode
   /** How `sync` treats destination-only files. */
@@ -189,6 +193,7 @@ export function collectInputSecretsForScrubbing(): string[] {
   addSecretValue(secretValues, core.getInput('application-key'))
   addSecretValue(secretValues, process.env[APPLICATION_KEY_ENV])
   addSseSecretValue(secretValues, core.getInput('sse'))
+  addSseSecretValue(secretValues, core.getInput('source-sse'))
   return [...secretValues]
 }
 
@@ -248,6 +253,8 @@ export function parseInputs(): ParsedInputs {
   const endpoint = optional('endpoint')
   const sse = optional('sse')
   const encryption = parseSse(sse)
+  const sourceSse = optional('source-sse')
+  const sourceEncryption = parseSse(sourceSse, { inputName: 'source-sse', allowB2: false })
 
   const contentType = optional('content-type')
   const fileInfo = parseFileInfo(optional('file-info'))
@@ -311,6 +318,8 @@ export function parseInputs(): ParsedInputs {
     failOnEmpty,
     sse,
     encryption,
+    sourceSse,
+    sourceEncryption,
     compareMode,
     keepMode,
     syncDirection,

@@ -87,7 +87,10 @@ inputs:
     required: false
     default: 'true'
   sse:
-    description: 'Server-side encryption: "B2" (SSE-B2) or "C:<base64-32-byte-key>" (SSE-C). SSE-C keys must use canonical base64 and decode to exactly 32 bytes.'
+    description: 'Server-side encryption setting for upload destinations, download sources, and copy destinations: "B2" (SSE-B2) or "C:<base64-32-byte-key>" (SSE-C). SSE-C keys must use canonical base64 and decode to exactly 32 bytes.'
+    required: false
+  source-sse:
+    description: 'SSE-C source key for copy: "C:<base64-32-byte-key>". Use when the source object was encrypted with SSE-C. Keys must use canonical base64 and decode to exactly 32 bytes.'
     required: false
   compare-mode:
     description: 'Sync comparison: modtime | size | none. Default modtime.'

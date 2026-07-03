@@ -1,11 +1,13 @@
 import { rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import type { B2Client, Bucket } from '@backblaze-labs/b2-sdk'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { copyCommand } from '../../src/commands/copy.ts'
 import { deleteCommand } from '../../src/commands/delete.ts'
 import { presignCommand } from '../../src/commands/presign.ts'
 import { uploadCommand } from '../../src/commands/upload.ts'
 import type { ParsedInputs } from '../../src/inputs.ts'
+import { parseSse } from '../../src/sse.ts'
 import {
   captureFailure,
   captureStdout,
@@ -252,6 +254,111 @@ describe('copy command', () => {
     const remaining = await fx.bucket.listFileNames({ prefix: '' })
     expect(remaining.files.some((f) => f.fileName === 'src.txt')).toBe(true)
     expect(remaining.files.some((f) => f.fileName === 'archive/src.txt')).toBe(true)
+  })
+
+  it('passes source and destination SSE settings to small copy', async () => {
+    const sourceKey = Buffer.alloc(32, 0x64).toString('base64')
+    const sourceEncryption = parseSse(`C:${sourceKey}`)
+    const destinationEncryption = parseSse('B2')
+    const copyFile = vi.fn(async () => ({ fileId: 'copy-id', contentLength: 5 }))
+    const copyLargeFile = vi.fn()
+    const bucket = {
+      name: 'dest-bucket',
+      id: 'dest-bucket-id',
+      listFileNames: vi.fn(async () => ({
+        files: [
+          {
+            action: 'upload',
+            fileId: 'source-file-id',
+            fileName: 'src.txt',
+            contentLength: 5,
+          },
+        ],
+      })),
+      copyFile,
+      copyLargeFile,
+    } as unknown as Bucket
+    const client = {
+      accountInfo: { getRecommendedPartSize: () => 100 },
+    } as unknown as B2Client
+
+    const out = await captureStdout(async () => {
+      await copyCommand(client, bucket, {
+        ...baseInputs('copy'),
+        source: 'src.txt',
+        destination: 'dst.txt',
+        encryption: destinationEncryption,
+        sourceEncryption,
+      })
+    })
+
+    expect(copyFile).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sourceFileId: 'source-file-id',
+        fileName: 'dst.txt',
+        sourceServerSideEncryption: sourceEncryption,
+        destinationServerSideEncryption: destinationEncryption,
+      }),
+    )
+    expect(copyLargeFile).not.toHaveBeenCalled()
+    expect(out).not.toContain(sourceKey)
+  })
+
+  it('passes source and destination SSE settings to large copy', async () => {
+    const sourceKey = Buffer.alloc(32, 0x65).toString('base64')
+    const destinationKey = Buffer.alloc(32, 0x66).toString('base64')
+    const sourceEncryption = parseSse(`C:${sourceKey}`)
+    const destinationEncryption = parseSse(`C:${destinationKey}`)
+    const copyFile = vi.fn()
+    const copyLargeFile = vi.fn(async () => ({ fileId: 'large-copy-id', contentLength: 250 }))
+    const bucket = {
+      name: 'dest-bucket',
+      id: 'dest-bucket-id',
+      listFileNames: vi.fn(async () => ({
+        files: [
+          {
+            action: 'upload',
+            fileId: 'large-source-file-id',
+            fileName: 'large.bin',
+            contentLength: 250,
+          },
+        ],
+      })),
+      copyFile,
+      copyLargeFile,
+    } as unknown as Bucket
+    const client = {
+      accountInfo: { getRecommendedPartSize: () => 100 },
+    } as unknown as B2Client
+    const controller = new AbortController()
+
+    const out = await captureStdout(async () => {
+      await copyCommand(
+        client,
+        bucket,
+        {
+          ...baseInputs('copy'),
+          source: 'large.bin',
+          destination: 'large-copy.bin',
+          encryption: destinationEncryption,
+          sourceEncryption,
+        },
+        controller.signal,
+      )
+    })
+
+    expect(copyLargeFile).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sourceFileId: 'large-source-file-id',
+        fileName: 'large-copy.bin',
+        sourceServerSideEncryption: sourceEncryption,
+        destinationServerSideEncryption: destinationEncryption,
+        signal: controller.signal,
+      }),
+    )
+    expect(copyFile).not.toHaveBeenCalled()
+    expect(out).not.toContain(sourceKey)
+    expect(out).not.toContain(destinationKey)
   })
 
   it('errors when source is missing', async () => {

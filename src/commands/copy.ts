@@ -68,6 +68,12 @@ export async function copyCommand(
       ...(sourceBucketName !== destinationBucket.name
         ? { destinationBucketId: destinationBucket.id }
         : {}),
+      ...(inputs.sourceEncryption !== undefined
+        ? { sourceServerSideEncryption: inputs.sourceEncryption }
+        : {}),
+      ...(inputs.encryption !== undefined
+        ? { destinationServerSideEncryption: inputs.encryption }
+        : {}),
     }
 
     const result = isLarge
