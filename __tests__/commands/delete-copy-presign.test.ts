@@ -1,6 +1,6 @@
 import { rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import type { B2Client, Bucket } from '@backblaze-labs/b2-sdk'
+import { Bucket as B2Bucket, type B2Client, type Bucket } from '@backblaze-labs/b2-sdk'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { copyCommand } from '../../src/commands/copy.ts'
 import { deleteCommand } from '../../src/commands/delete.ts'
@@ -304,32 +304,108 @@ describe('copy command', () => {
     expect(out).not.toContain(sourceKey)
   })
 
-  it('passes source and destination SSE settings to large copy', async () => {
+  it('sends source and destination SSE-C on large copy parts', async () => {
     const sourceKey = Buffer.alloc(32, 0x65).toString('base64')
     const destinationKey = Buffer.alloc(32, 0x66).toString('base64')
     const sourceEncryption = parseSse(`C:${sourceKey}`)
     const destinationEncryption = parseSse(`C:${destinationKey}`)
+    const copyPartRequests: Array<Record<string, unknown>> = []
+    let startRequest: Record<string, unknown> | undefined
+    let finishRequest: Record<string, unknown> | undefined
     const copyFile = vi.fn()
-    const copyLargeFile = vi.fn(async () => ({ fileId: 'large-copy-id', contentLength: 250 }))
-    const bucket = {
-      name: 'dest-bucket',
-      id: 'dest-bucket-id',
-      listFileNames: vi.fn(async () => ({
-        files: [
-          {
-            action: 'upload',
-            fileId: 'large-source-file-id',
-            fileName: 'large.bin',
-            contentLength: 250,
+    const listFileNames = vi.fn(async () => ({
+      files: [
+        {
+          action: 'upload',
+          fileId: 'large-source-file-id',
+          fileName: 'large.bin',
+          contentLength: 250,
+          contentType: 'application/octet-stream',
+          fileInfo: {
+            purpose: 'copy-test',
           },
-        ],
-      })),
-      copyFile,
-      copyLargeFile,
-    } as unknown as Bucket
+        },
+      ],
+    }))
+    const getFileInfo = vi.fn(async () => ({
+      fileId: 'large-source-file-id',
+      bucketId: 'source-bucket-id',
+      fileName: 'large.bin',
+      contentLength: 250,
+      contentType: 'application/octet-stream',
+      fileInfo: {
+        purpose: 'copy-test',
+      },
+    }))
+    const startLargeFile = vi.fn(
+      async (_apiUrl: string, _authToken: string, request: Record<string, unknown>) => {
+        startRequest = request
+        return {
+          fileId: 'large-file-id',
+          fileName: request.fileName,
+          accountId: 'account-id',
+          bucketId: request.bucketId,
+          contentType: request.contentType,
+          fileInfo: {},
+        }
+      },
+    )
+    const copyPart = vi.fn(
+      async (_apiUrl: string, _authToken: string, request: Record<string, unknown>) => {
+        copyPartRequests.push(request)
+        return {
+          fileId: request.largeFileId,
+          partNumber: request.partNumber,
+          contentLength: 100,
+          contentSha1: `sha-${request.partNumber}`,
+        }
+      },
+    )
+    const finishLargeFile = vi.fn(
+      async (_apiUrl: string, _authToken: string, request: Record<string, unknown>) => {
+        finishRequest = request
+        return {
+          fileId: 'finished-large-file-id',
+          contentLength: 250,
+        }
+      },
+    )
+    const cancelLargeFile = vi.fn()
     const client = {
-      accountInfo: { getRecommendedPartSize: () => 100 },
+      accountInfo: {
+        getRecommendedPartSize: () => 100,
+        getAbsoluteMinimumPartSize: () => 100,
+        getApiUrl: () => 'https://api.example.test',
+        getAuthToken: () => 'auth-token',
+      },
+      raw: {
+        listFileNames,
+        getFileInfo,
+        copyFile,
+        startLargeFile,
+        copyPart,
+        finishLargeFile,
+        cancelLargeFile,
+      },
     } as unknown as B2Client
+    const bucket = new B2Bucket(client, {
+      accountId: 'account-id',
+      bucketId: 'dest-bucket-id',
+      bucketName: 'dest-bucket',
+      bucketType: 'allPrivate',
+      bucketInfo: {},
+      corsRules: [],
+      defaultServerSideEncryption: { mode: 'none' },
+      fileLockConfiguration: { isClientAuthorizedToRead: true, value: null },
+      lifecycleRules: [],
+      options: [],
+      revision: 1,
+      defaultRetention: { mode: 'none', period: null },
+      replicationConfiguration: {
+        asReplicationSource: null,
+        asReplicationDestination: null,
+      },
+    } as unknown as ConstructorParameters<typeof B2Bucket>[1])
     const controller = new AbortController()
 
     const out = await captureStdout(async () => {
@@ -342,21 +418,48 @@ describe('copy command', () => {
           destination: 'large-copy.bin',
           encryption: destinationEncryption,
           sourceEncryption,
+          concurrency: 1,
         },
         controller.signal,
       )
     })
 
-    expect(copyLargeFile).toHaveBeenCalledWith(
+    expect(copyFile).not.toHaveBeenCalled()
+    expect(startRequest).toEqual(
       expect.objectContaining({
-        sourceFileId: 'large-source-file-id',
+        bucketId: 'dest-bucket-id',
         fileName: 'large-copy.bin',
-        sourceServerSideEncryption: sourceEncryption,
-        destinationServerSideEncryption: destinationEncryption,
-        signal: controller.signal,
+        fileInfo: {},
+        serverSideEncryption: destinationEncryption,
       }),
     )
-    expect(copyFile).not.toHaveBeenCalled()
+    expect(copyPartRequests).toEqual([
+      expect.objectContaining({
+        partNumber: 1,
+        range: 'bytes=0-99',
+        sourceServerSideEncryption: sourceEncryption,
+        destinationServerSideEncryption: destinationEncryption,
+      }),
+      expect.objectContaining({
+        partNumber: 2,
+        range: 'bytes=100-199',
+        sourceServerSideEncryption: sourceEncryption,
+        destinationServerSideEncryption: destinationEncryption,
+      }),
+      expect.objectContaining({
+        partNumber: 3,
+        range: 'bytes=200-249',
+        sourceServerSideEncryption: sourceEncryption,
+        destinationServerSideEncryption: destinationEncryption,
+      }),
+    ])
+    expect(finishRequest).toEqual(
+      expect.objectContaining({
+        fileId: 'large-file-id',
+        partSha1Array: ['sha-1', 'sha-2', 'sha-3'],
+      }),
+    )
+    expect(cancelLargeFile).not.toHaveBeenCalled()
     expect(out).not.toContain(sourceKey)
     expect(out).not.toContain(destinationKey)
   })
