@@ -5,7 +5,8 @@ import { SSE_B2, sseCustomer } from '@backblaze-labs/b2-sdk'
 
 const CANONICAL_BASE64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/
 
-interface ParseSseOptions {
+/** Options for parsing one action SSE input value. */
+export interface ParseSseOptions {
   /** Input name to use in validation errors. */
   inputName?: string
   /** Whether the input accepts SSE-B2. Source SSE-C keys do not. */
