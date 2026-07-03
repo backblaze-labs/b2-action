@@ -413,7 +413,10 @@ describe('copy command', () => {
             fileName: 'large-b2.bin',
             contentLength: 250,
             contentType: 'application/octet-stream',
-            fileInfo: {},
+            fileInfo: {
+              src_last_modified_millis: '1720000000000',
+              purpose: 'copy-test',
+            },
           },
         ],
       })),
@@ -450,6 +453,10 @@ describe('copy command', () => {
       expect.objectContaining({
         bucketId: 'dest-bucket-id',
         fileName: 'large-b2-copy.bin',
+        fileInfo: {
+          src_last_modified_millis: '1720000000000',
+          purpose: 'copy-test',
+        },
         serverSideEncryption: destinationEncryption,
       }),
     )

@@ -35858,7 +35858,7 @@ async function copyLargeFileWithSseB2Destination(client, destinationBucket, opti
         bucketId: destinationBucket.id,
         fileName: options.fileName,
         contentType: options.sourceFile.contentType ?? DEFAULT_COPY_CONTENT_TYPE,
-        fileInfo: {},
+        fileInfo: options.sourceFile.fileInfo ?? {},
         serverSideEncryption: options.destinationServerSideEncryption,
     });
     const largeFileId = startResp.fileId;
