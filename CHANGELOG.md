@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- `copy`: add `source-sse` for SSE-C source keys and apply the existing `sse` destination encryption input to server-side copies. ([#96](https://github.com/backblaze-labs/b2-action/issues/96))
+
 ## [1.1.0] - 2026-06-23
 
 ### Security

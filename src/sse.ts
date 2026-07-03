@@ -44,25 +44,27 @@ export function parseSse(
   if (normalized.startsWith('C:') || normalized.startsWith('c:')) {
     const base64Key = normalized.slice(2).trim()
     if (base64Key === '') {
-      throw new Error("SSE-C key is empty. Use 'C:<base64-encoded-32-byte-key>'.")
+      throw new Error(
+        `Invalid '${inputName}' input: SSE-C key is empty. Use 'C:<base64-encoded-32-byte-key>'.`,
+      )
     }
     // Node's `Buffer.from(str, 'base64')` silently drops invalid chars instead
     // of throwing, so validate the canonical alphabet and padding first.
     if (!CANONICAL_BASE64.test(base64Key)) {
       throw new Error(
-        "SSE-C key must be valid canonical base64. Use 'C:<base64-encoded-32-byte-key>'.",
+        `Invalid '${inputName}' input: SSE-C key must be valid canonical base64. Use 'C:<base64-encoded-32-byte-key>'.`,
       )
     }
     const keyBytes = Buffer.from(base64Key, 'base64')
     if (keyBytes.byteLength !== 32) {
       throw new Error(
-        `SSE-C key must decode to exactly 32 bytes (256 bits); got ${keyBytes.byteLength}.`,
+        `Invalid '${inputName}' input: SSE-C key must decode to exactly 32 bytes (256 bits); got ${keyBytes.byteLength}.`,
       )
     }
     const customerKey = keyBytes.toString('base64')
     if (customerKey !== base64Key) {
       throw new Error(
-        "SSE-C key must be valid canonical base64. Use 'C:<base64-encoded-32-byte-key>'.",
+        `Invalid '${inputName}' input: SSE-C key must be valid canonical base64. Use 'C:<base64-encoded-32-byte-key>'.`,
       )
     }
     const customerKeyMd5 = createHash('md5').update(keyBytes).digest('base64')

@@ -59,4 +59,11 @@ describe('parseSse', () => {
       /Invalid 'source-sse' input/,
     )
   })
+
+  it('names source-sse in SSE-C key validation errors', () => {
+    const tooShort = Buffer.alloc(16).toString('base64')
+    expect(() => parseSse(`C:${tooShort}`, { inputName: 'source-sse', allowB2: false })).toThrow(
+      /Invalid 'source-sse' input: SSE-C key must decode to exactly 32 bytes/,
+    )
+  })
 })

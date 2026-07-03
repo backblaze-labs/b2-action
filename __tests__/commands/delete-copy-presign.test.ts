@@ -361,6 +361,198 @@ describe('copy command', () => {
     expect(out).not.toContain(destinationKey)
   })
 
+  it('starts SSE-B2 large copy without destination encryption on parts', async () => {
+    const destinationEncryption = parseSse('B2')
+    const copyFile = vi.fn()
+    const copyLargeFile = vi.fn()
+    const copyPartRequests: Array<Record<string, unknown>> = []
+    let startRequest: Record<string, unknown> | undefined
+    let finishRequest: Record<string, unknown> | undefined
+    const startLargeFile = vi.fn(
+      async (_apiUrl: string, _authToken: string, request: Record<string, unknown>) => {
+        startRequest = request
+        return {
+          fileId: 'large-file-id',
+          fileName: request.fileName,
+          accountId: 'account-id',
+          bucketId: request.bucketId,
+          contentType: request.contentType,
+          fileInfo: {},
+        }
+      },
+    )
+    const copyPart = vi.fn(
+      async (_apiUrl: string, _authToken: string, request: Record<string, unknown>) => {
+        copyPartRequests.push(request)
+        return {
+          fileId: request.largeFileId,
+          partNumber: request.partNumber,
+          contentLength: 100,
+          contentSha1: `sha-${request.partNumber}`,
+        }
+      },
+    )
+    const finishLargeFile = vi.fn(
+      async (_apiUrl: string, _authToken: string, request: Record<string, unknown>) => {
+        finishRequest = request
+        return {
+          fileId: 'finished-large-file-id',
+          contentLength: 250,
+        }
+      },
+    )
+    const cancelLargeFile = vi.fn()
+    const bucket = {
+      name: 'dest-bucket',
+      id: 'dest-bucket-id',
+      listFileNames: vi.fn(async () => ({
+        files: [
+          {
+            action: 'upload',
+            fileId: 'large-source-file-id',
+            fileName: 'large-b2.bin',
+            contentLength: 250,
+            contentType: 'application/octet-stream',
+            fileInfo: {},
+          },
+        ],
+      })),
+      copyFile,
+      copyLargeFile,
+    } as unknown as Bucket
+    const client = {
+      accountInfo: {
+        getRecommendedPartSize: () => 100,
+        getAbsoluteMinimumPartSize: () => 100,
+        getApiUrl: () => 'https://api.example.test',
+        getAuthToken: () => 'auth-token',
+      },
+      raw: {
+        startLargeFile,
+        copyPart,
+        finishLargeFile,
+        cancelLargeFile,
+      },
+    } as unknown as B2Client
+
+    const result = await copyCommand(client, bucket, {
+      ...baseInputs('copy'),
+      source: 'large-b2.bin',
+      destination: 'large-b2-copy.bin',
+      encryption: destinationEncryption,
+      concurrency: 2,
+    })
+
+    expect(result.fileId).toBe('finished-large-file-id')
+    expect(copyLargeFile).not.toHaveBeenCalled()
+    expect(copyFile).not.toHaveBeenCalled()
+    expect(startRequest).toEqual(
+      expect.objectContaining({
+        bucketId: 'dest-bucket-id',
+        fileName: 'large-b2-copy.bin',
+        serverSideEncryption: destinationEncryption,
+      }),
+    )
+    expect(copyPartRequests).toEqual([
+      expect.objectContaining({ partNumber: 1, range: 'bytes=0-99' }),
+      expect.objectContaining({ partNumber: 2, range: 'bytes=100-199' }),
+      expect.objectContaining({ partNumber: 3, range: 'bytes=200-249' }),
+    ])
+    expect(
+      copyPartRequests.every((request) => !('destinationServerSideEncryption' in request)),
+    ).toBe(true)
+    expect(finishRequest).toEqual(
+      expect.objectContaining({
+        fileId: 'large-file-id',
+        partSha1Array: ['sha-1', 'sha-2', 'sha-3'],
+      }),
+    )
+    expect(cancelLargeFile).not.toHaveBeenCalled()
+  })
+
+  it('cancels SSE-B2 large copy when a part fails', async () => {
+    const destinationEncryption = parseSse('B2')
+    const copyFile = vi.fn()
+    const copyLargeFile = vi.fn()
+    const startLargeFile = vi.fn(
+      async (_apiUrl: string, _authToken: string, request: Record<string, unknown>) => ({
+        fileId: 'large-file-id',
+        fileName: request.fileName,
+        accountId: 'account-id',
+        bucketId: request.bucketId,
+        contentType: request.contentType,
+        fileInfo: {},
+      }),
+    )
+    const copyPart = vi.fn(
+      async (_apiUrl: string, _authToken: string, request: Record<string, unknown>) => {
+        if (request.partNumber === 2) throw new Error('part failed')
+        return {
+          fileId: request.largeFileId,
+          partNumber: request.partNumber,
+          contentLength: 100,
+          contentSha1: `sha-${request.partNumber}`,
+        }
+      },
+    )
+    const finishLargeFile = vi.fn()
+    const cancelLargeFile = vi.fn(async () => ({
+      fileId: 'large-file-id',
+      accountId: 'account-id',
+      bucketId: 'dest-bucket-id',
+      fileName: 'large-b2-copy.bin',
+    }))
+    const bucket = {
+      name: 'dest-bucket',
+      id: 'dest-bucket-id',
+      listFileNames: vi.fn(async () => ({
+        files: [
+          {
+            action: 'upload',
+            fileId: 'large-source-file-id',
+            fileName: 'large-b2.bin',
+            contentLength: 250,
+            contentType: 'application/octet-stream',
+            fileInfo: {},
+          },
+        ],
+      })),
+      copyFile,
+      copyLargeFile,
+    } as unknown as Bucket
+    const client = {
+      accountInfo: {
+        getRecommendedPartSize: () => 100,
+        getAbsoluteMinimumPartSize: () => 100,
+        getApiUrl: () => 'https://api.example.test',
+        getAuthToken: () => 'auth-token',
+      },
+      raw: {
+        startLargeFile,
+        copyPart,
+        finishLargeFile,
+        cancelLargeFile,
+      },
+    } as unknown as B2Client
+
+    await expect(
+      copyCommand(client, bucket, {
+        ...baseInputs('copy'),
+        source: 'large-b2.bin',
+        destination: 'large-b2-copy.bin',
+        encryption: destinationEncryption,
+        concurrency: 2,
+      }),
+    ).rejects.toThrow('part failed')
+
+    expect(copyLargeFile).not.toHaveBeenCalled()
+    expect(copyFile).not.toHaveBeenCalled()
+    expect(finishLargeFile).not.toHaveBeenCalled()
+    expect(cancelLargeFile).toHaveBeenCalledWith('https://api.example.test', 'auth-token', {
+      fileId: 'large-file-id',
+    })
+  })
+
   it('errors when source is missing', async () => {
     await expect(
       copyCommand(fx.client, fx.bucket, {
