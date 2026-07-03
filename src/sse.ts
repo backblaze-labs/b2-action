@@ -38,21 +38,21 @@ export function parseSse(
   const normalized = raw.trim()
   if (normalized.toUpperCase() === 'B2') {
     if (allowB2) return SSE_B2
-    throw new Error(`Invalid '${inputName}' input. Expected "C:<base64-encoded-32-byte-key>".`)
+    throw new Error(`Invalid '${inputName}' input. Expected "C:<base64-32-byte-key>".`)
   }
 
   if (normalized.startsWith('C:') || normalized.startsWith('c:')) {
     const base64Key = normalized.slice(2).trim()
     if (base64Key === '') {
       throw new Error(
-        `Invalid '${inputName}' input: SSE-C key is empty. Use 'C:<base64-encoded-32-byte-key>'.`,
+        `Invalid '${inputName}' input: SSE-C key is empty. Use 'C:<base64-32-byte-key>'.`,
       )
     }
     // Node's `Buffer.from(str, 'base64')` silently drops invalid chars instead
     // of throwing, so validate the canonical alphabet and padding first.
     if (!CANONICAL_BASE64.test(base64Key)) {
       throw new Error(
-        `Invalid '${inputName}' input: SSE-C key must be valid canonical base64. Use 'C:<base64-encoded-32-byte-key>'.`,
+        `Invalid '${inputName}' input: SSE-C key must be valid canonical base64. Use 'C:<base64-32-byte-key>'.`,
       )
     }
     const keyBytes = Buffer.from(base64Key, 'base64')
@@ -64,14 +64,14 @@ export function parseSse(
     const customerKey = keyBytes.toString('base64')
     if (customerKey !== base64Key) {
       throw new Error(
-        `Invalid '${inputName}' input: SSE-C key must be valid canonical base64. Use 'C:<base64-encoded-32-byte-key>'.`,
+        `Invalid '${inputName}' input: SSE-C key must be valid canonical base64. Use 'C:<base64-32-byte-key>'.`,
       )
     }
     const customerKeyMd5 = createHash('md5').update(keyBytes).digest('base64')
     return sseCustomer(customerKey, customerKeyMd5)
   }
 
-  const expected = allowB2 ? '"B2" or "C:<base64-32-byte-key>"' : '"C:<base64-encoded-32-byte-key>"'
+  const expected = allowB2 ? '"B2" or "C:<base64-32-byte-key>"' : '"C:<base64-32-byte-key>"'
   const received = allowB2 ? `: "${raw}"` : ''
   throw new Error(`Invalid '${inputName}' input${received}. Expected ${expected}.`)
 }
