@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto'
 import { mkdir, readFile, rename, rm, stat, symlink, utimes, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { Bucket, FileVersion, ProgressEvent } from '@backblaze-labs/b2-sdk'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { downloadCommand, replaceDownloadedFile } from '../../src/commands/download.ts'
 import { uploadCommand } from '../../src/commands/upload.ts'
 import type { ParsedInputs } from '../../src/inputs.ts'
@@ -277,6 +277,33 @@ describe('upload + download commands (B2Simulator)', () => {
 
     expect(downloaded.files[0]?.fileName).toBe('versioned.txt')
     await expect(readFile(outPath, 'utf8')).resolves.toBe('first version')
+  })
+
+  it('rejects a file-id from another bucket before writing bytes', async () => {
+    const otherBucket = await fx.client.createBucket({
+      bucketName: 'gh-action-test-other',
+      bucketType: 'allPrivate',
+    })
+    const local = join(fx.workDir, 'other-bucket.txt')
+    await writeFile(local, 'cross-bucket')
+    const uploaded = await uploadCommand(otherBucket, {
+      ...baseInputs(),
+      source: local,
+      destination: 'other-bucket.txt',
+    })
+    const fileId = uploaded.files[0]?.fileId
+    if (fileId === undefined) throw new Error('upload did not return a fileId')
+
+    const outPath = join(fx.workDir, 'cross-bucket-out.txt')
+    await expect(
+      downloadCommand(fx.bucket, {
+        ...baseInputs(),
+        action: 'download',
+        fileId,
+        destination: outPath,
+      }),
+    ).rejects.toThrow(/not configured bucket/)
+    await expect(readFile(outPath)).rejects.toThrow(/ENOENT/u)
   })
 
   it('downloads only the requested byte range by name', async () => {
@@ -1071,6 +1098,43 @@ describe('upload + download: log + branch coverage', () => {
         makeInputs('download', fx, { source: 'fd/', destination: join(fx.workDir, 'nested') }),
       ),
     ).rejects.toThrow(/download path collision/)
+  })
+
+  it('cancels the response body when local setup fails after download starts', async () => {
+    const parentFile = join(fx.workDir, 'not-a-directory')
+    await writeFile(parentFile, 'blocking parent')
+    const cancelBody = vi.fn()
+    const bucket = {
+      name: 'mock-bucket',
+      download: vi.fn(async () => ({
+        headers: {
+          contentLength: 7,
+          contentSha1: 'f07e5a815613c5abeddc4b682247a4c42d8a95df',
+          contentType: 'text/plain',
+          fileId: 'mock-file-id',
+          fileInfo: {},
+          fileName: 'post-response.txt',
+          uploadTimestamp: Date.now(),
+        },
+        body: new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode('payload'))
+          },
+          cancel: cancelBody,
+        }),
+      })),
+    } as unknown as Parameters<typeof downloadCommand>[0]
+
+    await expect(
+      downloadCommand(
+        bucket,
+        makeInputs('download', fx, {
+          source: 'post-response.txt',
+          destination: join(parentFile, 'out.txt'),
+        }),
+      ),
+    ).rejects.toThrow(/EEXIST|ENOTDIR|not a directory/u)
+    expect(cancelBody).toHaveBeenCalledTimes(1)
   })
 })
 

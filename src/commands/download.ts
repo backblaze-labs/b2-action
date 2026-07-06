@@ -23,7 +23,7 @@ export interface DownloadedFile {
   localPath: string
   /** Byte size of the downloaded body. */
   size: number
-  /** Remote SHA-1, or `null` if the file was multipart-uploaded (B2 doesn't store a whole-file SHA-1 in that case). */
+  /** Remote whole-file SHA-1, or `null` for ranged downloads, multipart uploads, or other non-comparable SHA-1 cases. */
   contentSha1: string | null
 }
 
@@ -69,12 +69,18 @@ interface ReplaceDownloadedFileOptions {
  * Download from B2 to the local runner.
  *
  * Modes:
+ *   - If `file-id` is set, download that exact B2 file version. `source` is
+ *     only used as an optional local filename hint when B2 omits a name.
  *   - If `source` ends with `/`, treat it as a prefix and download every file
  *     under it to the local directory at `destination` (defaults to `.`).
  *   - Otherwise download a single file. If `destination` ends with `/` or
  *     resolves to an existing directory, write into that directory using the
  *     basename of `source`. Else `destination` is the exact output file path.
  *     If unset, the file's basename is used in the current working directory.
+ *
+ * When `range` is set it is passed to the SDK download call and
+ * `contentSha1` is returned as `null`, because a B2 whole-object SHA-1 does
+ * not verify the partial response body.
  */
 export async function downloadCommand(
   bucket: Bucket,
@@ -219,65 +225,78 @@ async function downloadOne(
   pathSafety?: DownloadPathSafety,
 ): Promise<DownloadedFile> {
   const result = await downloadTarget(bucket, target, sseDownload, range, signal)
-  const fileName = downloadResultFileName(target, result.headers.fileName)
-  const localPath =
-    pathSafety !== undefined && destination !== undefined
-      ? resolve(destination)
-      : await resolveLocalPath(fileName, destination)
-  if (pathSafety !== undefined) {
-    await assertFreshAncestryInsideRoot(pathSafety, localPath, fileName)
-  }
-  await mkdir(dirname(localPath), { recursive: true })
-  if (pathSafety !== undefined) {
-    await assertFreshAncestryInsideRoot(pathSafety, localPath, fileName)
-  }
 
-  const size = result.headers.contentLength
-  const sha1 = range === undefined ? result.headers.contentSha1 : null
-
-  // Wrap the body in a byte-counting Transform that synthesizes ProgressEvents
-  // for the shared progress listener. The SDK doesn't expose progress for
-  // single-shot downloads; we compute it here from the known content-length.
-  const onProgress = makeProgressListener(`download[${fileName}]`)
-  const startedAt = Date.now()
-  let bytesSeen = 0
-  const counter = new Transform({
-    transform(chunk: Buffer, _enc, cb) {
-      // The transform only runs when the body has bytes to push; for a zero-
-      // length response Node's stream pipeline closes without invoking it,
-      // so `size` is provably > 0 here.
-      bytesSeen += chunk.length
-      onProgress({
-        bytesTransferred: bytesSeen,
-        totalBytes: size,
-        partsCompleted: 0,
-        totalParts: null,
-        elapsedMs: Date.now() - startedAt,
-      })
-      cb(null, chunk)
-    },
-  })
-
-  if (pathSafety !== undefined) {
-    await assertFreshAncestryInsideRoot(pathSafety, localPath, fileName)
-  }
-  const tempPath = `${localPath}.b2-action-download-${randomUUID()}.tmp`
-  const writeStream = createWriteStream(tempPath, { flags: 'wx' })
+  let fileName = ''
+  let localPath = ''
+  let size = 0
+  let sha1: string | null = null
+  let tempPath: string | undefined
+  let bodyConsumed = false
   try {
+    fileName = downloadResultFileName(target, result.headers.fileName)
+    localPath =
+      pathSafety !== undefined && destination !== undefined
+        ? resolve(destination)
+        : await resolveLocalPath(fileName, destination)
+    if (pathSafety !== undefined) {
+      await assertFreshAncestryInsideRoot(pathSafety, localPath, fileName)
+    }
+    await mkdir(dirname(localPath), { recursive: true })
+    if (pathSafety !== undefined) {
+      await assertFreshAncestryInsideRoot(pathSafety, localPath, fileName)
+    }
+
+    size = result.headers.contentLength
+    sha1 = range === undefined ? result.headers.contentSha1 : null
+
+    // Wrap the body in a byte-counting Transform that synthesizes ProgressEvents
+    // for the shared progress listener. The SDK doesn't expose progress for
+    // single-shot downloads; we compute it here from the known content-length.
+    const onProgress = makeProgressListener(`download[${fileName}]`)
+    const startedAt = Date.now()
+    let bytesSeen = 0
+    const counter = new Transform({
+      transform(chunk: Buffer, _enc, cb) {
+        // The transform only runs when the body has bytes to push; for a zero-
+        // length response Node's stream pipeline closes without invoking it,
+        // so `size` is provably > 0 here.
+        bytesSeen += chunk.length
+        onProgress({
+          bytesTransferred: bytesSeen,
+          totalBytes: size,
+          partsCompleted: 0,
+          totalParts: null,
+          elapsedMs: Date.now() - startedAt,
+        })
+        cb(null, chunk)
+      },
+    })
+
+    if (pathSafety !== undefined) {
+      await assertFreshAncestryInsideRoot(pathSafety, localPath, fileName)
+    }
+    tempPath = `${localPath}.b2-action-download-${randomUUID()}.tmp`
+    const writeStream = createWriteStream(tempPath, { flags: 'wx' })
     await pipeline(
       Readable.fromWeb(result.body as unknown as Parameters<typeof Readable.fromWeb>[0]),
       counter,
       writeStream,
     )
+    bodyConsumed = true
     await replaceDownloadedFile(tempPath, localPath)
   } catch (err) {
+    if (!bodyConsumed) {
+      await cancelDownloadBody(result.body)
+    }
     // Partial download on disk is worse than no file. Write through a
     // same-directory temporary file and rename only after the body completes,
     // which also avoids following an existing symlink at the final leaf.
-    try {
-      await unlink(tempPath)
-    } catch {
-      // ignore: best-effort cleanup, the original error matters more
+    if (tempPath !== undefined) {
+      try {
+        await unlink(tempPath)
+      } catch {
+        // ignore: best-effort cleanup, the original error matters more
+      }
     }
     throw err
   }
@@ -301,11 +320,25 @@ async function downloadTarget(
     ...(signal !== undefined ? { signal } : {}),
   }
   if (target.kind === 'id') {
-    return await bucket
-      .file(target.fileNameHint ?? target.fileId)
-      .downloadById(toB2FileId(target.fileId), options)
+    const b2FileId = toB2FileId(target.fileId)
+    const fileInfo = await bucket.file(target.fileNameHint ?? target.fileId).getFileInfo(b2FileId)
+    if (fileInfo.bucketId !== bucket.id) {
+      throw new Error(
+        `file-id ${target.fileId} belongs to bucket ${fileInfo.bucketId}, not configured bucket ${bucket.id}`,
+      )
+    }
+    return await bucket.file(fileInfo.fileName).downloadById(b2FileId, options)
   }
   return await bucket.download(target.fileName, options)
+}
+
+async function cancelDownloadBody(body: ReadableStream<unknown>): Promise<void> {
+  try {
+    await body.cancel()
+  } catch {
+    // If Node already locked or canceled the stream while wiring pipeline,
+    // there is nothing useful to do here. Preserve the original failure.
+  }
 }
 
 function downloadResultFileName(target: DownloadTarget, responseFileName: string): string {
