@@ -36257,7 +36257,7 @@ async function downloadTarget(bucket, target, sseDownload, range, signal) {
     };
     if (target.kind === 'id') {
         const b2FileId = fileId(target.fileId);
-        const fileInfo = await bucket.file(target.fileNameHint ?? target.fileId).getFileInfo(b2FileId);
+        const fileInfo = await bucket.file(target.fileId).getFileInfo(b2FileId);
         if (fileInfo.bucketId !== bucket.id) {
             throw new Error(`file-id ${target.fileId} belongs to bucket ${fileInfo.bucketId}, not configured bucket ${bucket.id}`);
         }

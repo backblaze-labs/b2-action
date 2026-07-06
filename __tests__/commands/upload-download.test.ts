@@ -374,6 +374,56 @@ describe('upload + download commands (B2Simulator)', () => {
     expect(out).not.toContain('download range')
   })
 
+  it('uses the file-id, not source hint, for file-info lookup', async () => {
+    const fileId = '4_z_000000000000000000000003'
+    const getFileInfo = vi.fn(async () => ({
+      bucketId: 'bucket-id',
+      fileName: 'remote-name.txt',
+    }))
+    const downloadById = vi.fn(async () => ({
+      headers: {
+        contentLength: 7,
+        contentSha1: 'f07e5a815613c5abeddc4b682247a4c42d8a95df',
+        contentType: 'text/plain',
+        fileId,
+        fileInfo: {},
+        fileName: 'remote-name.txt',
+        uploadTimestamp: Date.now(),
+      },
+      body: new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('payload'))
+          controller.close()
+        },
+      }),
+    }))
+    const file = vi.fn((name: string) => {
+      if (name === fileId) return { getFileInfo }
+      if (name === 'remote-name.txt') return { downloadById }
+      throw new Error(`unexpected file handle ${name}`)
+    })
+    const bucket = {
+      id: 'bucket-id',
+      name: 'mock-bucket',
+      file,
+    } as unknown as Parameters<typeof downloadCommand>[0]
+
+    const outPath = join(fx.workDir, 'source-hint-out.txt')
+    await downloadCommand(bucket, {
+      ...baseInputs(),
+      action: 'download',
+      source: 'local-only-hint.txt',
+      fileId,
+      destination: outPath,
+    })
+
+    expect(file).toHaveBeenNthCalledWith(1, fileId)
+    expect(file).toHaveBeenNthCalledWith(2, 'remote-name.txt')
+    expect(getFileInfo).toHaveBeenCalledTimes(1)
+    expect(downloadById).toHaveBeenCalledTimes(1)
+    await expect(readFile(outPath, 'utf8')).resolves.toBe('payload')
+  })
+
   it('passes range through when downloading by file-id', async () => {
     const local = join(fx.workDir, 'id-range.txt')
     await writeFile(local, '0123456789')
