@@ -283,9 +283,9 @@ async function downloadOne(
     let bytesSeen = 0
     const counter = new Transform({
       transform(chunk: Buffer, _enc, cb) {
-        // The transform only runs when the body has bytes to push; for a zero-
-        // length response Node's stream pipeline closes without invoking it,
-        // so `size` is provably > 0 here.
+        // The transform only runs when chunks are emitted. Empty responses
+        // complete without progress events, leaving final byte reporting to
+        // the command result.
         bytesSeen += chunk.length
         onProgress({
           bytesTransferred: bytesSeen,
