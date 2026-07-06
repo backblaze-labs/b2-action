@@ -22,7 +22,13 @@ inputs:
     description: 'Source bucket for cross-bucket copy. Defaults to `bucket`.'
     required: false
   source:
-    description: 'Command-dependent. upload/sync (up): local path or glob. download/sync (down)/copy/delete/presign/list/hide/unhide/verify/retention/head/purge: B2 file name or prefix. Prefix downloads reject keys with empty, `.`, `..`, or control-character path segments. For whole-bucket purge, omit source or set `/` and set allow-bucket-purge: true.'
+    description: 'Command-dependent. upload/sync (up): local path or glob. download/sync (down)/copy/delete/presign/list/hide/unhide/verify/retention/head/purge: B2 file name or prefix. Download may omit source when file-id is set. Prefix downloads reject keys with empty, `.`, `..`, or control-character path segments. For whole-bucket purge, omit source or set `/` and set allow-bucket-purge: true.'
+    required: false
+  file-id:
+    description: 'B2 file version ID to download. When set for download, the action fetches that exact version instead of resolving source by name.'
+    required: false
+  range:
+    description: 'HTTP Range header for download, such as `bytes=0-1023`. Ranged downloads write only the returned bytes and skip whole-object SHA-1 verification because B2 returns the full-object SHA-1 header for partial responses.'
     required: false
   destination:
     description: 'Command-dependent. upload/sync (up): B2 file name or prefix; SDK/B2 key validation errors are surfaced rather than silently rewriting `/` characters. download/sync (down): local path or directory. copy: destination B2 file name. verify: local file to compare against the remote SHA-1.'
@@ -128,7 +134,7 @@ outputs:
   file-name:
     description: 'B2 file name (path) of a single-file op.'
   content-sha1:
-    description: 'SHA-1 hex digest when B2 provides a whole-file digest; omitted when unavailable, including multipart objects.'
+    description: 'SHA-1 hex digest when B2 provides a whole-file digest and the action can treat it as the downloaded body digest; omitted when unavailable, including multipart objects and ranged downloads.'
   bytes-transferred:
     description: 'Total bytes uploaded/downloaded/copied/synced. Head emits 0.'
   file-count:

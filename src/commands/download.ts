@@ -5,7 +5,12 @@ import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
 import { Readable, Transform } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import * as core from '@actions/core'
-import type { Bucket, SseCDownloadKey } from '@backblaze-labs/b2-sdk'
+import {
+  type Bucket,
+  type DownloadCallOptions,
+  type SseCDownloadKey,
+  fileId as toB2FileId,
+} from '@backblaze-labs/b2-sdk'
 import { tryStat } from '../fs.ts'
 import { type ParsedInputs, requireSource } from '../inputs.ts'
 import { makeProgressListener } from '../progress.ts'
@@ -45,6 +50,10 @@ interface PlannedDownload {
   localPath: string
 }
 
+type DownloadTarget =
+  | { kind: 'name'; fileName: string }
+  | { kind: 'id'; fileId: string; fileNameHint: string | undefined }
+
 interface LocalPathOwner {
   fileName: string
   localPath: string
@@ -72,15 +81,41 @@ export async function downloadCommand(
   inputs: ParsedInputs,
   signal?: AbortSignal,
 ): Promise<DownloadResult> {
-  const source = requireSource(inputs.source, 'download', 'a B2 file name or prefix')
+  const sseDownload = sseFromInputs(inputs)
+  const range = inputs.range
+
+  if (range !== undefined) {
+    core.info(
+      `download range ${range} requested; whole-object SHA-1 verification is skipped for partial responses`,
+    )
+  }
+
+  if (inputs.fileId !== undefined) {
+    const out = await downloadOne(
+      bucket,
+      { kind: 'id', fileId: inputs.fileId, fileNameHint: inputs.source },
+      inputs.destination,
+      sseDownload,
+      range,
+      signal,
+    )
+    return { files: [out], bytesTransferred: out.size }
+  }
+
+  const source = requireSource(inputs.source, 'download', 'a B2 file name or prefix, or file-id')
   const isPrefix = source.endsWith('/')
 
-  const sseDownload = sseFromInputs(inputs)
-
   if (isPrefix) {
-    return downloadPrefix(bucket, source, inputs.destination ?? '.', sseDownload, signal)
+    return downloadPrefix(bucket, source, inputs.destination ?? '.', sseDownload, range, signal)
   }
-  const out = await downloadOne(bucket, source, inputs.destination, sseDownload, signal)
+  const out = await downloadOne(
+    bucket,
+    { kind: 'name', fileName: source },
+    inputs.destination,
+    sseDownload,
+    range,
+    signal,
+  )
   return { files: [out], bytesTransferred: out.size }
 }
 
@@ -99,6 +134,7 @@ async function downloadPrefix(
   prefix: string,
   destinationDir: string,
   sseDownload: SseCDownloadKey | undefined,
+  range: string | undefined,
   signal?: AbortSignal,
 ): Promise<DownloadResult> {
   const destRoot = resolve(destinationDir)
@@ -156,9 +192,10 @@ async function downloadPrefix(
     try {
       const r = await downloadOne(
         bucket,
-        plan.fileName,
+        { kind: 'name', fileName: plan.fileName },
         plan.localPath,
         sseDownload,
+        range,
         signal,
         downloadPathSafety,
       )
@@ -174,12 +211,15 @@ async function downloadPrefix(
 
 async function downloadOne(
   bucket: Bucket,
-  fileName: string,
+  target: DownloadTarget,
   destination: string | undefined,
   sseDownload: SseCDownloadKey | undefined,
+  range: string | undefined,
   signal?: AbortSignal,
   pathSafety?: DownloadPathSafety,
 ): Promise<DownloadedFile> {
+  const result = await downloadTarget(bucket, target, sseDownload, range, signal)
+  const fileName = downloadResultFileName(target, result.headers.fileName)
   const localPath =
     pathSafety !== undefined && destination !== undefined
       ? resolve(destination)
@@ -192,12 +232,8 @@ async function downloadOne(
     await assertFreshAncestryInsideRoot(pathSafety, localPath, fileName)
   }
 
-  const result = await bucket.download(fileName, {
-    ...(sseDownload !== undefined ? { serverSideEncryption: sseDownload } : {}),
-    ...(signal !== undefined ? { signal } : {}),
-  })
   const size = result.headers.contentLength
-  const sha1 = result.headers.contentSha1
+  const sha1 = range === undefined ? result.headers.contentSha1 : null
 
   // Wrap the body in a byte-counting Transform that synthesizes ProgressEvents
   // for the shared progress listener. The SDK doesn't expose progress for
@@ -246,9 +282,36 @@ async function downloadOne(
     throw err
   }
 
-  core.info(`  wrote ${size} bytes to ${localPath} (sha1=${sha1 ?? 'multipart'})`)
+  const sha1Label = range !== undefined ? 'skipped-range' : (sha1 ?? 'multipart')
+  core.info(`  wrote ${size} bytes to ${localPath} (sha1=${sha1Label})`)
 
   return { fileName, localPath, size, contentSha1: sha1 }
+}
+
+async function downloadTarget(
+  bucket: Bucket,
+  target: DownloadTarget,
+  sseDownload: SseCDownloadKey | undefined,
+  range: string | undefined,
+  signal: AbortSignal | undefined,
+) {
+  const options: DownloadCallOptions = {
+    ...(sseDownload !== undefined ? { serverSideEncryption: sseDownload } : {}),
+    ...(range !== undefined ? { range } : {}),
+    ...(signal !== undefined ? { signal } : {}),
+  }
+  if (target.kind === 'id') {
+    return await bucket
+      .file(target.fileNameHint ?? target.fileId)
+      .downloadById(toB2FileId(target.fileId), options)
+  }
+  return await bucket.download(target.fileName, options)
+}
+
+function downloadResultFileName(target: DownloadTarget, responseFileName: string): string {
+  if (responseFileName !== '') return responseFileName
+  if (target.kind === 'name') return target.fileName
+  return target.fileNameHint ?? target.fileId
 }
 
 /**

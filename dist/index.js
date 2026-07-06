@@ -39257,6 +39257,8 @@ function parseInputs() {
         throw new Error(`Duplicate fileInfo key "src_last_modified_millis" from 'preserve-mtime' input`);
     }
     const expectedSha1 = optional('expected-sha1');
+    const fileId = optional('file-id');
+    const range = optional('range');
     const retentionUntil = optional('retention-until');
     const compareMode = parseEnum('compare-mode', (getInput('compare-mode') || 'modtime').toLowerCase(), VALID_COMPARE);
     const keepMode = parseEnum('keep-mode', (getInput('keep-mode') || 'no-delete').toLowerCase(), VALID_KEEP);
@@ -39291,6 +39293,8 @@ function parseInputs() {
         syncDirection,
         maxResults,
         expectedSha1,
+        fileId,
+        range,
         retentionMode,
         retentionUntil,
         legalHold,
@@ -39794,6 +39798,7 @@ function makeProgressListener(label, intervalMs = 1000) {
 
 
 
+
 /**
  * Download from B2 to the local runner.
  *
@@ -39806,13 +39811,21 @@ function makeProgressListener(label, intervalMs = 1000) {
  *     If unset, the file's basename is used in the current working directory.
  */
 async function downloadCommand(bucket, inputs, signal) {
-    const source = requireSource(inputs.source, 'download', 'a B2 file name or prefix');
-    const isPrefix = source.endsWith('/');
     const sseDownload = sseFromInputs(inputs);
-    if (isPrefix) {
-        return downloadPrefix(bucket, source, inputs.destination ?? '.', sseDownload, signal);
+    const range = inputs.range;
+    if (range !== undefined) {
+        info(`download range ${range} requested; whole-object SHA-1 verification is skipped for partial responses`);
     }
-    const out = await downloadOne(bucket, source, inputs.destination, sseDownload, signal);
+    if (inputs.fileId !== undefined) {
+        const out = await downloadOne(bucket, { kind: 'id', fileId: inputs.fileId, fileNameHint: inputs.source }, inputs.destination, sseDownload, range, signal);
+        return { files: [out], bytesTransferred: out.size };
+    }
+    const source = requireSource(inputs.source, 'download', 'a B2 file name or prefix, or file-id');
+    const isPrefix = source.endsWith('/');
+    if (isPrefix) {
+        return downloadPrefix(bucket, source, inputs.destination ?? '.', sseDownload, range, signal);
+    }
+    const out = await downloadOne(bucket, { kind: 'name', fileName: source }, inputs.destination, sseDownload, range, signal);
     return { files: [out], bytesTransferred: out.size };
 }
 function sseFromInputs(inputs) {
@@ -39825,7 +39838,7 @@ function sseFromInputs(inputs) {
         customerKeyMd5: e.customerKeyMd5,
     };
 }
-async function downloadPrefix(bucket, prefix, destinationDir, sseDownload, signal) {
+async function downloadPrefix(bucket, prefix, destinationDir, sseDownload, range, signal) {
     const destRoot = (0,external_node_path_.resolve)(destinationDir);
     await (0,promises_.mkdir)(destRoot, { recursive: true });
     const pathSafety = await createPathSafetyContext(destRoot);
@@ -39867,7 +39880,7 @@ async function downloadPrefix(bucket, prefix, destinationDir, sseDownload, signa
         signal?.throwIfAborted();
         startGroup(`download b2://${bucket.name}/${plan.fileName} → ${plan.localPath}`);
         try {
-            const r = await downloadOne(bucket, plan.fileName, plan.localPath, sseDownload, signal, downloadPathSafety);
+            const r = await downloadOne(bucket, { kind: 'name', fileName: plan.fileName }, plan.localPath, sseDownload, range, signal, downloadPathSafety);
             files.push(r);
             total += r.size;
         }
@@ -39877,7 +39890,9 @@ async function downloadPrefix(bucket, prefix, destinationDir, sseDownload, signa
     }
     return { files, bytesTransferred: total };
 }
-async function downloadOne(bucket, fileName, destination, sseDownload, signal, pathSafety) {
+async function downloadOne(bucket, target, destination, sseDownload, range, signal, pathSafety) {
+    const result = await downloadTarget(bucket, target, sseDownload, range, signal);
+    const fileName = downloadResultFileName(target, result.headers.fileName);
     const localPath = pathSafety !== undefined && destination !== undefined
         ? (0,external_node_path_.resolve)(destination)
         : await resolveLocalPath(fileName, destination);
@@ -39888,12 +39903,8 @@ async function downloadOne(bucket, fileName, destination, sseDownload, signal, p
     if (pathSafety !== undefined) {
         await assertFreshAncestryInsideRoot(pathSafety, localPath, fileName);
     }
-    const result = await bucket.download(fileName, {
-        ...(sseDownload !== undefined ? { serverSideEncryption: sseDownload } : {}),
-        ...(signal !== undefined ? { signal } : {}),
-    });
     const size = result.headers.contentLength;
-    const sha1 = result.headers.contentSha1;
+    const sha1 = range === undefined ? result.headers.contentSha1 : null;
     // Wrap the body in a byte-counting Transform that synthesizes ProgressEvents
     // for the shared progress listener. The SDK doesn't expose progress for
     // single-shot downloads; we compute it here from the known content-length.
@@ -39937,8 +39948,29 @@ async function downloadOne(bucket, fileName, destination, sseDownload, signal, p
         }
         throw err;
     }
-    info(`  wrote ${size} bytes to ${localPath} (sha1=${sha1 ?? 'multipart'})`);
+    const sha1Label = range !== undefined ? 'skipped-range' : (sha1 ?? 'multipart');
+    info(`  wrote ${size} bytes to ${localPath} (sha1=${sha1Label})`);
     return { fileName, localPath, size, contentSha1: sha1 };
+}
+async function downloadTarget(bucket, target, sseDownload, range, signal) {
+    const options = {
+        ...(sseDownload !== undefined ? { serverSideEncryption: sseDownload } : {}),
+        ...(range !== undefined ? { range } : {}),
+        ...(signal !== undefined ? { signal } : {}),
+    };
+    if (target.kind === 'id') {
+        return await bucket
+            .file(target.fileNameHint ?? target.fileId)
+            .downloadById(fileId(target.fileId), options);
+    }
+    return await bucket.download(target.fileName, options);
+}
+function downloadResultFileName(target, responseFileName) {
+    if (responseFileName !== '')
+        return responseFileName;
+    if (target.kind === 'name')
+        return target.fileName;
+    return target.fileNameHint ?? target.fileId;
 }
 /**
  * Atomically move a completed same-directory download into place.

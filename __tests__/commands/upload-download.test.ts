@@ -249,6 +249,78 @@ describe('upload + download commands (B2Simulator)', () => {
     expect(got.equals(payload)).toBe(true)
   })
 
+  it('downloads a specific file version by file-id', async () => {
+    const local = join(fx.workDir, 'versioned.txt')
+    await writeFile(local, 'first version')
+    const firstUpload = await uploadCommand(fx.bucket, {
+      ...baseInputs(),
+      source: local,
+      destination: 'versioned.txt',
+    })
+    const firstFileId = firstUpload.files[0]?.fileId
+    if (firstFileId === undefined) throw new Error('upload did not return a fileId')
+
+    await writeFile(local, 'second version')
+    await uploadCommand(fx.bucket, {
+      ...baseInputs(),
+      source: local,
+      destination: 'versioned.txt',
+    })
+
+    const outPath = join(fx.workDir, 'downloaded-version.txt')
+    const downloaded = await downloadCommand(fx.bucket, {
+      ...baseInputs(),
+      action: 'download',
+      fileId: firstFileId,
+      destination: outPath,
+    })
+
+    expect(downloaded.files[0]?.fileName).toBe('versioned.txt')
+    await expect(readFile(outPath, 'utf8')).resolves.toBe('first version')
+  })
+
+  it('downloads only the requested byte range by name', async () => {
+    await seedFile(fx, 'range.txt', '0123456789')
+
+    const outPath = join(fx.workDir, 'range-out.txt')
+    const downloaded = await downloadCommand(fx.bucket, {
+      ...baseInputs(),
+      action: 'download',
+      source: 'range.txt',
+      destination: outPath,
+      range: 'bytes=2-5',
+    })
+
+    expect(downloaded.bytesTransferred).toBe(4)
+    expect(downloaded.files[0]?.size).toBe(4)
+    expect(downloaded.files[0]?.contentSha1).toBeNull()
+    await expect(readFile(outPath, 'utf8')).resolves.toBe('2345')
+  })
+
+  it('passes range through when downloading by file-id', async () => {
+    const local = join(fx.workDir, 'id-range.txt')
+    await writeFile(local, '0123456789')
+    const uploaded = await uploadCommand(fx.bucket, {
+      ...baseInputs(),
+      source: local,
+      destination: 'id-range.txt',
+    })
+    const fileId = uploaded.files[0]?.fileId
+    if (fileId === undefined) throw new Error('upload did not return a fileId')
+
+    const outPath = join(fx.workDir, 'id-range-out.txt')
+    const downloaded = await downloadCommand(fx.bucket, {
+      ...baseInputs(),
+      action: 'download',
+      fileId,
+      destination: outPath,
+      range: 'bytes=4-7',
+    })
+
+    expect(downloaded.files[0]?.contentSha1).toBeNull()
+    await expect(readFile(outPath, 'utf8')).resolves.toBe('4567')
+  })
+
   it('downloads every file under a prefix', async () => {
     for (const name of ['a.txt', 'b.txt', 'c.txt']) {
       const local = join(fx.workDir, name)
