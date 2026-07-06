@@ -89,7 +89,7 @@ Exact-version releases publish an attested `dist/index.js` asset for provenance 
 | Verb | What it does | Required inputs |
 | --- | --- | --- |
 | `upload` | Single-file or glob upload. Streams the file from disk so multi-GB payloads stay memory-bounded; auto-routes to multipart for large files. | `source`, `bucket` |
-| `download` | Single-file or prefix-bulk download. | `source`, `bucket` |
+| `download` | Single-file, file-ID, or prefix-bulk download. | `bucket` plus `source` or `file-id` |
 | `sync` | Mirror a local directory ↔ a B2 prefix. Direction auto-detected. | `source`, `destination`, `bucket` |
 | `copy` | Server-side copy. Same bucket by default; cross-bucket with `source-bucket`. | `source`, `destination`, `bucket` |
 | `delete` | Single file by name, or prefix-bulk via `b2_list_file_versions`. Supports `dry-run` and `bypass-governance` for governance-retained versions. | `source`, `bucket` |
@@ -397,7 +397,7 @@ Set `bypass-governance: true` to shorten governance-mode retention or to remove 
 | `source-bucket` | copy only | `bucket` | Source bucket for cross-bucket copy. |
 | `source` | command-dependent | | Local path/glob (upload/sync up); B2 file name or prefix (everything else). Download may omit `source` when `file-id` is set. Prefix downloads reject keys with empty, `.`, `..`, or control-character path segments. For whole-bucket purge, omit `source` or set `/` and set `allow-bucket-purge: true`. |
 | `file-id` | download only | | B2 file version ID to download. When set, `download` fetches that exact version instead of resolving `source` by name. |
-| `range` | download only | | HTTP Range header, such as `bytes=0-1023`. Ranged downloads write only the returned bytes and skip whole-object SHA-1 verification. |
+| `range` | download only | | Single HTTP byte range, such as `bytes=0-1023`, `bytes=1024-`, or `bytes=-1024`. Ranged downloads write only the returned bytes and skip whole-object SHA-1 verification. |
 | `destination` | command-dependent | | B2 file/prefix (upload/sync up/copy); local path (download/sync down/verify). Upload destinations are not normalized by the action; SDK/B2 key validation errors are surfaced rather than silently rewriting `/` characters. |
 | `include` | no | | CSV of glob patterns to include (upload). |
 | `exclude` | no | `.git/**` | CSV of glob patterns to exclude (upload). |

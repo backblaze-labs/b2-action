@@ -171,7 +171,7 @@ export interface ParsedInputs {
   expectedSha1: string | undefined
   /** B2 file version ID to download. When set, download ignores `source` lookup by name. */
   fileId: string | undefined
-  /** HTTP Range header value for download requests, e.g. `bytes=0-1023`. */
+  /** Single HTTP byte range for download requests, e.g. `bytes=0-1023`. */
   range: string | undefined
   /** Object Lock retention mode to apply (`retention` verb). */
   retentionMode: RetentionMode | undefined

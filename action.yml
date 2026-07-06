@@ -28,7 +28,7 @@ inputs:
     description: 'B2 file version ID to download. When set for download, the action fetches that exact version instead of resolving source by name.'
     required: false
   range:
-    description: 'HTTP Range header for download, such as `bytes=0-1023`. Ranged downloads write only the returned bytes and skip whole-object SHA-1 verification because B2 returns the full-object SHA-1 header for partial responses.'
+    description: 'Single HTTP byte range for download, such as `bytes=0-1023`, `bytes=1024-`, or `bytes=-1024`. Ranged downloads write only the returned bytes and skip whole-object SHA-1 verification because B2 returns the full-object SHA-1 header for partial responses.'
     required: false
   destination:
     description: 'Command-dependent. upload/sync (up): B2 file name or prefix; SDK/B2 key validation errors are surfaced rather than silently rewriting `/` characters. download/sync (down): local path or directory. copy: destination B2 file name. verify: local file to compare against the remote SHA-1.'

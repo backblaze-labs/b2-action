@@ -324,6 +324,31 @@ describe('upload + download commands (B2Simulator)', () => {
     await expect(readFile(outPath, 'utf8')).resolves.toBe('2345')
   })
 
+  it('rejects malformed ranges before logging or downloading', async () => {
+    const bucket = {
+      name: 'mock-bucket',
+      download: vi.fn(),
+    } as unknown as Parameters<typeof downloadCommand>[0]
+    const ranges = ['bytes=5-2', 'bytes=0-1,3-4', 'bytes=0-1\n::warning::injected']
+
+    const out = await captureStdout(async () => {
+      for (const range of ranges) {
+        await expect(
+          downloadCommand(bucket, {
+            ...baseInputs(),
+            action: 'download',
+            source: 'range.txt',
+            range,
+          }),
+        ).rejects.toThrow(/'range' input/)
+      }
+    })
+
+    expect(bucket.download).not.toHaveBeenCalled()
+    expect(out).not.toContain('::warning::injected')
+    expect(out).not.toContain('download range')
+  })
+
   it('passes range through when downloading by file-id', async () => {
     const local = join(fx.workDir, 'id-range.txt')
     await writeFile(local, '0123456789')

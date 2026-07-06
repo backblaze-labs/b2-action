@@ -88,7 +88,7 @@ export async function downloadCommand(
   signal?: AbortSignal,
 ): Promise<DownloadResult> {
   const sseDownload = sseFromInputs(inputs)
-  const range = inputs.range
+  const range = inputs.range === undefined ? undefined : validateDownloadRange(inputs.range)
 
   if (range !== undefined) {
     core.info(
@@ -133,6 +133,32 @@ function sseFromInputs(inputs: ParsedInputs): SseCDownloadKey | undefined {
     customerKey: e.customerKey,
     customerKeyMd5: e.customerKeyMd5,
   }
+}
+
+function validateDownloadRange(range: string): string {
+  if (range.includes('\r') || range.includes('\n')) {
+    throw new Error("'range' input must be a single HTTP byte range without line breaks")
+  }
+
+  const match = /^bytes=(?:(\d+)-(\d*)|-(\d+))$/.exec(range)
+  if (match === null) {
+    throw new Error(
+      "'range' input must be a single HTTP byte range like bytes=0-1023, bytes=1024-, or bytes=-1024",
+    )
+  }
+
+  const start = match[1]
+  const end = match[2]
+  const suffixLength = match[3]
+
+  if (start !== undefined && end !== undefined && end !== '' && BigInt(end) < BigInt(start)) {
+    throw new Error("'range' input end byte must be greater than or equal to the start byte")
+  }
+  if (suffixLength !== undefined && BigInt(suffixLength) === 0n) {
+    throw new Error("'range' input suffix length must be greater than zero")
+  }
+
+  return range
 }
 
 async function downloadPrefix(
