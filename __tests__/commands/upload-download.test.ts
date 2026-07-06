@@ -349,6 +349,31 @@ describe('upload + download commands (B2Simulator)', () => {
     expect(out).not.toContain('download range')
   })
 
+  it('rejects file-id line breaks before logging or downloading', async () => {
+    const bucket = {
+      name: 'mock-bucket',
+      file: vi.fn(),
+    } as unknown as Parameters<typeof downloadCommand>[0]
+    const fileIds = ['4_z123\n::warning::injected', '4_z123\r::warning::injected']
+
+    const out = await captureStdout(async () => {
+      for (const fileId of fileIds) {
+        await expect(
+          downloadCommand(bucket, {
+            ...baseInputs(),
+            action: 'download',
+            fileId,
+            range: 'bytes=0-1',
+          }),
+        ).rejects.toThrow(/'file-id' input/)
+      }
+    })
+
+    expect(bucket.file).not.toHaveBeenCalled()
+    expect(out).not.toContain('::warning::injected')
+    expect(out).not.toContain('download range')
+  })
+
   it('passes range through when downloading by file-id', async () => {
     const local = join(fx.workDir, 'id-range.txt')
     await writeFile(local, '0123456789')

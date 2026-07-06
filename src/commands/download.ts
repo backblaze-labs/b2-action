@@ -88,6 +88,7 @@ export async function downloadCommand(
   signal?: AbortSignal,
 ): Promise<DownloadResult> {
   const sseDownload = sseFromInputs(inputs)
+  const fileId = inputs.fileId === undefined ? undefined : validateDownloadFileId(inputs.fileId)
   const range = inputs.range === undefined ? undefined : validateDownloadRange(inputs.range)
 
   if (range !== undefined) {
@@ -96,10 +97,10 @@ export async function downloadCommand(
     )
   }
 
-  if (inputs.fileId !== undefined) {
+  if (fileId !== undefined) {
     const out = await downloadOne(
       bucket,
-      { kind: 'id', fileId: inputs.fileId, fileNameHint: inputs.source },
+      { kind: 'id', fileId, fileNameHint: inputs.source },
       inputs.destination,
       sseDownload,
       range,
@@ -159,6 +160,13 @@ function validateDownloadRange(range: string): string {
   }
 
   return range
+}
+
+function validateDownloadFileId(fileId: string): string {
+  if (fileId.includes('\r') || fileId.includes('\n')) {
+    throw new Error("'file-id' input must not contain line breaks")
+  }
+  return fileId
 }
 
 async function downloadPrefix(

@@ -36070,12 +36070,13 @@ function makeProgressListener(label, intervalMs = 1000) {
  */
 async function downloadCommand(bucket, inputs, signal) {
     const sseDownload = sseFromInputs(inputs);
+    const fileId = inputs.fileId === undefined ? undefined : validateDownloadFileId(inputs.fileId);
     const range = inputs.range === undefined ? undefined : validateDownloadRange(inputs.range);
     if (range !== undefined) {
         info(`download range ${range} requested; whole-object SHA-1 verification is skipped for partial responses`);
     }
-    if (inputs.fileId !== undefined) {
-        const out = await downloadOne(bucket, { kind: 'id', fileId: inputs.fileId, fileNameHint: inputs.source }, inputs.destination, sseDownload, range, signal);
+    if (fileId !== undefined) {
+        const out = await downloadOne(bucket, { kind: 'id', fileId, fileNameHint: inputs.source }, inputs.destination, sseDownload, range, signal);
         return { files: [out], bytesTransferred: out.size };
     }
     const source = requireSource(inputs.source, 'download', 'a B2 file name or prefix, or file-id');
@@ -36114,6 +36115,12 @@ function validateDownloadRange(range) {
         throw new Error("'range' input suffix length must be greater than zero");
     }
     return range;
+}
+function validateDownloadFileId(fileId) {
+    if (fileId.includes('\r') || fileId.includes('\n')) {
+        throw new Error("'file-id' input must not contain line breaks");
+    }
+    return fileId;
 }
 async function downloadPrefix(bucket, prefix, destinationDir, sseDownload, range, signal) {
     const destRoot = (0,external_node_path_.resolve)(destinationDir);
