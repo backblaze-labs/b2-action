@@ -339,6 +339,46 @@ describe('cleanup-unfinished command', () => {
     expect(stdout).not.toContain('secret-token')
   })
 
+  it('records cancel failures when the thrown value has no details', async () => {
+    for (const thrown of [undefined, null]) {
+      const bucket = {
+        name: 'mock-bucket',
+        paginateUnfinishedLargeFiles: async function* () {
+          yield {
+            fileName: `missing-details-${String(thrown)}.bin`,
+            fileId: `large-${String(thrown)}`,
+            contentType: 'application/octet-stream',
+            fileInfo: {},
+          }
+        },
+        paginateParts: async function* () {
+          yield { contentLength: 10, uploadTimestamp: Date.now() - 48 * 60 * 60 * 1000 }
+        },
+        cancelLargeFile: async () => {
+          throw thrown
+        },
+      } as unknown as Bucket
+
+      const result = await cleanupUnfinishedCommand(bucket, baseInputs({ source: 'tmp/' }))
+
+      expect(result).toEqual({
+        files: [
+          {
+            fileName: `missing-details-${String(thrown)}.bin`,
+            fileId: `large-${String(thrown)}`,
+            partCount: 1,
+            size: 10,
+            status: 'failed',
+            error: {
+              message: 'cancel failed',
+            },
+          },
+        ],
+        errors: 1,
+      })
+    }
+  })
+
   it('preserves safe B2 auth token error codes in cancel diagnostics', async () => {
     for (const code of ['bad_auth_token', 'expired_auth_token']) {
       const bucket = {

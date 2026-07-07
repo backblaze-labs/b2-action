@@ -263,12 +263,15 @@ function cleanupGuard(
 }
 
 function cleanupFailureDiagnostic(error: unknown): CleanupFailureDiagnostic {
-  const details = error as {
-    status?: unknown
-    code?: unknown
-    retryable?: unknown
-    retryAfter?: unknown
-  }
+  const details =
+    typeof error === 'object' && error !== null
+      ? (error as {
+          status?: unknown
+          code?: unknown
+          retryable?: unknown
+          retryAfter?: unknown
+        })
+      : {}
   return {
     message: 'cancel failed',
     ...(isFiniteNonNegativeNumber(details.status) ? { status: Math.trunc(details.status) } : {}),

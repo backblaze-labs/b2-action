@@ -35610,7 +35610,9 @@ function cleanupGuard(parts, inputs, now) {
     return undefined;
 }
 function cleanupFailureDiagnostic(error) {
-    const details = error;
+    const details = typeof error === 'object' && error !== null
+        ? error
+        : {};
     return {
         message: 'cancel failed',
         ...(isFiniteNonNegativeNumber(details.status) ? { status: Math.trunc(details.status) } : {}),
