@@ -144,7 +144,7 @@ outputs:
   bytes-transferred:
     description: 'Total bytes uploaded/downloaded/copied/synced. Head emits 0.'
   file-count:
-    description: 'Aggregate count of files matched or processed, including skipped sync entries and dry-run delete/purge matches. Prefer verb-specific count outputs when available.'
+    description: 'Aggregate count of files matched or processed, including skipped sync entries and dry-run delete/purge/cleanup-unfinished matches. Prefer verb-specific count outputs when available.'
   files-uploaded:
     description: 'Number of files uploaded (upload glob / sync up).'
   files-downloaded:
