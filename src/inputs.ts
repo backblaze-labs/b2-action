@@ -23,6 +23,7 @@ export type ActionName =
   | 'retention'
   | 'head'
   | 'purge'
+  | 'cleanup-unfinished'
 
 const VALID_ACTIONS: readonly ActionName[] = [
   'upload',
@@ -38,6 +39,7 @@ const VALID_ACTIONS: readonly ActionName[] = [
   'retention',
   'head',
   'purge',
+  'cleanup-unfinished',
 ]
 
 type ActionEffect = {
@@ -64,6 +66,7 @@ export const ACTION_EFFECTS = {
   retention: { kind: 'write', honorsDryRun: false },
   head: { kind: 'read', honorsDryRun: false },
   purge: { kind: 'write', honorsDryRun: true },
+  'cleanup-unfinished': { kind: 'write', honorsDryRun: true },
 } as const satisfies Record<ActionName, ActionEffect>
 
 /** How `sync` decides whether two files match. Drives the SDK's `synchronize()`. */
@@ -119,8 +122,9 @@ export interface ParsedInputs {
   sourceBucket: string | undefined
   /**
    * Verb-dependent source. Upload/sync: a local path or glob. Download/copy/
-   * delete/presign/list/hide/unhide/verify/retention/head/purge: a B2 file
-   * name or prefix (trailing `/` means prefix mode for verbs that support it).
+   * delete/presign/list/hide/unhide/verify/retention/head/purge/
+   * cleanup-unfinished: a B2 file name or prefix (trailing `/` means prefix
+   * mode for verbs that support it).
    */
   source: string | undefined
   /**
@@ -144,7 +148,7 @@ export interface ParsedInputs {
   fileInfo: Record<string, string>
   /** Preserve each local file's mtime as B2 `src_last_modified_millis`. */
   preserveMtime: boolean
-  /** Preview without executing (sync/delete/purge). */
+  /** Preview without executing (sync/delete/purge/cleanup-unfinished). */
   dryRun: boolean
   /** Permit whole-bucket purge when `source` is empty or `/`. */
   allowBucketPurge: boolean

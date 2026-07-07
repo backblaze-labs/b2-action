@@ -39078,6 +39078,70 @@ async function findFileByName(bucket, fileName, bucketDisplayName) {
     throw new Error(`File not found in bucket "${display}": ${fileName}`);
 }
 
+;// CONCATENATED MODULE: ./src/commands/cleanup-unfinished.ts
+
+/**
+ * List and cancel unfinished large file uploads.
+ *
+ * `source` is treated as an optional B2 name prefix. Empty or omitted source
+ * scans every unfinished upload in the bucket. With `dry-run: true`, no
+ * cancellations happen; the action reports what would have been canceled.
+ */
+async function cleanupUnfinishedCommand(bucket, inputs, signal) {
+    const prefix = inputs.source ?? '';
+    const files = [];
+    let errors = 0;
+    startGroup(`${inputs.dryRun ? 'dry-run' : 'cleanup'} unfinished large uploads b2://${bucket.name}/${prefix}`);
+    try {
+        for await (const unfinished of bucket.paginateUnfinishedLargeFiles({
+            ...(prefix !== '' ? { namePrefix: prefix } : {}),
+            ...(signal !== undefined ? { signal } : {}),
+        })) {
+            signal?.throwIfAborted();
+            const parts = await summarizeParts(bucket, unfinished.fileId, signal);
+            const entry = {
+                fileName: unfinished.fileName,
+                fileId: unfinished.fileId,
+                contentType: unfinished.contentType,
+                fileInfo: unfinished.fileInfo,
+                partCount: parts.count,
+                size: parts.bytes,
+                skipped: inputs.dryRun,
+            };
+            if (inputs.dryRun) {
+                files.push(entry);
+                info(`  would cancel ${entry.fileName} (${entry.fileId}; ${entry.partCount} part(s), ${entry.size} bytes)`);
+                continue;
+            }
+            try {
+                await bucket.cancelLargeFile(unfinished.fileId);
+                files.push(entry);
+                info(`  canceled ${entry.fileName} (${entry.fileId}; ${entry.partCount} part(s), ${entry.size} bytes)`);
+            }
+            catch {
+                errors++;
+                warning(`  failed to cancel ${entry.fileName} (${entry.fileId}): cancel failed`);
+            }
+        }
+    }
+    finally {
+        info(`  ${files.length} unfinished large upload(s) matched`);
+        endGroup();
+    }
+    return { files, errors };
+}
+async function summarizeParts(bucket, fileId, signal) {
+    let count = 0;
+    let bytes = 0;
+    for await (const part of bucket.paginateParts(fileId, {
+        ...(signal !== undefined ? { signal } : {}),
+    })) {
+        count++;
+        bytes += part.contentLength;
+    }
+    return { count, bytes };
+}
+
 // EXTERNAL MODULE: external "node:buffer"
 var external_node_buffer_ = __nccwpck_require__(4573);
 // EXTERNAL MODULE: external "node:crypto"
@@ -39151,6 +39215,7 @@ const VALID_ACTIONS = [
     'retention',
     'head',
     'purge',
+    'cleanup-unfinished',
 ];
 /**
  * Runtime side-effect policy for each action verb.
@@ -39171,6 +39236,7 @@ const ACTION_EFFECTS = {
     retention: { kind: 'write', honorsDryRun: false },
     head: { kind: 'read', honorsDryRun: false },
     purge: { kind: 'write', honorsDryRun: true },
+    'cleanup-unfinished': { kind: 'write', honorsDryRun: true },
 };
 const VALID_COMPARE = ['modtime', 'size', 'none'];
 const VALID_KEEP = ['no-delete', 'delete', 'keep-days'];
@@ -49494,6 +49560,7 @@ function escapeHtml(value) {
 
 
 
+
 /**
  * Action entrypoint. Parses inputs, builds an authorized B2Client, dispatches
  * to the requested subcommand, and writes structured outputs back via
@@ -49657,6 +49724,11 @@ async function run() {
             case 'delete': {
                 const result = await deleteCommand(bucket, inputs, signal);
                 await emitDeletionSummary('delete', result, inputs);
+                return;
+            }
+            case 'cleanup-unfinished': {
+                const result = await cleanupUnfinishedCommand(bucket, inputs, signal);
+                await emitCleanupUnfinishedSummary(result, inputs);
                 return;
             }
             case 'presign': {
@@ -49869,6 +49941,33 @@ async function emitDeletionSummary(verb, result, inputs) {
             fileName: f.fileName,
             fileId: f.fileId,
             status: f.skipped ? future : past,
+        })),
+    });
+}
+async function emitCleanupUnfinishedSummary(result, inputs) {
+    const canceled = result.files.filter((f) => !f.skipped).length;
+    const wouldCancel = result.files.filter((f) => f.skipped).length;
+    setOutput('files-deleted', String(canceled));
+    setFileCountOutput(result.files.length);
+    setSummaryJsonOutput(result.files);
+    if (result.errors > 0) {
+        throw new Error(`Cleanup unfinished completed with ${result.errors} error(s)`);
+    }
+    await writeStepSummary({
+        title: inputs.dryRun
+            ? 'Backblaze B2: cleanup-unfinished (dry-run)'
+            : 'Backblaze B2: cleanup-unfinished',
+        totals: {
+            files: canceled + wouldCancel,
+            bytes: result.files.reduce((sum, f) => sum + f.size, 0),
+        },
+        ...stepSummaryRows(result.files, (f) => ({
+            fileName: f.fileName,
+            size: f.size,
+            fileId: f.fileId,
+            status: f.skipped
+                ? `would cancel (${f.partCount} part${f.partCount === 1 ? '' : 's'})`
+                : `canceled (${f.partCount} part${f.partCount === 1 ? '' : 's'})`,
         })),
     });
 }

@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- `cleanup-unfinished`: list unfinished multipart uploads under an optional prefix and cancel them, with `dry-run` preview support plus `files-deleted` and `summary-json` reporting for canceled uploads. ([#98](https://github.com/backblaze-labs/b2-action/issues/98))
+
 ## [1.1.0] - 2026-06-23
 
 ### Security

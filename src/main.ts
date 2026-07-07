@@ -3,6 +3,7 @@ import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import * as core from '@actions/core'
 import { buildClient, getBucket } from './client.ts'
+import { cleanupUnfinishedCommand } from './commands/cleanup-unfinished.ts'
 import { copyCommand } from './commands/copy.ts'
 import { deleteCommand } from './commands/delete.ts'
 import { downloadCommand } from './commands/download.ts'
@@ -184,6 +185,11 @@ export async function run(): Promise<void> {
       case 'delete': {
         const result = await deleteCommand(bucket, inputs, signal)
         await emitDeletionSummary('delete', result, inputs)
+        return
+      }
+      case 'cleanup-unfinished': {
+        const result = await cleanupUnfinishedCommand(bucket, inputs, signal)
+        await emitCleanupUnfinishedSummary(result, inputs)
         return
       }
       case 'presign': {
@@ -398,6 +404,46 @@ async function emitDeletionSummary(
       fileName: f.fileName,
       fileId: f.fileId,
       status: f.skipped ? future : past,
+    })),
+  })
+}
+
+async function emitCleanupUnfinishedSummary(
+  result: {
+    files: {
+      fileName: string
+      fileId: string
+      size: number
+      partCount: number
+      skipped: boolean
+    }[]
+    errors: number
+  },
+  inputs: ParsedInputs,
+): Promise<void> {
+  const canceled = result.files.filter((f) => !f.skipped).length
+  const wouldCancel = result.files.filter((f) => f.skipped).length
+  core.setOutput('files-deleted', String(canceled))
+  setFileCountOutput(result.files.length)
+  setSummaryJsonOutput(result.files)
+  if (result.errors > 0) {
+    throw new Error(`Cleanup unfinished completed with ${result.errors} error(s)`)
+  }
+  await writeStepSummary({
+    title: inputs.dryRun
+      ? 'Backblaze B2: cleanup-unfinished (dry-run)'
+      : 'Backblaze B2: cleanup-unfinished',
+    totals: {
+      files: canceled + wouldCancel,
+      bytes: result.files.reduce((sum, f) => sum + f.size, 0),
+    },
+    ...stepSummaryRows(result.files, (f) => ({
+      fileName: f.fileName,
+      size: f.size,
+      fileId: f.fileId,
+      status: f.skipped
+        ? `would cancel (${f.partCount} part${f.partCount === 1 ? '' : 's'})`
+        : `canceled (${f.partCount} part${f.partCount === 1 ? '' : 's'})`,
     })),
   })
 }

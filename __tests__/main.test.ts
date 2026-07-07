@@ -82,6 +82,7 @@ describe('main dispatcher', () => {
     'retention',
     'head',
     'purge',
+    'cleanup-unfinished',
   ] satisfies ActionName[])('dispatches %s and emits its outputs', async (action) => {
     const ctx = await loadMain()
     const expectedOutputs = setupSuccessfulAction(ctx, action)
@@ -475,6 +476,43 @@ describe('main dispatcher', () => {
       title: 'Backblaze B2: delete (dry-run)',
       totals: { files: 1, bytes: 0 },
       rows: [{ fileName: 'preview.txt', fileId: 'id-preview', status: 'would delete' }],
+    })
+  })
+
+  it('renders cleanup-unfinished dry-run summaries', async () => {
+    const ctx = await loadMain()
+    const files = [
+      {
+        fileName: 'unfinished.bin',
+        fileId: 'id-unfinished',
+        contentType: 'application/octet-stream',
+        fileInfo: {},
+        partCount: 2,
+        size: 32,
+        skipped: true,
+      },
+    ]
+    ctx.parseInputs.mockReturnValue(inputs('cleanup-unfinished', { dryRun: true }))
+    ctx.commands.cleanupUnfinishedCommand.mockResolvedValue({ files, errors: 0 })
+
+    await ctx.run()
+
+    expect(ctx.writeStepSummary).toHaveBeenCalledWith({
+      title: 'Backblaze B2: cleanup-unfinished (dry-run)',
+      totals: { files: 1, bytes: 32 },
+      rows: [
+        {
+          fileName: 'unfinished.bin',
+          fileId: 'id-unfinished',
+          size: 32,
+          status: 'would cancel (2 parts)',
+        },
+      ],
+    })
+    expect(outputs(ctx)).toMatchObject({
+      'files-deleted': '0',
+      'file-count': '1',
+      'summary-json': JSON.stringify(files),
     })
   })
 
@@ -1123,6 +1161,35 @@ describe('main dispatcher', () => {
     expect(ctx.writeStepSummary).not.toHaveBeenCalled()
   })
 
+  it('reports cleanup-unfinished aggregate errors after publishing outputs', async () => {
+    const ctx = await loadMain()
+    const files = [
+      {
+        fileName: 'stuck.bin',
+        fileId: 'id-stuck',
+        contentType: 'application/octet-stream',
+        fileInfo: {},
+        partCount: 1,
+        size: 8,
+        skipped: false,
+      },
+    ]
+    ctx.parseInputs.mockReturnValue(inputs('cleanup-unfinished'))
+    ctx.commands.cleanupUnfinishedCommand.mockResolvedValue({ files, errors: 1 })
+
+    await ctx.run()
+
+    expect(ctx.core.setFailed).toHaveBeenCalledWith('Cleanup unfinished completed with 1 error(s)')
+    expect(outputs(ctx)).toEqual(
+      completeSummaryOutput({
+        'files-deleted': '1',
+        'file-count': '1',
+        'summary-json': JSON.stringify(files),
+      }),
+    )
+    expect(ctx.writeStepSummary).not.toHaveBeenCalled()
+  })
+
   it.each([
     ['delete', 'Delete', 1],
     ['purge', 'Purge', 2],
@@ -1220,6 +1287,7 @@ async function loadMain() {
     summarizeSyncErrors: vi.fn(() => 'sample'),
     copyCommand: vi.fn(),
     deleteCommand: vi.fn(),
+    cleanupUnfinishedCommand: vi.fn(),
     presignCommand: vi.fn(),
     listCommand: vi.fn(),
     hideCommand: vi.fn(),
@@ -1248,6 +1316,9 @@ async function loadMain() {
   }))
   vi.doMock('../src/commands/copy.ts', () => ({ copyCommand: commands.copyCommand }))
   vi.doMock('../src/commands/delete.ts', () => ({ deleteCommand: commands.deleteCommand }))
+  vi.doMock('../src/commands/cleanup-unfinished.ts', () => ({
+    cleanupUnfinishedCommand: commands.cleanupUnfinishedCommand,
+  }))
   vi.doMock('../src/commands/presign.ts', () => ({ presignCommand: commands.presignCommand }))
   vi.doMock('../src/commands/list.ts', () => ({ listCommand: commands.listCommand }))
   vi.doMock('../src/commands/hide.ts', () => ({ hideCommand: commands.hideCommand }))
@@ -1374,6 +1445,34 @@ function setupSuccessfulAction(ctx: LoadedMain, action: ActionName): Record<stri
         { fileName: 'dry.txt', fileId: 'id-dry', skipped: true },
       ]
       ctx.commands.deleteCommand.mockResolvedValue({ files, errors: 0 })
+      return completeSummaryOutput({
+        'files-deleted': '1',
+        'file-count': '2',
+        'summary-json': JSON.stringify(files),
+      })
+    }
+    case 'cleanup-unfinished': {
+      const files = [
+        {
+          fileName: 'canceled.bin',
+          fileId: 'id-cancel',
+          contentType: 'application/octet-stream',
+          fileInfo: {},
+          partCount: 2,
+          size: 21,
+          skipped: false,
+        },
+        {
+          fileName: 'preview.bin',
+          fileId: 'id-preview',
+          contentType: 'application/octet-stream',
+          fileInfo: {},
+          partCount: 1,
+          size: 5,
+          skipped: true,
+        },
+      ]
+      ctx.commands.cleanupUnfinishedCommand.mockResolvedValue({ files, errors: 0 })
       return completeSummaryOutput({
         'files-deleted': '1',
         'file-count': '2',

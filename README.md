@@ -2,10 +2,10 @@
 
 [![CI](https://github.com/backblaze-labs/b2-action/actions/workflows/ci.yml/badge.svg)](https://github.com/backblaze-labs/b2-action/actions/workflows/ci.yml) [![Release](https://github.com/backblaze-labs/b2-action/actions/workflows/release.yml/badge.svg)](https://github.com/backblaze-labs/b2-action/actions/workflows/release.yml) [![Marketplace](https://img.shields.io/github/v/release/backblaze-labs/b2-action?label=marketplace&color=red&logo=githubactions&logoColor=white)](https://github.com/marketplace/actions/backblaze-b2-cloud-storage-action) [![Latest release](https://img.shields.io/github/v/release/backblaze-labs/b2-action?display_name=tag&sort=semver&color=blue)](https://github.com/backblaze-labs/b2-action/releases/latest) [![License: MIT](https://img.shields.io/badge/license-MIT-yellow.svg)](./LICENSE) [![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen.svg)](./vitest.config.ts) [![Docs](https://img.shields.io/github/deployments/backblaze-labs/b2-action/github-pages?label=docs&logo=readthedocs&logoColor=white)](https://backblaze-labs.github.io/b2-action/)
 
-A Backblaze-maintained B2 GitHub Action. TypeScript-native, built on [@backblaze-labs/b2-sdk](https://github.com/backblaze-labs/b2-sdk-typescript). Thirteen verbs covering every B2 operation a CI workflow needs. Currently incubating in [Backblaze Labs](https://github.com/backblaze-labs).
+A Backblaze-maintained B2 GitHub Action. TypeScript-native, built on [@backblaze-labs/b2-sdk](https://github.com/backblaze-labs/b2-sdk-typescript). Fourteen verbs covering every B2 operation a CI workflow needs. Currently incubating in [Backblaze Labs](https://github.com/backblaze-labs).
 
 - **Node 24 action.** No Docker. Sub-second cold start.
-- **Thirteen verbs.** `upload`, `download`, `sync`, `copy`, `delete`, `list`, `hide`, `unhide`, `verify`, `presign`, `retention`, `head`, `purge`: pick via the `action` input.
+- **Fourteen verbs.** `upload`, `download`, `sync`, `copy`, `delete`, `list`, `hide`, `unhide`, `verify`, `presign`, `retention`, `head`, `purge`, `cleanup-unfinished`: pick via the `action` input.
 - **Resumable multipart uploads** for any file size; streaming I/O so multi-GB payloads don't buffer in RAM.
 - **Server-side everything.** `copy` (same-bucket or cross-bucket) and `delete` operations stay server-side; bytes never traverse the runner.
 - **Server-side encryption.** SSE-B2 (managed) and SSE-C (customer key, base64).
@@ -31,6 +31,7 @@ A Backblaze-maintained B2 GitHub Action. TypeScript-native, built on [@backblaze
     - [Sync (both directions)](#sync-both-directions)
     - [Server-side copy (same-bucket or cross-bucket)](#server-side-copy-same-bucket-or-cross-bucket)
     - [List, dry-run-delete, delete](#list-dry-run-delete-delete)
+    - [Cleanup unfinished multipart uploads](#cleanup-unfinished-multipart-uploads)
     - [Hide / unhide](#hide--unhide)
     - [Verify SHA-1 without downloading](#verify-sha-1-without-downloading)
     - [Presign a download URL](#presign-a-download-url)
@@ -101,6 +102,7 @@ Exact-version releases publish an attested `dist/index.js` asset for provenance 
 | `retention` | Apply Object Lock retention + legal hold to a file. | `source`, `bucket`, plus `retention-mode` and/or `legal-hold` |
 | `head` | Fetch object metadata (size, sha1, contentType, fileInfo) via HEAD. No body transfer. | `source`, `bucket` |
 | `purge` | Permanently delete every file version under a prefix, including hide markers and history. Whole-bucket purge requires `allow-bucket-purge: true`. Supports `dry-run` and `bypass-governance` for governance-retained versions. | `source` or `allow-bucket-purge`, `bucket` |
+| `cleanup-unfinished` | List unfinished multipart uploads under an optional prefix and cancel them so uploaded parts stop being retained. Supports `dry-run`. | `bucket` (and optional `source`) |
 
 Exact-name `copy`, single-file `delete`, and `retention` operate only when the latest exact-name version is an upload. If that latest version is a hide marker, these commands do not search older upload history under the same name; they fail with the same `File not found` diagnostic used for absent names so default workflow logs do not reveal hidden-object existence. Run `unhide` first to restore the prior upload, or use `purge` when you need to remove hide markers and historical versions.
 
@@ -240,6 +242,24 @@ Exact-name `copy`, single-file `delete`, and `retention` operate only when the l
     dry-run: true
 ```
 
+### Cleanup unfinished multipart uploads
+
+```yaml
+- id: cleanup-preview
+  uses: backblaze-labs/b2-action@v1
+  with:
+    action: cleanup-unfinished
+    bucket: my-bucket
+    source: tmp/
+    dry-run: true
+
+- uses: backblaze-labs/b2-action@v1
+  with:
+    action: cleanup-unfinished
+    bucket: my-bucket
+    source: tmp/
+```
+
 ### Hide / unhide
 
 ```yaml
@@ -369,12 +389,12 @@ Set `bypass-governance: true` to shorten governance-mode retention or to remove 
 
 | Input | Required | Default | Description |
 | --- | --- | --- | --- |
-| `action` | yes | | One of 13: `upload`, `download`, `sync`, `copy`, `delete`, `presign`, `list`, `hide`, `unhide`, `verify`, `retention`, `head`, `purge` |
+| `action` | yes | | One of 14: `upload`, `download`, `sync`, `copy`, `delete`, `presign`, `list`, `hide`, `unhide`, `verify`, `retention`, `head`, `purge`, `cleanup-unfinished` |
 | `application-key-id` | no\* | | B2 application key ID. Falls back to `$B2_APPLICATION_KEY_ID`. |
 | `application-key` | no\* | | B2 application key. Falls back to `$B2_APPLICATION_KEY`. |
 | `bucket` | yes | | Destination bucket name. |
 | `source-bucket` | copy only | `bucket` | Source bucket for cross-bucket copy. |
-| `source` | command-dependent | | Local path/glob (upload/sync up); B2 file name or prefix (everything else). Prefix downloads reject keys with empty, `.`, `..`, or control-character path segments. For whole-bucket purge, omit `source` or set `/` and set `allow-bucket-purge: true`. |
+| `source` | command-dependent | | Local path/glob (upload/sync up); B2 file name or prefix (everything else). For `cleanup-unfinished`, this is an optional unfinished upload prefix. Prefix downloads reject keys with empty, `.`, `..`, or control-character path segments. For whole-bucket purge, omit `source` or set `/` and set `allow-bucket-purge: true`. |
 | `destination` | command-dependent | | B2 file/prefix (upload/sync up/copy); local path (download/sync down/verify). Upload destinations are not normalized by the action; SDK/B2 key validation errors are surfaced rather than silently rewriting `/` characters. |
 | `include` | no | | CSV of glob patterns to include (upload). |
 | `exclude` | no | `.git/**` | CSV of glob patterns to exclude (upload). |
@@ -388,7 +408,7 @@ Set `bypass-governance: true` to shorten governance-mode retention or to remove 
 | `content-language` | no | | Content-Language response header to store with uploaded files. |
 | `expires` | no | | Expires response header to store with uploaded files. |
 | `preserve-mtime` | no | `false` | Store each uploaded file's local modification time as B2 `src_last_modified_millis`. |
-| `dry-run` | no | `false` | Preview only (sync/delete/purge). |
+| `dry-run` | no | `false` | Preview only (sync/delete/purge/cleanup-unfinished). |
 | `allow-bucket-purge` | purge only | `false` | Permit `purge` to target the entire bucket when `source` is empty or `/`. |
 | `presign-ttl` | no | `3600` | Presigned URL TTL in seconds. Must be a positive decimal integer. |
 | `endpoint` | no | | Override B2 realm (staging/custom). |
@@ -414,10 +434,10 @@ Set `bypass-governance: true` to shorten governance-mode retention or to remove 
 | `file-name` | single-file ops | B2 file name (path). |
 | `content-sha1` | upload / download / head when available | SHA-1 hex. Omitted when B2 does not expose a whole-file SHA-1, including multipart objects. |
 | `bytes-transferred` | upload / download / sync / copy / head | Total bytes moved. Head emits `0`. |
-| `file-count` | every command | Aggregate count of files matched or processed, including skipped sync entries and dry-run delete/purge matches. Prefer verb-specific count outputs when available. |
+| `file-count` | every command | Aggregate count of files matched or processed, including skipped sync entries and dry-run delete/purge/cleanup-unfinished matches. Prefer verb-specific count outputs when available. |
 | `files-uploaded` | upload / sync up | Count. |
 | `files-downloaded` | download / sync down | Count. |
-| `files-deleted` | delete / purge / sync | Count. |
+| `files-deleted` | delete / purge / sync / cleanup-unfinished | Count. For `cleanup-unfinished`, this is the count of unfinished large uploads canceled; dry-run previews report `0`. |
 | `files-listed` | list / prefix presign | Count returned (capped by `max-results`). |
 | `presigned-url` | presign | Time-limited download URL. Masked as a secret. This is the only structured output that carries the live presigned URL. |
 | `verified` | verify | `true` / `false`. |

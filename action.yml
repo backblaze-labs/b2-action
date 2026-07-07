@@ -7,7 +7,7 @@ branding:
 
 inputs:
   action:
-    description: 'One of: upload | download | sync | copy | delete | presign | list | hide | unhide | verify | retention | head | purge'
+    description: 'One of: upload | download | sync | copy | delete | presign | list | hide | unhide | verify | retention | head | purge | cleanup-unfinished'
     required: true
   application-key-id:
     description: 'B2 application key ID. If unset, falls back to the $B2_APPLICATION_KEY_ID env var.'
@@ -22,7 +22,7 @@ inputs:
     description: 'Source bucket for cross-bucket copy. Defaults to `bucket`.'
     required: false
   source:
-    description: 'Command-dependent. upload/sync (up): local path or glob. download/sync (down)/copy/delete/presign/list/hide/unhide/verify/retention/head/purge: B2 file name or prefix. Prefix downloads reject keys with empty, `.`, `..`, or control-character path segments. For whole-bucket purge, omit source or set `/` and set allow-bucket-purge: true.'
+    description: 'Command-dependent. upload/sync (up): local path or glob. download/sync (down)/copy/delete/presign/list/hide/unhide/verify/retention/head/purge/cleanup-unfinished: B2 file name or prefix. For cleanup-unfinished, source is an optional unfinished-upload prefix. Prefix downloads reject keys with empty, `.`, `..`, or control-character path segments. For whole-bucket purge, omit source or set `/` and set allow-bucket-purge: true.'
     required: false
   destination:
     description: 'Command-dependent. upload/sync (up): B2 file name or prefix; SDK/B2 key validation errors are surfaced rather than silently rewriting `/` characters. download/sync (down): local path or directory. copy: destination B2 file name. verify: local file to compare against the remote SHA-1.'
@@ -68,7 +68,7 @@ inputs:
     required: false
     default: 'false'
   dry-run:
-    description: 'Preview what would happen without executing (sync/delete/purge). Default false.'
+    description: 'Preview what would happen without executing (sync/delete/purge/cleanup-unfinished). Default false.'
     required: false
     default: 'false'
   allow-bucket-purge:
@@ -138,7 +138,7 @@ outputs:
   files-downloaded:
     description: 'Number of files downloaded (download prefix / sync down).'
   files-deleted:
-    description: 'Number of files deleted (delete / purge / sync).'
+    description: 'Number of files deleted or unfinished uploads canceled (delete / purge / sync / cleanup-unfinished).'
   files-listed:
     description: 'Number of files returned by `list` or prefix `presign`.'
   presigned-url:
