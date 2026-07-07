@@ -249,6 +249,40 @@ describe('cleanup-unfinished command', () => {
     })
   })
 
+  it('logs truncated forced cleanup counts as lower bounds', async () => {
+    const bucket = {
+      name: 'mock-bucket',
+      paginateUnfinishedLargeFiles: async function* () {
+        yield {
+          fileName: 'huge.bin',
+          fileId: 'large-huge',
+          contentType: 'application/octet-stream',
+          fileInfo: {},
+        }
+      },
+      paginateParts: async function* () {
+        for (let i = 0; i < 101; i++) {
+          yield {
+            contentLength: 1,
+            uploadTimestamp: Date.now() - 48 * 60 * 60 * 1000,
+          }
+        }
+      },
+      cancelLargeFile: async () => {},
+    } as unknown as Bucket
+
+    const stdout = await captureStdout(async () => {
+      await cleanupUnfinishedCommand(
+        bucket,
+        baseInputs({ source: 'tmp/', cleanupUnfinishedForce: true }),
+      )
+    })
+
+    expect(stdout).toContain(
+      'canceled huge.bin (large-huge; >=100 part(s), >=100 bytes (truncated))',
+    )
+  })
+
   it('counts cancel failures with structured diagnostics and no raw error text', async () => {
     const bucket = {
       name: 'mock-bucket',

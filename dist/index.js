@@ -35631,9 +35631,10 @@ function formatFailureDiagnostic(diagnostic) {
     return details.length > 0 ? `${diagnostic.message} (${details.join(', ')})` : diagnostic.message;
 }
 function formatPartSummary(entry) {
-    const parts = entry.partCount === null ? 'unknown part count' : `${entry.partCount} part(s)`;
-    const bytes = entry.size === null ? 'unknown bytes' : `${entry.size} bytes`;
-    return `${parts}, ${bytes}`;
+    const prefix = entry.partsTruncated === true ? '>=' : '';
+    const parts = entry.partCount === null ? 'unknown part count' : `${prefix}${entry.partCount} part(s)`;
+    const bytes = entry.size === null ? 'unknown bytes' : `${prefix}${entry.size} bytes`;
+    return entry.partsTruncated === true ? `${parts}, ${bytes} (truncated)` : `${parts}, ${bytes}`;
 }
 function safeDiagnosticToken(value) {
     const normalized = value.trim();
