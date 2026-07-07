@@ -37,11 +37,11 @@
     "@backblaze-labs/b2-sdk": "^0.1.0"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.5.0",
+    "@biomejs/biome": "^2.5.2",
     "@stryker-mutator/core": "9.6.1",
     "@stryker-mutator/vitest-runner": "9.6.1",
     "@types/node": "^26.1.0",
-    "@vercel/ncc": "^0.44.0",
+    "@vercel/ncc": "^0.44.1",
     "@vitest/coverage-v8": "^4.1.9",
     "cspell": "^10.0.1",
     "fast-check": "^4.8.0",
