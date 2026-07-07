@@ -452,8 +452,9 @@ function resolveCredential(inputName: string, envName: string): string {
 }
 
 function parseNonNegativeInt(name: string, raw: string): number {
-  const n = Number(raw)
-  if (!Number.isInteger(n) || n < 0) {
+  const trimmed = raw.trim()
+  const n = Number(trimmed)
+  if (!/^\d+$/.test(trimmed) || !Number.isSafeInteger(n)) {
     throw new Error(`Invalid '${name}' input: "${raw}". Must be a non-negative integer`)
   }
   return n

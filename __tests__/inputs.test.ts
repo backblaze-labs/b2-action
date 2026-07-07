@@ -229,6 +229,19 @@ describe('parseInputs', () => {
     expect(r.cleanupUnfinishedIdleMinutes).toBe(60)
   })
 
+  it.each([
+    '1e3',
+    String(Number.MAX_SAFE_INTEGER + 1),
+  ])('rejects unsafe non-negative integers for cleanup idle minutes: %s', (value) => {
+    setInput('action', 'cleanup-unfinished')
+    setInput('application-key-id', 'k')
+    setInput('application-key', 's')
+    setInput('bucket', 'b')
+    setInput('cleanup-unfinished-idle-minutes', value)
+
+    expect(() => parseInputs()).toThrow(/non-negative integer/)
+  })
+
   it('keeps an empty purge source only when whole-bucket purge is confirmed', () => {
     setInput('action', 'purge')
     setInput('application-key-id', 'k')

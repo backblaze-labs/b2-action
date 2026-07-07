@@ -514,6 +514,63 @@ describe('main dispatcher', () => {
     })
   })
 
+  it('counts every matched cleanup-unfinished row in summary totals', async () => {
+    const ctx = await loadMain()
+    const files = [
+      {
+        fileName: 'old.bin',
+        fileId: 'id-old',
+        partCount: 1,
+        size: 8,
+        status: 'canceled',
+      },
+      {
+        fileName: 'active.bin',
+        fileId: 'id-active',
+        partCount: 1,
+        size: 16,
+        status: 'skipped-active',
+        reason: 'recent-parts',
+      },
+      {
+        fileName: 'unknown.bin',
+        fileId: 'id-unknown',
+        partCount: null,
+        size: null,
+        status: 'skipped-unknown',
+        reason: 'parts-scan-failed',
+      },
+    ]
+    ctx.parseInputs.mockReturnValue(inputs('cleanup-unfinished'))
+    ctx.commands.cleanupUnfinishedCommand.mockResolvedValue({ files, errors: 0 })
+
+    await ctx.run()
+
+    expect(ctx.writeStepSummary).toHaveBeenCalledWith({
+      title: 'Backblaze B2: cleanup-unfinished',
+      totals: { files: 3, bytes: 24 },
+      rows: [
+        {
+          fileName: 'old.bin',
+          fileId: 'id-old',
+          size: 8,
+          status: 'canceled (1 part)',
+        },
+        {
+          fileName: 'active.bin',
+          fileId: 'id-active',
+          size: 16,
+          status: 'skipped active (1 part)',
+        },
+        {
+          fileName: 'unknown.bin',
+          fileId: 'id-unknown',
+          status: 'skipped unknown (unknown parts)',
+        },
+      ],
+    })
+  })
+
   it('caps delete summary rows while counting every file', async () => {
     const ctx = await loadMain()
     const files = Array.from({ length: 150 }, (_, i) => ({

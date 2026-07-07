@@ -416,7 +416,6 @@ async function emitCleanupUnfinishedSummary(
   inputs: ParsedInputs,
 ): Promise<void> {
   const canceled = result.files.filter((f) => f.status === 'canceled').length
-  const wouldCancel = result.files.filter((f) => f.status === 'would-cancel').length
   core.setOutput('files-deleted', String(canceled))
   setFileCountOutput(result.files.length)
   setSummaryJsonOutput(result.files)
@@ -428,7 +427,7 @@ async function emitCleanupUnfinishedSummary(
       ? 'Backblaze B2: cleanup-unfinished (dry-run)'
       : 'Backblaze B2: cleanup-unfinished',
     totals: {
-      files: canceled + wouldCancel,
+      files: result.files.length,
       bytes: result.files.reduce((sum, f) => sum + (f.size ?? 0), 0),
     },
     ...stepSummaryRows(result.files, (f) => ({

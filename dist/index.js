@@ -35943,8 +35943,9 @@ function resolveCredential(inputName, envName) {
     throw new Error(`Missing credential: set input '${inputName}' or env var '${envName}'`);
 }
 function parseNonNegativeInt(name, raw) {
-    const n = Number(raw);
-    if (!Number.isInteger(n) || n < 0) {
+    const trimmed = raw.trim();
+    const n = Number(trimmed);
+    if (!/^\d+$/.test(trimmed) || !Number.isSafeInteger(n)) {
         throw new Error(`Invalid '${name}' input: "${raw}". Must be a non-negative integer`);
     }
     return n;
@@ -42529,7 +42530,6 @@ async function emitDeletionSummary(verb, result, inputs) {
 }
 async function emitCleanupUnfinishedSummary(result, inputs) {
     const canceled = result.files.filter((f) => f.status === 'canceled').length;
-    const wouldCancel = result.files.filter((f) => f.status === 'would-cancel').length;
     setOutput('files-deleted', String(canceled));
     setFileCountOutput(result.files.length);
     setSummaryJsonOutput(result.files);
@@ -42541,7 +42541,7 @@ async function emitCleanupUnfinishedSummary(result, inputs) {
             ? 'Backblaze B2: cleanup-unfinished (dry-run)'
             : 'Backblaze B2: cleanup-unfinished',
         totals: {
-            files: canceled + wouldCancel,
+            files: result.files.length,
             bytes: result.files.reduce((sum, f) => sum + (f.size ?? 0), 0),
         },
         ...stepSummaryRows(result.files, (f) => ({
