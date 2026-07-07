@@ -268,6 +268,10 @@ Set `cleanup-unfinished-force: true` to cancel those matched uploads anyway.
 For non-dry-run whole-bucket cleanup, omit `source` or set `/` and also set
 `allow-bucket-cleanup: true`.
 
+Cleanup part diagnostics are best-effort. `partCount` and `size` can be `null`
+when part inspection fails, and when `partsTruncated` is true the reported
+counts and bytes are lower bounds from the first 100 scanned parts.
+
 ### Hide / unhide
 
 ```yaml
@@ -418,7 +422,7 @@ Set `bypass-governance: true` to shorten governance-mode retention or to remove 
 | `preserve-mtime` | no | `false` | Store each uploaded file's local modification time as B2 `src_last_modified_millis`. |
 | `dry-run` | no | `false` | Preview only (sync/delete/purge/cleanup-unfinished). |
 | `allow-bucket-purge` | purge only | `false` | Permit `purge` to target the entire bucket when `source` is empty or `/`. |
-| `allow-bucket-cleanup` | cleanup-unfinished only | `false` | Permit non-dry-run `cleanup-unfinished` to target the entire bucket when `source` is empty or `/`. |
+| `allow-bucket-cleanup` | cleanup-unfinished only | `false` | Permit non-dry-run `cleanup-unfinished` to target the entire bucket when `source` is empty or `/`; ignored by other actions. |
 | `cleanup-unfinished-force` | cleanup-unfinished only | `false` | Cancel active or diagnostically unknown unfinished uploads matched by `source`. |
 | `cleanup-unfinished-idle-minutes` | cleanup-unfinished only | `1440` | Minimum minutes since the newest uploaded part before cleanup-unfinished cancels by default. |
 | `presign-ttl` | no | `3600` | Presigned URL TTL in seconds. Must be a positive decimal integer. |
@@ -471,7 +475,7 @@ For every command, `summary-json` and `summary-json-preview` omit fields with cr
 
 For `presign`, `summary-json` and `summary-json-preview` contain only non-secret manifest fields such as `fileName` and `expiresAt`; the dedicated `presigned-url` output is the only structured output that contains a bearer URL. In prefix mode, only the first generated URL is exposed through `presigned-url`; bulk URL fan-out through `summary-json` is intentionally unsupported because those URLs are credentials. Generate or handle additional URLs in a trusted step that treats them as secrets.
 
-For `cleanup-unfinished`, `summary-json` and `summary-json-preview` are projected to cleanup status fields (`fileName`, `fileId`, `partCount`, `size`, `partsTruncated`, `status`, `reason`, and sanitized `error`). B2 `fileInfo` metadata is never emitted for this command.
+For `cleanup-unfinished`, `summary-json` and `summary-json-preview` are projected to cleanup status fields (`fileName`, `fileId`, `partCount`, `size`, `partsTruncated`, `status`, `reason`, and sanitized `error`). B2 `fileInfo` metadata is never emitted for this command. `partCount` and `size` are best-effort diagnostics: they can be `null` when part inspection fails, and when `partsTruncated` is true they are lower bounds from the first 100 scanned parts.
 
 `$GITHUB_STEP_SUMMARY` per-file tables render at most the first 100 rows. When more rows exist, the summary includes a `Showing first 100 of N rows.` notice and the scalar outputs keep reporting the full source count. Status cells are escaped and rendered as inline code so object metadata cannot break the markdown table.
 

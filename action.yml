@@ -76,7 +76,7 @@ inputs:
     required: false
     default: 'false'
   allow-bucket-cleanup:
-    description: 'Permit non-dry-run `cleanup-unfinished` to target the entire bucket when `source` is empty or `/`. Default false.'
+    description: 'Permit non-dry-run `cleanup-unfinished` to target the entire bucket when `source` is empty or `/`. Default false; ignored by other actions.'
     required: false
     default: 'false'
   cleanup-unfinished-force:
