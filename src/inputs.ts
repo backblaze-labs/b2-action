@@ -84,6 +84,18 @@ const VALID_RETENTION_MODE: readonly RetentionMode[] = ['compliance', 'governanc
 const VALID_LEGAL_HOLD: readonly LegalHold[] = ['on', 'off']
 const APPLICATION_KEY_ID_ENV = 'B2_APPLICATION_KEY_ID'
 const APPLICATION_KEY_ENV = 'B2_APPLICATION_KEY'
+const FILE_INFO_KEY_PATTERN = /^[a-zA-Z0-9_.`~!#$%^&*'|+-]+$/
+const FILE_INFO_KEY_MAX_BYTES = 50
+const FILE_INFO_MAX_ENTRIES = 10
+const FILE_INFO_TOTAL_MAX_BYTES = 7000
+const FILE_INFO_TOTAL_MAX_BYTES_WITH_ENCRYPTION = 2048
+const CONTENT_HEADER_FILE_INFO_KEYS = [
+  ['cache-control', 'b2-cache-control'],
+  ['content-disposition', 'b2-content-disposition'],
+  ['content-language', 'b2-content-language'],
+  ['expires', 'b2-expires'],
+] as const
+const utf8Encoder = new TextEncoder()
 
 /**
  * The fully-parsed, fully-validated action surface. Built by
@@ -128,6 +140,10 @@ export interface ParsedInputs {
   resume: boolean
   /** Content-Type to set on uploaded objects. Undefined leaves B2's auto-detect. */
   contentType: string | undefined
+  /** Custom B2 fileInfo metadata (`X-Bz-Info-*`) to set on uploaded objects. */
+  fileInfo: Record<string, string>
+  /** Preserve each local file's mtime as B2 `src_last_modified_millis`. */
+  preserveMtime: boolean
   /** Preview without executing (sync/delete/purge). */
   dryRun: boolean
   /** Permit whole-bucket purge when `source` is empty or `/`. */
@@ -229,10 +245,20 @@ export function parseInputs(): ParsedInputs {
   const presignTtlSeconds = parsePositiveInt('presign-ttl', core.getInput('presign-ttl') || '3600')
   const maxResults = parsePositiveInt('max-results', core.getInput('max-results') || '1000')
 
-  const contentType = optional('content-type')
   const endpoint = optional('endpoint')
   const sse = optional('sse')
   const encryption = parseSse(sse)
+
+  const contentType = optional('content-type')
+  const fileInfo = parseFileInfo(optional('file-info'))
+  for (const [inputName, fileInfoKey] of CONTENT_HEADER_FILE_INFO_KEYS) {
+    addFileInfo(fileInfo, fileInfoKey, optional(inputName), inputName, { allowReserved: true })
+  }
+  validateFileInfo(fileInfo, uploadFileInfoTotalMaxBytes(encryption))
+  const preserveMtime = parseBool('preserve-mtime', core.getInput('preserve-mtime') || 'false')
+  if (preserveMtime && Object.hasOwn(fileInfo, 'src_last_modified_millis')) {
+    throw new Error(`Duplicate fileInfo key "src_last_modified_millis" from 'preserve-mtime' input`)
+  }
   const expectedSha1 = optional('expected-sha1')
   const retentionUntil = optional('retention-until')
 
@@ -276,6 +302,8 @@ export function parseInputs(): ParsedInputs {
     partSize,
     resume,
     contentType,
+    fileInfo,
+    preserveMtime,
     dryRun,
     allowBucketPurge,
     presignTtlSeconds,
@@ -402,6 +430,119 @@ export function splitCsv(value: string | undefined): string[] {
     .split(',')
     .map((s) => s.trim())
     .filter((s) => s.length > 0)
+}
+
+/**
+ * Parse upload fileInfo metadata from newline-delimited or simple
+ * comma-separated `key=value` entries. Newline mode preserves commas inside
+ * values.
+ *
+ * @internal
+ */
+export function parseFileInfo(value: string | undefined): Record<string, string> {
+  if (value === undefined || value.trim() === '') return {}
+  const pairs = /[\r\n]/.test(value) ? value.split(/\r?\n|\r/) : value.split(',')
+  const fileInfo: Record<string, string> = {}
+
+  for (const rawPair of pairs) {
+    const pair = rawPair.trim()
+    if (pair === '') continue
+    const equalsIndex = pair.indexOf('=')
+    if (equalsIndex <= 0) {
+      throw new Error(`Invalid 'file-info' entry "${pair}". Expected key=value.`)
+    }
+    const key = pair.slice(0, equalsIndex).trim()
+    const parsedValue = pair.slice(equalsIndex + 1).trim()
+    addFileInfo(fileInfo, key, parsedValue, 'file-info', { allowReserved: false })
+  }
+
+  return fileInfo
+}
+
+interface AddFileInfoOptions {
+  allowReserved: boolean
+}
+
+function addFileInfo(
+  fileInfo: Record<string, string>,
+  key: string,
+  value: string | undefined,
+  inputName: string,
+  options: AddFileInfoOptions,
+): void {
+  if (value === undefined) return
+  const canonicalKey = key.toLowerCase()
+  if (!options.allowReserved && canonicalKey.startsWith('b2-')) {
+    throw new Error(
+      `Reserved fileInfo key "${key}" from '${inputName}' input must use the dedicated upload inputs such as content-type, cache-control, content-disposition, content-language, or expires`,
+    )
+  }
+  if (Object.hasOwn(fileInfo, canonicalKey)) {
+    throw new Error(`Duplicate fileInfo key "${key}" from '${inputName}' input`)
+  }
+  fileInfo[canonicalKey] = value
+}
+
+/**
+ * Return the upload fileInfo byte budget for the active encryption mode.
+ *
+ * @internal
+ */
+export function uploadFileInfoTotalMaxBytes(encryption: EncryptionSetting | undefined): number {
+  return encryption === undefined
+    ? FILE_INFO_TOTAL_MAX_BYTES
+    : FILE_INFO_TOTAL_MAX_BYTES_WITH_ENCRYPTION
+}
+
+/**
+ * Validate upload fileInfo metadata before forwarding it to the B2 SDK.
+ *
+ * @internal
+ */
+export function validateFileInfo(
+  fileInfo: Record<string, string>,
+  totalMaxBytes = FILE_INFO_TOTAL_MAX_BYTES,
+): void {
+  const entries = Object.entries(fileInfo)
+  if (entries.length > FILE_INFO_MAX_ENTRIES) {
+    throw new Error(`Invalid fileInfo: ${entries.length} entries exceeds ${FILE_INFO_MAX_ENTRIES}`)
+  }
+
+  let totalBytes = 0
+  const seenCanonicalKeys = new Set<string>()
+  for (const [key, value] of entries) {
+    const canonicalKey = key.toLowerCase()
+    if (seenCanonicalKeys.has(canonicalKey)) {
+      throw new Error(`Duplicate fileInfo key "${key}" from upload metadata`)
+    }
+    seenCanonicalKeys.add(canonicalKey)
+
+    if (!FILE_INFO_KEY_PATTERN.test(key)) {
+      throw new Error(
+        `Invalid fileInfo key "${key}" from 'file-info'. Keys must match ${FILE_INFO_KEY_PATTERN.source}`,
+      )
+    }
+
+    const keyBytes = utf8Encoder.encode(key).byteLength
+    if (keyBytes > FILE_INFO_KEY_MAX_BYTES) {
+      throw new Error(
+        `Invalid fileInfo key "${key}": ${keyBytes} bytes exceeds ${FILE_INFO_KEY_MAX_BYTES}`,
+      )
+    }
+
+    const valueBytes = utf8Encoder.encode(value).byteLength
+    const remainingValueBytes = Math.max(0, totalMaxBytes - totalBytes - keyBytes)
+    if (valueBytes > remainingValueBytes) {
+      throw new Error(
+        `Invalid fileInfo value for "${key}": ${valueBytes} bytes exceeds ${remainingValueBytes}`,
+      )
+    }
+    totalBytes += keyBytes + valueBytes
+  }
+
+  if (totalBytes > totalMaxBytes) {
+    throw new Error(`Invalid fileInfo: total size ${totalBytes} bytes exceeds ${totalMaxBytes}`)
+  }
 }
 
 /**

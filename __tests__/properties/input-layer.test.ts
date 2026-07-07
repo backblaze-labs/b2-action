@@ -172,6 +172,8 @@ describe('path and checksum properties', () => {
         fc.record<ResolvedFile>({
           localPath: fc.constant('/tmp/source'),
           fileName: fc.string({ maxLength: 120 }),
+          size: fc.nat(),
+          mtimeMs: fc.double({ noNaN: true }),
         }),
         fc.option(fc.string({ maxLength: 120 }), { nil: undefined }),
         fc.boolean(),
@@ -198,6 +200,8 @@ describe('path and checksum properties', () => {
         fc.record<ResolvedFile>({
           localPath: fc.constant('/tmp/source'),
           fileName: fc.string({ maxLength: 120 }),
+          size: fc.nat(),
+          mtimeMs: fc.double({ noNaN: true }),
         }),
         fc.string({ maxLength: 120 }),
         fc.boolean(),
@@ -221,7 +225,7 @@ describe('path and checksum properties', () => {
   })
 
   it('preserves double slashes and leading slashes in B2 upload keys', () => {
-    const file = { localPath: '/tmp/source', fileName: '/source//name.txt' }
+    const file = { localPath: '/tmp/source', fileName: '/source//name.txt', size: 0, mtimeMs: 0 }
 
     expect(remapFileName(file, '//dest//prefix///', false)).toBe('//dest//prefix//source//name.txt')
     expect(remapFileName(file, '//exact//key.txt', true)).toBe('//exact//key.txt')

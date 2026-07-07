@@ -1,11 +1,12 @@
 import { randomBytes } from 'node:crypto'
-import { mkdir, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rename, rm, stat, symlink, utimes, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import type { ProgressEvent } from '@backblaze-labs/b2-sdk'
+import type { Bucket, FileVersion, ProgressEvent } from '@backblaze-labs/b2-sdk'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { downloadCommand, replaceDownloadedFile } from '../../src/commands/download.ts'
 import { uploadCommand } from '../../src/commands/upload.ts'
 import type { ParsedInputs } from '../../src/inputs.ts'
+import { parseSse } from '../../src/sse.ts'
 import {
   captureStdout,
   makeFixture,
@@ -20,6 +21,47 @@ function baseInputs(): ParsedInputs {
 }
 
 const MULTIPART_ABORT_REASON = 'test abort after multipart progress'
+type UploadCall = Parameters<Bucket['upload']>[0]
+
+interface CapturingUploadBucket {
+  bucket: Bucket
+  uploadCalls: UploadCall[]
+}
+
+function makeCapturingUploadBucket(resultFileInfo?: Record<string, string>): CapturingUploadBucket {
+  const uploadCalls: UploadCall[] = []
+  const commandBucket: Pick<Bucket, 'name' | 'upload'> = {
+    name: 'fake-bucket',
+    upload: async (options: UploadCall): Promise<FileVersion> => {
+      uploadCalls.push(options)
+      await options.source.toArrayBuffer()
+      return makeUploadFileVersion(options, resultFileInfo ?? options.fileInfo ?? {})
+    },
+  }
+
+  // uploadCommand only relies on the public command boundary captured above.
+  return { bucket: commandBucket as unknown as Bucket, uploadCalls }
+}
+
+function makeUploadFileVersion(options: UploadCall, fileInfo: Record<string, string>): FileVersion {
+  return {
+    accountId: 'account-id' as FileVersion['accountId'],
+    action: 'upload',
+    bucketId: 'bucket-id' as FileVersion['bucketId'],
+    contentLength: options.source.size,
+    contentMd5: null,
+    contentSha1: 'fake-sha1',
+    contentType: options.contentType ?? 'b2/x-auto',
+    fileId: 'fake-file-id' as FileVersion['fileId'],
+    fileInfo,
+    fileName: options.fileName,
+    fileRetention: { isClientAuthorizedToRead: true, value: null },
+    legalHold: { isClientAuthorizedToRead: true, value: null },
+    replicationStatus: null,
+    serverSideEncryption: { mode: 'none' },
+    uploadTimestamp: Date.now(),
+  }
+}
 
 describe('upload + download commands (B2Simulator)', () => {
   let fx: TestFixture
@@ -45,6 +87,101 @@ describe('upload + download commands (B2Simulator)', () => {
     expect(result.files[0]?.fileName).toBe('hello.txt')
     expect(result.files[0]?.fileId).toBeTruthy()
     expect(result.bytesTransferred).toBe(11)
+  })
+
+  it('passes fileInfo, content headers, and preserved mtime to upload', async () => {
+    const local = join(fx.workDir, 'metadata.txt')
+    await writeFile(local, 'payload')
+    const mtime = new Date('2026-02-03T04:05:06.789Z')
+    await utimes(local, mtime, mtime)
+    const expectedMtime = Math.trunc((await stat(local)).mtimeMs)
+    const { bucket, uploadCalls } = makeCapturingUploadBucket()
+
+    const result = await uploadCommand(bucket, {
+      ...baseInputs(),
+      source: local,
+      destination: 'metadata.txt',
+      contentType: 'text/plain',
+      fileInfo: {
+        build_sha: 'abc123',
+        'b2-cache-control': 'public, max-age=31536000',
+        'b2-content-disposition': 'attachment; filename="metadata.txt"',
+      },
+      preserveMtime: true,
+    })
+
+    const call = uploadCalls[0]
+    expect(call).toBeDefined()
+    if (call === undefined) throw new Error('upload call was not captured')
+    expect(call.contentType).toBe('text/plain')
+    expect(call.lastModifiedMillis).toBe(expectedMtime)
+    expect(call.fileInfo).toEqual({
+      build_sha: 'abc123',
+      'b2-cache-control': 'public, max-age=31536000',
+      'b2-content-disposition': 'attachment; filename="metadata.txt"',
+      src_last_modified_millis: String(expectedMtime),
+    })
+    expect(result.files[0]?.fileInfo).toEqual({
+      build_sha: 'abc123',
+      'b2-cache-control': 'public, max-age=31536000',
+      'b2-content-disposition': 'attachment; filename="metadata.txt"',
+      src_last_modified_millis: String(expectedMtime),
+    })
+  })
+
+  it('reports SDK-returned fileInfo without merging requested key casing', async () => {
+    const local = join(fx.workDir, 'case.txt')
+    await writeFile(local, 'case')
+    const { bucket } = makeCapturingUploadBucket({ build_sha: 'abc123' })
+
+    const result = await uploadCommand(bucket, {
+      ...baseInputs(),
+      source: local,
+      fileInfo: { Build_SHA: 'abc123' },
+    })
+
+    expect(result.files[0]?.fileInfo).toEqual({ build_sha: 'abc123' })
+  })
+
+  it('validates near-limit preserved mtime fileInfo before any upload call', async () => {
+    const local = join(fx.workDir, 'too-much-metadata.txt')
+    await writeFile(local, 'payload')
+    const { bucket, uploadCalls } = makeCapturingUploadBucket()
+    const encryptedFileInfoBudget = 2048
+    const key = 'build'
+
+    await expect(
+      uploadCommand(bucket, {
+        ...baseInputs(),
+        source: local,
+        fileInfo: {
+          [key]: 'x'.repeat(encryptedFileInfoBudget - key.length),
+        },
+        encryption: parseSse('B2'),
+        preserveMtime: true,
+      }),
+    ).rejects.toThrow(/Invalid fileInfo value for "src_last_modified_millis"/)
+
+    expect(uploadCalls).toHaveLength(0)
+  })
+
+  it('rejects mixed-case preserved mtime duplicates before any upload call', async () => {
+    const local = join(fx.workDir, 'duplicate-metadata.txt')
+    await writeFile(local, 'payload')
+    const { bucket, uploadCalls } = makeCapturingUploadBucket()
+
+    await expect(
+      uploadCommand(bucket, {
+        ...baseInputs(),
+        source: local,
+        fileInfo: {
+          SRC_LAST_MODIFIED_MILLIS: '1',
+        },
+        preserveMtime: true,
+      }),
+    ).rejects.toThrow(/Duplicate fileInfo key "src_last_modified_millis"/)
+
+    expect(uploadCalls).toHaveLength(0)
   })
 
   it('uploads to an explicit destination key', async () => {
@@ -788,7 +925,6 @@ describe('upload + download: log + branch coverage', () => {
   })
 
   it('round-trips an SSE-C file: download decrypts with the same customer key', async () => {
-    const { parseSse } = await import('../../src/sse.ts')
     const enc = parseSse(`C:${Buffer.alloc(32, 0x61).toString('base64')}`)
     const local = join(fx.workDir, 'enc.txt')
     await writeFile(local, 'secret-body')

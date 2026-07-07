@@ -1,5 +1,4 @@
 import { createReadStream } from 'node:fs'
-import { stat } from 'node:fs/promises'
 import { basename, posix, relative, resolve, sep } from 'node:path'
 import { Readable } from 'node:stream'
 import * as core from '@actions/core'
@@ -7,7 +6,12 @@ import * as glob from '@actions/glob'
 import type { Bucket } from '@backblaze-labs/b2-sdk'
 import { StreamSource } from '@backblaze-labs/b2-sdk/streams'
 import { tryStat } from '../fs.ts'
-import { type ParsedInputs, requireSource } from '../inputs.ts'
+import {
+  type ParsedInputs,
+  requireSource,
+  uploadFileInfoTotalMaxBytes,
+  validateFileInfo,
+} from '../inputs.ts'
 import { makeProgressListener } from '../progress.ts'
 
 /** One entry in {@link UploadResult.files}. */
@@ -22,6 +26,12 @@ export interface UploadedFile {
   size: number
   /** Whole-file SHA-1, or `null` when the file was multipart-uploaded. */
   contentSha1: string | null
+  /**
+   * B2 fileInfo metadata for the uploaded object. This is the SDK-returned
+   * metadata when available; otherwise it falls back to the canonical metadata
+   * submitted in the upload request.
+   */
+  fileInfo: Record<string, string>
 }
 
 /** Result of {@link uploadCommand}. */
@@ -70,26 +80,22 @@ export async function uploadCommand(
   // bounded by the user-supplied `concurrency` value.
   const partConcurrency = isSingleExplicitFile || files.length === 1 ? inputs.concurrency : 1
 
-  const uploaded = await mapWithConcurrency(files, fileConcurrency, async (f) => {
+  const uploadPlans = await mapWithConcurrency(files, fileConcurrency, async (f) => {
     signal?.throwIfAborted()
-    const fileName = remapFileName(f, inputs.destination, isSingleExplicitFile)
-    const uploadLabel = `upload ${f.localPath} → b2://${bucket.name}/${fileName}`
-    const groupedLog = files.length === 1 || fileConcurrency === 1
+    return await prepareUploadPlan(f, inputs, isSingleExplicitFile)
+  })
+
+  const uploaded = await mapWithConcurrency(uploadPlans, fileConcurrency, async (plan) => {
+    signal?.throwIfAborted()
+    const uploadLabel = `upload ${plan.localPath} → b2://${bucket.name}/${plan.fileName}`
+    const groupedLog = uploadPlans.length === 1 || fileConcurrency === 1
     if (groupedLog) {
       core.startGroup(uploadLabel)
     } else {
       core.info(uploadLabel)
     }
     try {
-      return await uploadOne(
-        bucket,
-        f.localPath,
-        fileName,
-        inputs,
-        partConcurrency,
-        groupedLog,
-        signal,
-      )
+      return await uploadOne(bucket, plan, inputs, partConcurrency, groupedLog, signal)
     } finally {
       if (groupedLog) core.endGroup()
     }
@@ -146,6 +152,18 @@ export interface ResolvedFile {
   localPath: string
   /** Path relative to the glob root, used when computing the B2 key. */
   fileName: string
+  /** Byte size captured while resolving the upload source. */
+  size: number
+  /** Modification time captured while resolving the upload source. */
+  mtimeMs: number
+}
+
+interface UploadPlan {
+  localPath: string
+  fileName: string
+  size: number
+  lastModifiedMillis: number | undefined
+  fileInfo: Record<string, string>
 }
 
 async function resolveFiles(
@@ -158,7 +176,14 @@ async function resolveFiles(
 
   if (explicitFile?.isFile() && !looksLikeGlob && include.length === 0) {
     return {
-      files: [{ localPath: resolve(source), fileName: basename(source) }],
+      files: [
+        {
+          localPath: resolve(source),
+          fileName: basename(source),
+          size: explicitFile.size,
+          mtimeMs: explicitFile.mtimeMs,
+        },
+      ],
       isSingleExplicitFile: true,
     }
   }
@@ -186,7 +211,7 @@ async function resolveFiles(
     // symlinks, races where a file is unlinked between glob and stat, etc.).
     if (!s?.isFile()) continue
     const rel = relative(root, m).split(sep).join(posix.sep)
-    out.push({ localPath: m, fileName: rel })
+    out.push({ localPath: m, fileName: rel, size: s.size, mtimeMs: s.mtimeMs })
   }
   out.sort(compareResolvedFiles)
   return { files: out, isSingleExplicitFile: false }
@@ -218,17 +243,34 @@ export function remapFileName(
   return `${dest}/${file.fileName}`
 }
 
+async function prepareUploadPlan(
+  file: ResolvedFile,
+  inputs: ParsedInputs,
+  isSingleExplicitFile: boolean,
+): Promise<UploadPlan> {
+  const size = file.size
+  const lastModifiedMillis = inputs.preserveMtime ? Math.trunc(file.mtimeMs) : undefined
+  const fileInfo = buildUploadFileInfo(inputs.fileInfo, lastModifiedMillis)
+  validateFileInfo(fileInfo, uploadFileInfoTotalMaxBytes(inputs.encryption))
+
+  return {
+    localPath: file.localPath,
+    fileName: remapFileName(file, inputs.destination, isSingleExplicitFile),
+    size,
+    lastModifiedMillis,
+    fileInfo,
+  }
+}
+
 async function uploadOne(
   bucket: Bucket,
-  localPath: string,
-  fileName: string,
+  plan: UploadPlan,
   inputs: ParsedInputs,
   partConcurrency: number,
   groupedLog: boolean,
   signal?: AbortSignal,
 ): Promise<UploadedFile> {
-  const fileStat = await stat(localPath)
-  const size = fileStat.size
+  const { fileInfo, fileName, lastModifiedMillis, localPath, size } = plan
 
   // Stream the file from disk. The SDK's `bucket.upload` routes files larger
   // than the recommended part size through `uploadLargeFile`, which now
@@ -256,6 +298,8 @@ async function uploadOne(
     concurrency: partConcurrency,
     ...(inputs.partSize !== undefined ? { partSize: inputs.partSize } : {}),
     ...(inputs.contentType !== undefined ? { contentType: inputs.contentType } : {}),
+    ...(Object.keys(fileInfo).length > 0 ? { fileInfo } : {}),
+    ...(lastModifiedMillis !== undefined ? { lastModifiedMillis } : {}),
     ...(inputs.encryption !== undefined ? { serverSideEncryption: inputs.encryption } : {}),
     ...(signal !== undefined ? { signal } : {}),
     onProgress,
@@ -266,6 +310,7 @@ async function uploadOne(
   const sha1 = result.contentSha1
   const detailPrefix = groupedLog ? '  ' : ''
   core.info(`${detailPrefix}fileId=${result.fileId} sha1=${sha1 ?? 'multipart'}`)
+  const resultFileInfo = Object.keys(result.fileInfo).length > 0 ? result.fileInfo : fileInfo
 
   return {
     localPath,
@@ -273,5 +318,29 @@ async function uploadOne(
     fileId: result.fileId,
     size,
     contentSha1: sha1,
+    fileInfo: resultFileInfo,
   }
+}
+
+function buildUploadFileInfo(
+  inputFileInfo: Record<string, string>,
+  lastModifiedMillis: number | undefined,
+): Record<string, string> {
+  const fileInfo: Record<string, string> = {}
+  for (const [key, value] of Object.entries(inputFileInfo)) {
+    const canonicalKey = key.toLowerCase()
+    if (Object.hasOwn(fileInfo, canonicalKey)) {
+      throw new Error(`Duplicate fileInfo key "${key}" from upload metadata`)
+    }
+    fileInfo[canonicalKey] = value
+  }
+  if (lastModifiedMillis !== undefined) {
+    if (Object.hasOwn(fileInfo, 'src_last_modified_millis')) {
+      throw new Error(
+        `Duplicate fileInfo key "src_last_modified_millis" from 'preserve-mtime' input`,
+      )
+    }
+    fileInfo.src_last_modified_millis = String(lastModifiedMillis)
+  }
+  return fileInfo
 }

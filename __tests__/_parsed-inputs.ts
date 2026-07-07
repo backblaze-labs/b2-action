@@ -23,6 +23,8 @@ export function makeParsedInputs(
     partSize: undefined,
     resume: true,
     contentType: undefined,
+    fileInfo: {},
+    preserveMtime: false,
     dryRun: false,
     allowBucketPurge: false,
     presignTtlSeconds: 3600,
