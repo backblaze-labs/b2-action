@@ -35638,6 +35638,8 @@ function formatPartSummary(entry) {
 }
 function safeDiagnosticToken(value) {
     const normalized = value.trim();
+    if (/^(bad_auth_token|expired_auth_token)$/i.test(normalized))
+        return normalized;
     if (/(authorization|application.?key|password|private.?key|secret|signature|token)/i.test(normalized)) {
         return 'unknown';
     }

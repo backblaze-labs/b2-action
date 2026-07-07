@@ -338,6 +338,40 @@ describe('cleanup-unfinished command', () => {
     expect(stdout).not.toContain('cancel denied')
     expect(stdout).not.toContain('secret-token')
   })
+
+  it('preserves safe B2 auth token error codes in cancel diagnostics', async () => {
+    for (const code of ['bad_auth_token', 'expired_auth_token']) {
+      const bucket = {
+        name: 'mock-bucket',
+        paginateUnfinishedLargeFiles: async function* () {
+          yield {
+            fileName: `${code}.bin`,
+            fileId: `large-${code}`,
+            contentType: 'application/octet-stream',
+            fileInfo: {},
+          }
+        },
+        paginateParts: async function* () {
+          yield { contentLength: 10, uploadTimestamp: Date.now() - 48 * 60 * 60 * 1000 }
+        },
+        cancelLargeFile: async () => {
+          throw {
+            status: 401,
+            code,
+            message: 'auth failed',
+          }
+        },
+      } as unknown as Bucket
+
+      const result = await cleanupUnfinishedCommand(bucket, baseInputs({ source: 'tmp/' }))
+
+      expect(result.files[0]?.status).toBe('failed')
+      expect(result.files[0]?.error).toMatchObject({
+        status: 401,
+        code,
+      })
+    }
+  })
 })
 
 async function startUnfinishedLargeFile(
