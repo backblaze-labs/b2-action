@@ -520,8 +520,9 @@ describe('main dispatcher', () => {
       {
         fileName: 'old.bin',
         fileId: 'id-old',
-        partCount: 1,
-        size: 8,
+        partCount: 100,
+        size: 100,
+        partsTruncated: true,
         status: 'canceled',
       },
       {
@@ -548,13 +549,13 @@ describe('main dispatcher', () => {
 
     expect(ctx.writeStepSummary).toHaveBeenCalledWith({
       title: 'Backblaze B2: cleanup-unfinished',
-      totals: { files: 3, bytes: 24 },
+      totals: { files: 3, bytes: 116 },
       rows: [
         {
           fileName: 'old.bin',
           fileId: 'id-old',
-          size: 8,
-          status: 'canceled (1 part)',
+          size: 100,
+          status: 'canceled (>=100 parts, truncated)',
         },
         {
           fileName: 'active.bin',

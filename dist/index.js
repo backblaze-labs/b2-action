@@ -42556,18 +42556,19 @@ async function emitCleanupUnfinishedSummary(result, inputs) {
 function cleanupUnfinishedSummaryStatus(file) {
     const parts = file.partCount === null
         ? 'unknown parts'
-        : `${file.partCount} part${file.partCount === 1 ? '' : 's'}`;
+        : `${file.partsTruncated === true ? '>=' : ''}${file.partCount} part${file.partCount === 1 ? '' : 's'}`;
+    const partSummary = file.partsTruncated === true ? `${parts}, truncated` : parts;
     switch (file.status) {
         case 'would-cancel':
-            return `would cancel (${parts})`;
+            return `would cancel (${partSummary})`;
         case 'canceled':
-            return `canceled (${parts})`;
+            return `canceled (${partSummary})`;
         case 'skipped-active':
-            return `skipped active (${parts})`;
+            return `skipped active (${partSummary})`;
         case 'skipped-unknown':
-            return `skipped unknown (${parts})`;
+            return `skipped unknown (${partSummary})`;
         case 'failed':
-            return `failed (${parts})`;
+            return `failed (${partSummary})`;
     }
 }
 function stepSummaryRows(items, row) {
