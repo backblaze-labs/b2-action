@@ -18,24 +18,35 @@ describe('cleanup-unfinished command', () => {
   })
 
   it('cancels unfinished large uploads under the source prefix', async () => {
-    const matched = await startUnfinishedLargeFile(fx, 'tmp/abandoned.bin', [
-      bytes('part-one'),
-      bytes('part-two'),
-    ])
+    const matched = await startUnfinishedLargeFile(
+      fx,
+      'tmp/abandoned.bin',
+      [bytes('part-one'), bytes('part-two')],
+      {
+        password: 'should-not-leak',
+        secret: 'should-not-leak',
+        'private-key': 'should-not-leak',
+        'application-key': 'should-not-leak',
+      },
+    )
     await startUnfinishedLargeFile(fx, 'other/keep.bin', [bytes('keep')])
 
-    const result = await cleanupUnfinishedCommand(fx.bucket, baseInputs({ source: 'tmp/' }))
+    const result = await cleanupUnfinishedCommand(
+      fx.bucket,
+      baseInputs({
+        source: 'tmp/',
+        cleanupUnfinishedForce: true,
+      }),
+    )
 
     expect(result).toEqual({
       files: [
         {
           fileName: 'tmp/abandoned.bin',
           fileId: matched.fileId,
-          contentType: 'application/octet-stream',
-          fileInfo: { purpose: 'test' },
           partCount: 2,
           size: 16,
-          skipped: false,
+          status: 'canceled',
         },
       ],
       errors: 0,
@@ -52,6 +63,7 @@ describe('cleanup-unfinished command', () => {
       baseInputs({
         source: undefined,
         dryRun: true,
+        cleanupUnfinishedForce: true,
       }),
     )
 
@@ -60,20 +72,16 @@ describe('cleanup-unfinished command', () => {
         {
           fileName: 'one.bin',
           fileId: first.fileId,
-          contentType: 'application/octet-stream',
-          fileInfo: { purpose: 'test' },
           partCount: 1,
           size: 3,
-          skipped: true,
+          status: 'would-cancel',
         },
         {
           fileName: 'two.bin',
           fileId: second.fileId,
-          contentType: 'application/octet-stream',
-          fileInfo: { purpose: 'test' },
           partCount: 1,
           size: 3,
-          skipped: true,
+          status: 'would-cancel',
         },
       ],
       errors: 0,
@@ -81,7 +89,167 @@ describe('cleanup-unfinished command', () => {
     await expectUnfinishedNames(fx.bucket, ['one.bin', 'two.bin'])
   })
 
-  it('counts cancel failures without logging raw error text', async () => {
+  it('rejects whole-bucket cleanup without an explicit opt-in', async () => {
+    await expect(cleanupUnfinishedCommand(fx.bucket, baseInputs())).rejects.toThrow(
+      /'allow-bucket-cleanup' must be true/,
+    )
+    await expect(cleanupUnfinishedCommand(fx.bucket, baseInputs({ source: '' }))).rejects.toThrow(
+      /'allow-bucket-cleanup' must be true/,
+    )
+  })
+
+  it('cleans the whole bucket when explicitly opted in', async () => {
+    const upload = await startUnfinishedLargeFile(fx, 'bucket-wide.bin', [bytes('part')])
+
+    const result = await cleanupUnfinishedCommand(
+      fx.bucket,
+      baseInputs({
+        allowBucketCleanup: true,
+        cleanupUnfinishedForce: true,
+      }),
+    )
+
+    expect(result).toEqual({
+      files: [
+        {
+          fileName: 'bucket-wide.bin',
+          fileId: upload.fileId,
+          partCount: 1,
+          size: 4,
+          status: 'canceled',
+        },
+      ],
+      errors: 0,
+    })
+    await expectUnfinishedNames(fx.bucket, [])
+  })
+
+  it('skips active uploads by default', async () => {
+    const active = await startUnfinishedLargeFile(fx, 'tmp/active.bin', [bytes('fresh')])
+
+    const result = await cleanupUnfinishedCommand(fx.bucket, baseInputs({ source: 'tmp/' }))
+
+    expect(result).toEqual({
+      files: [
+        {
+          fileName: 'tmp/active.bin',
+          fileId: active.fileId,
+          partCount: 1,
+          size: 5,
+          status: 'skipped-active',
+          reason: 'recent-parts',
+        },
+      ],
+      errors: 0,
+    })
+    await expectUnfinishedNames(fx.bucket, ['tmp/active.bin'])
+  })
+
+  it('treats part diagnostics as best-effort when force is set', async () => {
+    const canceled: string[] = []
+    const bucket = {
+      name: 'mock-bucket',
+      paginateUnfinishedLargeFiles: async function* () {
+        yield {
+          fileName: 'unknown.bin',
+          fileId: 'large-unknown',
+          contentType: 'application/octet-stream',
+          fileInfo: {},
+        }
+        yield {
+          fileName: 'known.bin',
+          fileId: 'large-known',
+          contentType: 'application/octet-stream',
+          fileInfo: {},
+        }
+      },
+      paginateParts: async function* (fileId: string) {
+        if (fileId === 'large-unknown') throw new Error('list parts failed')
+        yield {
+          contentLength: 10,
+          uploadTimestamp: Date.now() - 48 * 60 * 60 * 1000,
+        }
+      },
+      cancelLargeFile: async (fileId: string) => {
+        canceled.push(fileId)
+      },
+    } as unknown as Bucket
+
+    const result = await cleanupUnfinishedCommand(
+      bucket,
+      baseInputs({
+        source: 'tmp/',
+        cleanupUnfinishedForce: true,
+      }),
+    )
+
+    expect(canceled).toEqual(['large-unknown', 'large-known'])
+    expect(result).toEqual({
+      files: [
+        {
+          fileName: 'unknown.bin',
+          fileId: 'large-unknown',
+          partCount: null,
+          size: null,
+          status: 'canceled',
+        },
+        {
+          fileName: 'known.bin',
+          fileId: 'large-known',
+          partCount: 1,
+          size: 10,
+          status: 'canceled',
+        },
+      ],
+      errors: 0,
+    })
+  })
+
+  it('skips diagnostically truncated uploads unless force is set', async () => {
+    let canceled = false
+    const bucket = {
+      name: 'mock-bucket',
+      paginateUnfinishedLargeFiles: async function* () {
+        yield {
+          fileName: 'huge.bin',
+          fileId: 'large-huge',
+          contentType: 'application/octet-stream',
+          fileInfo: {},
+        }
+      },
+      paginateParts: async function* () {
+        for (let i = 0; i < 101; i++) {
+          yield {
+            contentLength: 1,
+            uploadTimestamp: Date.now() - 48 * 60 * 60 * 1000,
+          }
+        }
+      },
+      cancelLargeFile: async () => {
+        canceled = true
+      },
+    } as unknown as Bucket
+
+    const result = await cleanupUnfinishedCommand(bucket, baseInputs({ source: 'tmp/' }))
+
+    expect(canceled).toBe(false)
+    expect(result).toEqual({
+      files: [
+        {
+          fileName: 'huge.bin',
+          fileId: 'large-huge',
+          partCount: 100,
+          size: 100,
+          partsTruncated: true,
+          status: 'skipped-unknown',
+          reason: 'parts-truncated',
+        },
+      ],
+      errors: 0,
+    })
+  })
+
+  it('counts cancel failures with structured diagnostics and no raw error text', async () => {
     const bucket = {
       name: 'mock-bucket',
       paginateUnfinishedLargeFiles: async function* () {
@@ -93,34 +261,63 @@ describe('cleanup-unfinished command', () => {
         }
       },
       paginateParts: async function* () {
-        yield { contentLength: 10 }
+        yield { contentLength: 10, uploadTimestamp: Date.now() - 48 * 60 * 60 * 1000 }
       },
       cancelLargeFile: async () => {
-        throw new Error('cancel denied with secret-token')
+        throw {
+          status: 503,
+          code: 'service_unavailable secret-token',
+          retryable: true,
+          retryAfter: 12,
+          message: 'cancel denied with secret-token',
+        }
       },
     } as unknown as Bucket
 
     let result: Awaited<ReturnType<typeof cleanupUnfinishedCommand>> | undefined
     const stdout = await captureStdout(async () => {
-      result = await cleanupUnfinishedCommand(bucket, baseInputs())
+      result = await cleanupUnfinishedCommand(bucket, baseInputs({ source: 'tmp/' }))
     })
 
     expect(result).toEqual({
-      files: [],
+      files: [
+        {
+          fileName: 'stuck.bin',
+          fileId: 'large-id',
+          partCount: 1,
+          size: 10,
+          status: 'failed',
+          error: {
+            message: 'cancel failed',
+            status: 503,
+            code: 'unknown',
+            retryable: true,
+            retryAfter: 12,
+          },
+        },
+      ],
       errors: 1,
     })
-    expect(stdout).toContain('failed to cancel stuck.bin (large-id): cancel failed')
+    expect(stdout).toContain(
+      'failed to cancel stuck.bin (large-id): cancel failed (status 503, code unknown, retryable true, retry after 12s)',
+    )
+    expect(stdout).not.toContain('cancel denied')
     expect(stdout).not.toContain('secret-token')
   })
 })
 
-async function startUnfinishedLargeFile(fx: TestFixture, fileName: string, parts: Uint8Array[]) {
+async function startUnfinishedLargeFile(
+  fx: TestFixture,
+  fileName: string,
+  parts: Uint8Array[],
+  fileInfo: Record<string, string> = { purpose: 'test' },
+) {
   const { apiUrl, authToken } = auth(fx)
   const started = await fx.client.raw.startLargeFile(apiUrl, authToken, {
     bucketId: fx.bucket.id,
     fileName,
     contentType: 'application/octet-stream',
-    fileInfo: { purpose: 'test' },
+    fileInfo,
   })
 
   for (const [index, body] of parts.entries()) {

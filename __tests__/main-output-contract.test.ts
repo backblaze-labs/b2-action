@@ -235,11 +235,9 @@ function applyCommandResult(commands: ReturnType<typeof commandMocks>, action: A
           {
             fileName: file.fileName,
             fileId: file.fileId,
-            contentType: file.contentType,
-            fileInfo: {},
             partCount: 1,
             size: file.size,
-            skipped: false,
+            status: 'canceled',
           },
         ],
         errors: 0,

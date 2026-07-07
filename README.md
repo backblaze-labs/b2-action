@@ -102,7 +102,7 @@ Exact-version releases publish an attested `dist/index.js` asset for provenance 
 | `retention` | Apply Object Lock retention + legal hold to a file. | `source`, `bucket`, plus `retention-mode` and/or `legal-hold` |
 | `head` | Fetch object metadata (size, sha1, contentType, fileInfo) via HEAD. No body transfer. | `source`, `bucket` |
 | `purge` | Permanently delete every file version under a prefix, including hide markers and history. Whole-bucket purge requires `allow-bucket-purge: true`. Supports `dry-run` and `bypass-governance` for governance-retained versions. | `source` or `allow-bucket-purge`, `bucket` |
-| `cleanup-unfinished` | List unfinished multipart uploads under an optional prefix and cancel them so uploaded parts stop being retained. Supports `dry-run`. | `bucket` (and optional `source`) |
+| `cleanup-unfinished` | List unfinished multipart uploads under a prefix and cancel idle uploads so uploaded parts stop being retained. Supports `dry-run`; non-dry-run whole-bucket cleanup requires `allow-bucket-cleanup: true`, and active or diagnostically unknown uploads are skipped unless `cleanup-unfinished-force: true`. | `bucket` (and usually `source`) |
 
 Exact-name `copy`, single-file `delete`, and `retention` operate only when the latest exact-name version is an upload. If that latest version is a hide marker, these commands do not search older upload history under the same name; they fail with the same `File not found` diagnostic used for absent names so default workflow logs do not reveal hidden-object existence. Run `unhide` first to restore the prior upload, or use `purge` when you need to remove hide markers and historical versions.
 
@@ -260,6 +260,14 @@ Exact-name `copy`, single-file `delete`, and `retention` operate only when the l
     source: tmp/
 ```
 
+By default, `cleanup-unfinished` only cancels uploads whose newest uploaded
+part is at least 1440 minutes old. Uploads with recent parts, no uploaded
+parts, failed part diagnostics, or more than the 100-part diagnostic cap are
+reported as skipped so active multipart uploads are not canceled accidentally.
+Set `cleanup-unfinished-force: true` to cancel those matched uploads anyway.
+For non-dry-run whole-bucket cleanup, omit `source` or set `/` and also set
+`allow-bucket-cleanup: true`.
+
 ### Hide / unhide
 
 ```yaml
@@ -394,7 +402,7 @@ Set `bypass-governance: true` to shorten governance-mode retention or to remove 
 | `application-key` | no\* | | B2 application key. Falls back to `$B2_APPLICATION_KEY`. |
 | `bucket` | yes | | Destination bucket name. |
 | `source-bucket` | copy only | `bucket` | Source bucket for cross-bucket copy. |
-| `source` | command-dependent | | Local path/glob (upload/sync up); B2 file name or prefix (everything else). For `cleanup-unfinished`, this is an optional unfinished upload prefix. Prefix downloads reject keys with empty, `.`, `..`, or control-character path segments. For whole-bucket purge, omit `source` or set `/` and set `allow-bucket-purge: true`. |
+| `source` | command-dependent | | Local path/glob (upload/sync up); B2 file name or prefix (everything else). For `cleanup-unfinished`, this is an optional unfinished upload prefix; non-dry-run whole-bucket cleanup requires `allow-bucket-cleanup: true`. Prefix downloads reject keys with empty, `.`, `..`, or control-character path segments. For whole-bucket purge, omit `source` or set `/` and set `allow-bucket-purge: true`. |
 | `destination` | command-dependent | | B2 file/prefix (upload/sync up/copy); local path (download/sync down/verify). Upload destinations are not normalized by the action; SDK/B2 key validation errors are surfaced rather than silently rewriting `/` characters. |
 | `include` | no | | CSV of glob patterns to include (upload). |
 | `exclude` | no | `.git/**` | CSV of glob patterns to exclude (upload). |
@@ -410,6 +418,9 @@ Set `bypass-governance: true` to shorten governance-mode retention or to remove 
 | `preserve-mtime` | no | `false` | Store each uploaded file's local modification time as B2 `src_last_modified_millis`. |
 | `dry-run` | no | `false` | Preview only (sync/delete/purge/cleanup-unfinished). |
 | `allow-bucket-purge` | purge only | `false` | Permit `purge` to target the entire bucket when `source` is empty or `/`. |
+| `allow-bucket-cleanup` | cleanup-unfinished only | `false` | Permit non-dry-run `cleanup-unfinished` to target the entire bucket when `source` is empty or `/`. |
+| `cleanup-unfinished-force` | cleanup-unfinished only | `false` | Cancel active or diagnostically unknown unfinished uploads matched by `source`. |
+| `cleanup-unfinished-idle-minutes` | cleanup-unfinished only | `1440` | Minimum minutes since the newest uploaded part before cleanup-unfinished cancels by default. |
 | `presign-ttl` | no | `3600` | Presigned URL TTL in seconds. Must be a positive decimal integer. |
 | `endpoint` | no | | Override B2 realm (staging/custom). |
 | `fail-on-empty` | no | `true` | Fail if an upload glob matches zero files. |
@@ -459,6 +470,8 @@ When truncated, `summary-json-notice` contains `{ "truncated": true, "reason": s
 For every command, `summary-json` and `summary-json-preview` omit fields with credential-bearing names (`url`, fields ending in `url`, and fields containing `authorization`, `signature`, or `token`, ignoring case, underscores, and hyphens). If a future command needs to expose a similarly named non-secret value, it must project it to an explicit safe field name before emitting the summary.
 
 For `presign`, `summary-json` and `summary-json-preview` contain only non-secret manifest fields such as `fileName` and `expiresAt`; the dedicated `presigned-url` output is the only structured output that contains a bearer URL. In prefix mode, only the first generated URL is exposed through `presigned-url`; bulk URL fan-out through `summary-json` is intentionally unsupported because those URLs are credentials. Generate or handle additional URLs in a trusted step that treats them as secrets.
+
+For `cleanup-unfinished`, `summary-json` and `summary-json-preview` are projected to cleanup status fields (`fileName`, `fileId`, `partCount`, `size`, `partsTruncated`, `status`, `reason`, and sanitized `error`). B2 `fileInfo` metadata is never emitted for this command.
 
 `$GITHUB_STEP_SUMMARY` per-file tables render at most the first 100 rows. When more rows exist, the summary includes a `Showing first 100 of N rows.` notice and the scalar outputs keep reporting the full source count. Status cells are escaped and rendered as inline code so object metadata cannot break the markdown table.
 

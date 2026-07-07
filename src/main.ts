@@ -3,7 +3,10 @@ import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import * as core from '@actions/core'
 import { buildClient, getBucket } from './client.ts'
-import { cleanupUnfinishedCommand } from './commands/cleanup-unfinished.ts'
+import {
+  type CleanupUnfinishedResult,
+  cleanupUnfinishedCommand,
+} from './commands/cleanup-unfinished.ts'
 import { copyCommand } from './commands/copy.ts'
 import { deleteCommand } from './commands/delete.ts'
 import { downloadCommand } from './commands/download.ts'
@@ -409,20 +412,11 @@ async function emitDeletionSummary(
 }
 
 async function emitCleanupUnfinishedSummary(
-  result: {
-    files: {
-      fileName: string
-      fileId: string
-      size: number
-      partCount: number
-      skipped: boolean
-    }[]
-    errors: number
-  },
+  result: CleanupUnfinishedResult,
   inputs: ParsedInputs,
 ): Promise<void> {
-  const canceled = result.files.filter((f) => !f.skipped).length
-  const wouldCancel = result.files.filter((f) => f.skipped).length
+  const canceled = result.files.filter((f) => f.status === 'canceled').length
+  const wouldCancel = result.files.filter((f) => f.status === 'would-cancel').length
   core.setOutput('files-deleted', String(canceled))
   setFileCountOutput(result.files.length)
   setSummaryJsonOutput(result.files)
@@ -435,17 +429,34 @@ async function emitCleanupUnfinishedSummary(
       : 'Backblaze B2: cleanup-unfinished',
     totals: {
       files: canceled + wouldCancel,
-      bytes: result.files.reduce((sum, f) => sum + f.size, 0),
+      bytes: result.files.reduce((sum, f) => sum + (f.size ?? 0), 0),
     },
     ...stepSummaryRows(result.files, (f) => ({
       fileName: f.fileName,
-      size: f.size,
+      ...(f.size !== null ? { size: f.size } : {}),
       fileId: f.fileId,
-      status: f.skipped
-        ? `would cancel (${f.partCount} part${f.partCount === 1 ? '' : 's'})`
-        : `canceled (${f.partCount} part${f.partCount === 1 ? '' : 's'})`,
+      status: cleanupUnfinishedSummaryStatus(f),
     })),
   })
+}
+
+function cleanupUnfinishedSummaryStatus(file: CleanupUnfinishedResult['files'][number]): string {
+  const parts =
+    file.partCount === null
+      ? 'unknown parts'
+      : `${file.partCount} part${file.partCount === 1 ? '' : 's'}`
+  switch (file.status) {
+    case 'would-cancel':
+      return `would cancel (${parts})`
+    case 'canceled':
+      return `canceled (${parts})`
+    case 'skipped-active':
+      return `skipped active (${parts})`
+    case 'skipped-unknown':
+      return `skipped unknown (${parts})`
+    case 'failed':
+      return `failed (${parts})`
+  }
 }
 
 function stepSummaryRows<T>(

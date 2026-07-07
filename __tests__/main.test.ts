@@ -485,11 +485,9 @@ describe('main dispatcher', () => {
       {
         fileName: 'unfinished.bin',
         fileId: 'id-unfinished',
-        contentType: 'application/octet-stream',
-        fileInfo: {},
         partCount: 2,
         size: 32,
-        skipped: true,
+        status: 'would-cancel',
       },
     ]
     ctx.parseInputs.mockReturnValue(inputs('cleanup-unfinished', { dryRun: true }))
@@ -1167,11 +1165,10 @@ describe('main dispatcher', () => {
       {
         fileName: 'stuck.bin',
         fileId: 'id-stuck',
-        contentType: 'application/octet-stream',
-        fileInfo: {},
         partCount: 1,
         size: 8,
-        skipped: false,
+        status: 'failed',
+        error: { message: 'cancel failed', status: 503, code: 'service_unavailable' },
       },
     ]
     ctx.parseInputs.mockReturnValue(inputs('cleanup-unfinished'))
@@ -1182,7 +1179,7 @@ describe('main dispatcher', () => {
     expect(ctx.core.setFailed).toHaveBeenCalledWith('Cleanup unfinished completed with 1 error(s)')
     expect(outputs(ctx)).toEqual(
       completeSummaryOutput({
-        'files-deleted': '1',
+        'files-deleted': '0',
         'file-count': '1',
         'summary-json': JSON.stringify(files),
       }),
@@ -1456,20 +1453,16 @@ function setupSuccessfulAction(ctx: LoadedMain, action: ActionName): Record<stri
         {
           fileName: 'canceled.bin',
           fileId: 'id-cancel',
-          contentType: 'application/octet-stream',
-          fileInfo: {},
           partCount: 2,
           size: 21,
-          skipped: false,
+          status: 'canceled',
         },
         {
           fileName: 'preview.bin',
           fileId: 'id-preview',
-          contentType: 'application/octet-stream',
-          fileInfo: {},
           partCount: 1,
           size: 5,
-          skipped: true,
+          status: 'would-cancel',
         },
       ]
       ctx.commands.cleanupUnfinishedCommand.mockResolvedValue({ files, errors: 0 })
