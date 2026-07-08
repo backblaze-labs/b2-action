@@ -95,6 +95,7 @@ const CONTENT_HEADER_FILE_INFO_KEYS = [
   ['content-language', 'b2-content-language'],
   ['expires', 'b2-expires'],
 ] as const
+/** Maximum UTF-8 byte length accepted for the `user-agent-prefix` input. */
 export const USER_AGENT_PREFIX_MAX_BYTES = 128
 const USER_AGENT_PREFIX_ALLOWED_SYMBOLS = "!#$%&'*+-.^_`|~/"
 const utf8Encoder = new TextEncoder()
@@ -388,6 +389,10 @@ function optional(name: string): string | undefined {
   return v === '' ? undefined : v
 }
 
+/**
+ * Validate the optional `user-agent-prefix` input before it reaches the SDK
+ * transport and return the prefix when it is present.
+ */
 export function parseUserAgentPrefix(value: string | undefined): string | undefined {
   if (value === undefined) return undefined
   const byteLength = utf8Encoder.encode(value).byteLength
