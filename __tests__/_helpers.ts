@@ -90,6 +90,8 @@ export async function makeFixture(
     applicationKeyId: TEST_APPLICATION_KEY_ID,
     applicationKey: TEST_APPLICATION_KEY,
     transport: sim.transport(),
+    // Fault-injection tests assert action error handling, not SDK retry timing.
+    retry: { maxRetries: 0 },
   })
   await client.authorize()
   const bucket = await client.createBucket({ bucketName, bucketType: 'allPrivate' })

@@ -1,4 +1,4 @@
-import { mkdir } from 'node:fs/promises'
+import { lstat, mkdir, realpath } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import * as core from '@actions/core'
 import type { Bucket } from '@backblaze-labs/b2-sdk'
@@ -241,13 +241,21 @@ async function buildConfig(
 
   const remotePrefix = source.replace(/^\/+|\/+$/g, '')
   const localDest = inputs.destination ?? '.'
-  await mkdir(resolve(localDest), { recursive: true })
+  const localRoot = await prepareLocalDestinationRoot(localDest)
   return {
     source: new B2Folder(bucket, remotePrefix === '' ? '' : `${remotePrefix}/`),
-    dest: new LocalFolder(resolve(localDest)),
+    dest: new LocalFolder(localRoot),
     bucket,
     options,
   }
+}
+
+async function prepareLocalDestinationRoot(localDest: string): Promise<string> {
+  const resolved = resolve(localDest)
+  await mkdir(resolved, { recursive: true })
+  const stats = await lstat(resolved)
+  if (stats.isSymbolicLink()) return resolved
+  return realpath(resolved)
 }
 
 export type { CompareMode, KeepMode }
