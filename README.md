@@ -409,10 +409,10 @@ Set `bypass-governance: true` to shorten governance-mode retention or to remove 
 
 `user-agent-prefix`, when set, is prepended to the SDK User-Agent attribution as
 `<prefix> b2-github-action/<version>`. Prefixes are limited to 128 UTF-8 bytes
-and may contain only ASCII letters, digits, `/`, and RFC 9110 token symbols
-(`!#$%&'*+-.^_`, `|`, `~`). Spaces, control characters, non-ASCII characters,
-surrogate characters, and other unsafe header characters are rejected before the
-SDK client is constructed.
+and may contain only ASCII letters, digits, `/`, and these RFC 9110 token
+symbols: ``!#$%&'*+-.^_`|~``. Spaces, control characters, non-ASCII
+characters, surrogate characters, and other unsafe header characters are
+rejected before the SDK client is constructed.
 
 ## Outputs (full reference)
 
