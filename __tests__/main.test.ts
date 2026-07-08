@@ -176,6 +176,18 @@ describe('main dispatcher', () => {
       bucket: DISPATCH_BUCKET,
       userAgentPrefix: 'ci-trace/123',
     })
+
+    const withoutPrefix = await loadMain()
+    withoutPrefix.parseInputs.mockReturnValue(inputs('list'))
+    withoutPrefix.commands.listCommand.mockResolvedValue({ files, truncated: false })
+
+    await withoutPrefix.run()
+
+    expect(withoutPrefix.buildClient).toHaveBeenCalledWith({
+      applicationKeyId: TEST_APPLICATION_KEY_ID,
+      applicationKey: TEST_APPLICATION_KEY,
+      bucket: DISPATCH_BUCKET,
+    })
   })
 
   it('renders copy summaries with source and destination URLs', async () => {
