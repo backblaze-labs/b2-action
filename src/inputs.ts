@@ -23,6 +23,7 @@ export type ActionName =
   | 'retention'
   | 'head'
   | 'purge'
+  | 'cleanup-unfinished'
 
 const VALID_ACTIONS: readonly ActionName[] = [
   'upload',
@@ -38,6 +39,7 @@ const VALID_ACTIONS: readonly ActionName[] = [
   'retention',
   'head',
   'purge',
+  'cleanup-unfinished',
 ]
 
 type ActionEffect = {
@@ -64,6 +66,7 @@ export const ACTION_EFFECTS = {
   retention: { kind: 'write', honorsDryRun: false },
   head: { kind: 'read', honorsDryRun: false },
   purge: { kind: 'write', honorsDryRun: true },
+  'cleanup-unfinished': { kind: 'write', honorsDryRun: true },
 } as const satisfies Record<ActionName, ActionEffect>
 
 /** How `sync` decides whether two files match. Drives the SDK's `synchronize()`. */
@@ -96,6 +99,7 @@ const CONTENT_HEADER_FILE_INFO_KEYS = [
   ['expires', 'b2-expires'],
 ] as const
 const utf8Encoder = new TextEncoder()
+const DEFAULT_CLEANUP_UNFINISHED_IDLE_MINUTES = 24 * 60
 
 /**
  * The fully-parsed, fully-validated action surface. Built by
@@ -119,8 +123,9 @@ export interface ParsedInputs {
   sourceBucket: string | undefined
   /**
    * Verb-dependent source. Upload/sync: a local path or glob. Download/copy/
-   * delete/presign/list/hide/unhide/verify/retention/head/purge: a B2 file
-   * name or prefix (trailing `/` means prefix mode for verbs that support it).
+   * delete/presign/list/hide/unhide/verify/retention/head/purge/
+   * cleanup-unfinished: a B2 file name or prefix (trailing `/` means prefix
+   * mode for verbs that support it).
    */
   source: string | undefined
   /**
@@ -144,10 +149,16 @@ export interface ParsedInputs {
   fileInfo: Record<string, string>
   /** Preserve each local file's mtime as B2 `src_last_modified_millis`. */
   preserveMtime: boolean
-  /** Preview without executing (sync/delete/purge). */
+  /** Preview without executing (sync/delete/purge/cleanup-unfinished). */
   dryRun: boolean
   /** Permit whole-bucket purge when `source` is empty or `/`. */
   allowBucketPurge: boolean
+  /** Permit whole-bucket unfinished-upload cleanup when `source` is empty or `/`. */
+  allowBucketCleanup: boolean
+  /** Cancel unfinished uploads even when part diagnostics look active or unknown. */
+  cleanupUnfinishedForce: boolean
+  /** Minimum idle time for uploaded parts before cleanup-unfinished cancels by default. */
+  cleanupUnfinishedIdleMinutes: number
   /** Presigned-URL TTL in seconds. */
   presignTtlSeconds: number
   /** Override B2 realm endpoint for staging / custom realms. */
@@ -223,7 +234,11 @@ export function parseInputs(): ParsedInputs {
     'allow-bucket-purge',
     core.getInput('allow-bucket-purge') || 'false',
   )
-  const source = optionalSource(action, allowBucketPurge)
+  const allowBucketCleanup = parseBool(
+    'allow-bucket-cleanup',
+    core.getInput('allow-bucket-cleanup') || 'false',
+  )
+  const source = optionalSource(action, { allowBucketPurge, allowBucketCleanup })
   const destination = optional('destination')
 
   const include = splitCsv(optional('include'))
@@ -236,6 +251,15 @@ export function parseInputs(): ParsedInputs {
 
   const resume = parseBool('resume', core.getInput('resume') || 'true')
   const dryRun = parseBool('dry-run', core.getInput('dry-run') || 'false')
+  const cleanupUnfinishedForce = parseBool(
+    'cleanup-unfinished-force',
+    core.getInput('cleanup-unfinished-force') || 'false',
+  )
+  const cleanupUnfinishedIdleMinutes = parseNonNegativeInt(
+    'cleanup-unfinished-idle-minutes',
+    core.getInput('cleanup-unfinished-idle-minutes') ||
+      String(DEFAULT_CLEANUP_UNFINISHED_IDLE_MINUTES),
+  )
   const failOnEmpty = parseBool('fail-on-empty', core.getInput('fail-on-empty') || 'true')
   const bypassGovernance = parseBool(
     'bypass-governance',
@@ -306,6 +330,9 @@ export function parseInputs(): ParsedInputs {
     preserveMtime,
     dryRun,
     allowBucketPurge,
+    allowBucketCleanup,
+    cleanupUnfinishedForce,
+    cleanupUnfinishedIdleMinutes,
     presignTtlSeconds,
     endpoint,
     failOnEmpty,
@@ -382,10 +409,15 @@ function optional(name: string): string | undefined {
   return v === '' ? undefined : v
 }
 
-function optionalSource(action: ActionName, allowBucketPurge: boolean): string | undefined {
+function optionalSource(
+  action: ActionName,
+  options: { allowBucketPurge: boolean; allowBucketCleanup: boolean },
+): string | undefined {
   const v = core.getInput('source')
   if (v !== '') return v
-  return action === 'purge' && allowBucketPurge ? '' : undefined
+  if (action === 'purge' && options.allowBucketPurge) return ''
+  if (action === 'cleanup-unfinished' && options.allowBucketCleanup) return ''
+  return undefined
 }
 
 function addSecretValue(secretValues: Set<string>, value: string | undefined): void {
@@ -417,6 +449,15 @@ function resolveCredential(inputName: string, envName: string): string {
   if (fromEnv !== undefined && fromEnv !== '') return fromEnv
 
   throw new Error(`Missing credential: set input '${inputName}' or env var '${envName}'`)
+}
+
+function parseNonNegativeInt(name: string, raw: string): number {
+  const trimmed = raw.trim()
+  const n = Number(trimmed)
+  if (!/^\d+$/.test(trimmed) || !Number.isSafeInteger(n)) {
+    throw new Error(`Invalid '${name}' input: "${raw}". Must be a non-negative integer`)
+  }
+  return n
 }
 
 /**

@@ -7,7 +7,7 @@ branding:
 
 inputs:
   action:
-    description: 'One of: upload | download | sync | copy | delete | presign | list | hide | unhide | verify | retention | head | purge'
+    description: 'One of: upload | download | sync | copy | delete | presign | list | hide | unhide | verify | retention | head | purge | cleanup-unfinished'
     required: true
   application-key-id:
     description: 'B2 application key ID. If unset, falls back to the $B2_APPLICATION_KEY_ID env var.'
@@ -22,7 +22,7 @@ inputs:
     description: 'Source bucket for cross-bucket copy. Defaults to `bucket`.'
     required: false
   source:
-    description: 'Command-dependent. upload/sync (up): local path or glob. download/sync (down)/copy/delete/presign/list/hide/unhide/verify/retention/head/purge: B2 file name or prefix. Prefix downloads reject keys with empty, `.`, `..`, or control-character path segments. For whole-bucket purge, omit source or set `/` and set allow-bucket-purge: true.'
+    description: 'Command-dependent. upload/sync (up): local path or glob. download/sync (down)/copy/delete/presign/list/hide/unhide/verify/retention/head/purge/cleanup-unfinished: B2 file name or prefix. For cleanup-unfinished, source is an optional unfinished-upload prefix; non-dry-run whole-bucket cleanup requires allow-bucket-cleanup: true. Prefix downloads reject keys with empty, `.`, `..`, or control-character path segments. For whole-bucket purge, omit source or set `/` and set allow-bucket-purge: true.'
     required: false
   destination:
     description: 'Command-dependent. upload/sync (up): B2 file name or prefix; SDK/B2 key validation errors are surfaced rather than silently rewriting `/` characters. download/sync (down): local path or directory. copy: destination B2 file name. verify: local file to compare against the remote SHA-1.'
@@ -68,13 +68,25 @@ inputs:
     required: false
     default: 'false'
   dry-run:
-    description: 'Preview what would happen without executing (sync/delete/purge). Default false.'
+    description: 'Preview what would happen without executing (sync/delete/purge/cleanup-unfinished). Default false.'
     required: false
     default: 'false'
   allow-bucket-purge:
     description: 'Permit `purge` to target the entire bucket when `source` is empty or `/`. Default false; ignored by other actions.'
     required: false
     default: 'false'
+  allow-bucket-cleanup:
+    description: 'Permit non-dry-run `cleanup-unfinished` to target the entire bucket when `source` is empty or `/`. Default false; ignored by other actions.'
+    required: false
+    default: 'false'
+  cleanup-unfinished-force:
+    description: 'Cancel unfinished uploads even when recent parts, missing parts, failed part diagnostics, or the 100-part diagnostic cap make active-upload safety unknown. Default false.'
+    required: false
+    default: 'false'
+  cleanup-unfinished-idle-minutes:
+    description: 'Minimum minutes since the newest uploaded part before `cleanup-unfinished` cancels by default. Uploads with no parts or incomplete diagnostics are skipped unless cleanup-unfinished-force is true. Default 1440.'
+    required: false
+    default: '1440'
   presign-ttl:
     description: 'Presigned URL TTL in seconds (presign action). Must be a positive decimal integer. Default 3600.'
     required: false
@@ -132,13 +144,13 @@ outputs:
   bytes-transferred:
     description: 'Total bytes uploaded/downloaded/copied/synced. Head emits 0.'
   file-count:
-    description: 'Aggregate count of files matched or processed, including skipped sync entries and dry-run delete/purge matches. Prefer verb-specific count outputs when available.'
+    description: 'Aggregate count of files matched or processed, including skipped sync entries and dry-run delete/purge/cleanup-unfinished matches. Prefer verb-specific count outputs when available.'
   files-uploaded:
     description: 'Number of files uploaded (upload glob / sync up).'
   files-downloaded:
     description: 'Number of files downloaded (download prefix / sync down).'
   files-deleted:
-    description: 'Number of files deleted (delete / purge / sync).'
+    description: 'Number of files deleted or unfinished uploads canceled (delete / purge / sync / cleanup-unfinished).'
   files-listed:
     description: 'Number of files returned by `list` or prefix `presign`.'
   presigned-url:

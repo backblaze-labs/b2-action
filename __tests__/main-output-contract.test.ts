@@ -40,6 +40,7 @@ const EXPECTED_OUTPUT_KEYS = {
     'summary-json-truncated',
   ],
   delete: ['file-count', 'files-deleted', 'summary-json', 'summary-json-truncated'],
+  'cleanup-unfinished': ['file-count', 'files-deleted', 'summary-json', 'summary-json-truncated'],
   presign: [
     'file-count',
     'file-name',
@@ -153,6 +154,9 @@ function mockDispatcherPath(action: ActionName) {
   }))
   vi.doMock('../src/commands/copy.ts', () => ({ copyCommand: commands.copyCommand }))
   vi.doMock('../src/commands/delete.ts', () => ({ deleteCommand: commands.deleteCommand }))
+  vi.doMock('../src/commands/cleanup-unfinished.ts', () => ({
+    cleanupUnfinishedCommand: commands.cleanupUnfinishedCommand,
+  }))
   vi.doMock('../src/commands/presign.ts', () => ({ presignCommand: commands.presignCommand }))
   vi.doMock('../src/commands/list.ts', () => ({ listCommand: commands.listCommand }))
   vi.doMock('../src/commands/hide.ts', () => ({ hideCommand: commands.hideCommand }))
@@ -175,6 +179,7 @@ function commandMocks() {
     summarizeSyncErrors: vi.fn(() => 'sample'),
     copyCommand: vi.fn(),
     deleteCommand: vi.fn(),
+    cleanupUnfinishedCommand: vi.fn(),
     presignCommand: vi.fn(),
     listCommand: vi.fn(),
     hideCommand: vi.fn(),
@@ -221,6 +226,20 @@ function applyCommandResult(commands: ReturnType<typeof commandMocks>, action: A
     case 'delete':
       commands.deleteCommand.mockResolvedValue({
         files: [{ fileName: file.fileName, fileId: file.fileId, skipped: false }],
+        errors: 0,
+      })
+      return
+    case 'cleanup-unfinished':
+      commands.cleanupUnfinishedCommand.mockResolvedValue({
+        files: [
+          {
+            fileName: file.fileName,
+            fileId: file.fileId,
+            partCount: 1,
+            size: file.size,
+            status: 'canceled',
+          },
+        ],
         errors: 0,
       })
       return

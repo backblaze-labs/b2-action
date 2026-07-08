@@ -3,6 +3,10 @@ import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import * as core from '@actions/core'
 import { buildClient, getBucket } from './client.ts'
+import {
+  type CleanupUnfinishedResult,
+  cleanupUnfinishedCommand,
+} from './commands/cleanup-unfinished.ts'
 import { copyCommand } from './commands/copy.ts'
 import { deleteCommand } from './commands/delete.ts'
 import { downloadCommand } from './commands/download.ts'
@@ -184,6 +188,11 @@ export async function run(): Promise<void> {
       case 'delete': {
         const result = await deleteCommand(bucket, inputs, signal)
         await emitDeletionSummary('delete', result, inputs)
+        return
+      }
+      case 'cleanup-unfinished': {
+        const result = await cleanupUnfinishedCommand(bucket, inputs, signal)
+        await emitCleanupUnfinishedSummary(result, inputs)
         return
       }
       case 'presign': {
@@ -400,6 +409,54 @@ async function emitDeletionSummary(
       status: f.skipped ? future : past,
     })),
   })
+}
+
+async function emitCleanupUnfinishedSummary(
+  result: CleanupUnfinishedResult,
+  inputs: ParsedInputs,
+): Promise<void> {
+  const canceled = result.files.filter((f) => f.status === 'canceled').length
+  core.setOutput('files-deleted', String(canceled))
+  setFileCountOutput(result.files.length)
+  setSummaryJsonOutput(result.files)
+  if (result.errors > 0) {
+    throw new Error(`Cleanup unfinished completed with ${result.errors} error(s)`)
+  }
+  await writeStepSummary({
+    title: inputs.dryRun
+      ? 'Backblaze B2: cleanup-unfinished (dry-run)'
+      : 'Backblaze B2: cleanup-unfinished',
+    totals: {
+      files: result.files.length,
+      bytes: result.files.reduce((sum, f) => sum + (f.size ?? 0), 0),
+    },
+    ...stepSummaryRows(result.files, (f) => ({
+      fileName: f.fileName,
+      ...(f.size !== null ? { size: f.size } : {}),
+      fileId: f.fileId,
+      status: cleanupUnfinishedSummaryStatus(f),
+    })),
+  })
+}
+
+function cleanupUnfinishedSummaryStatus(file: CleanupUnfinishedResult['files'][number]): string {
+  const parts =
+    file.partCount === null
+      ? 'unknown parts'
+      : `${file.partsTruncated === true ? '>=' : ''}${file.partCount} part${file.partCount === 1 ? '' : 's'}`
+  const partSummary = file.partsTruncated === true ? `${parts}, truncated` : parts
+  switch (file.status) {
+    case 'would-cancel':
+      return `would cancel (${partSummary})`
+    case 'canceled':
+      return `canceled (${partSummary})`
+    case 'skipped-active':
+      return `skipped active (${partSummary})`
+    case 'skipped-unknown':
+      return `skipped unknown (${partSummary})`
+    case 'failed':
+      return `failed (${partSummary})`
+  }
 }
 
 function stepSummaryRows<T>(

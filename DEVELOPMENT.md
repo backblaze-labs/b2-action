@@ -23,11 +23,12 @@ flowchart LR
     D --> R["retention"]
     D --> Hd["head"]
     D --> Pg["purge"]
+    D --> Cu["cleanup-unfinished"]
 
-    U & Dn & S & Cp & Dl & P & L & H & V & R & Hd & Pg --> SDK["@backblaze-labs/b2-sdk"]
+    U & Dn & S & Cp & Dl & P & L & H & V & R & Hd & Pg & Cu --> SDK["@backblaze-labs/b2-sdk"]
     SDK --> B2[("Backblaze B2")]
 
-    U & Dn & S & Cp & Dl & P & L & H & V & R & Hd & Pg --> O["outputs +<br/>$GITHUB_STEP_SUMMARY"]
+    U & Dn & S & Cp & Dl & P & L & H & V & R & Hd & Pg & Cu --> O["outputs +<br/>$GITHUB_STEP_SUMMARY"]
 
     style M fill:#EE3232,stroke:#fff,color:#fff
     style SDK fill:#EE3232,stroke:#fff,color:#fff
@@ -47,7 +48,7 @@ src/
   progress.ts      # throttled progress listener
   summary.ts       # $GITHUB_STEP_SUMMARY writer
   version.ts       # VERSION constant (bumped in lockstep with package.json)
-  commands/<verb>.ts  # one file per verb (13 today)
+  commands/<verb>.ts  # one file per verb (14 today)
 __tests__/
   _helpers.ts      # shared makeInputs() builder for command tests
   *.test.ts        # unit tests against the SDK's in-memory B2Simulator
@@ -281,7 +282,7 @@ Apply this to each bucket (the satellite ones get the same treatment as the main
 
 Create one application key with these capabilities, scoped to the three buckets (or to "all buckets" if you prefer the simpler scope and accept the broader blast radius):
 
-- `listBuckets`, `listFiles`, `readFiles`, `writeFiles`, `deleteFiles`: needed by `upload`, `download`, `sync`, `list`, `delete`, `copy`, `hide`, `unhide`, `purge`.
+- `listBuckets`, `listFiles`, `readFiles`, `writeFiles`, `deleteFiles`: needed by `upload`, `download`, `sync`, `list`, `delete`, `copy`, `hide`, `unhide`, `purge`, `cleanup-unfinished`.
 - `readFileRetentions`, `writeFileRetentions`, `readFileLegalHolds`, `writeFileLegalHolds`: needed by the `retention` example.
 - `bypassGovernance`: only if you want the test that exercises shortening a governance retention.
 - `shareFiles`: needed by `presign`.

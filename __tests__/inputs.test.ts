@@ -217,12 +217,29 @@ describe('parseInputs', () => {
     setInput('part-size', '5000000')
     setInput('resume', 'false')
     setInput('dry-run', '1')
+    setInput('cleanup-unfinished-force', 'yes')
+    setInput('cleanup-unfinished-idle-minutes', '60')
 
     const r = parseInputs()
     expect(r.concurrency).toBe(8)
     expect(r.partSize).toBe(5_000_000)
     expect(r.resume).toBe(false)
     expect(r.dryRun).toBe(true)
+    expect(r.cleanupUnfinishedForce).toBe(true)
+    expect(r.cleanupUnfinishedIdleMinutes).toBe(60)
+  })
+
+  it.each([
+    '1e3',
+    String(Number.MAX_SAFE_INTEGER + 1),
+  ])('rejects unsafe non-negative integers for cleanup idle minutes: %s', (value) => {
+    setInput('action', 'cleanup-unfinished')
+    setInput('application-key-id', 'k')
+    setInput('application-key', 's')
+    setInput('bucket', 'b')
+    setInput('cleanup-unfinished-idle-minutes', value)
+
+    expect(() => parseInputs()).toThrow(/non-negative integer/)
   })
 
   it('keeps an empty purge source only when whole-bucket purge is confirmed', () => {
@@ -247,5 +264,29 @@ describe('parseInputs', () => {
     const confirmed = parseInputs()
     expect(confirmed.source).toBe('')
     expect(confirmed.allowBucketPurge).toBe(true)
+  })
+
+  it('keeps an empty cleanup-unfinished source only when whole-bucket cleanup is confirmed', () => {
+    setInput('action', 'cleanup-unfinished')
+    setInput('application-key-id', 'k')
+    setInput('application-key', 's')
+    setInput('bucket', 'b')
+    setInput('source', '')
+
+    const unconfirmed = parseInputs()
+    expect(unconfirmed.source).toBeUndefined()
+    expect(unconfirmed.allowBucketCleanup).toBe(false)
+
+    resetInputEnv()
+    setInput('action', 'cleanup-unfinished')
+    setInput('application-key-id', 'k')
+    setInput('application-key', 's')
+    setInput('bucket', 'b')
+    setInput('source', '')
+    setInput('allow-bucket-cleanup', 'true')
+
+    const confirmed = parseInputs()
+    expect(confirmed.source).toBe('')
+    expect(confirmed.allowBucketCleanup).toBe(true)
   })
 })

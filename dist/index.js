@@ -39078,6 +39078,222 @@ async function findFileByName(bucket, fileName, bucketDisplayName) {
     throw new Error(`File not found in bucket "${display}": ${fileName}`);
 }
 
+;// CONCATENATED MODULE: ./src/commands/cleanup-unfinished.ts
+
+const PART_DIAGNOSTIC_LIMIT = 100;
+/**
+ * List and cancel unfinished large file uploads.
+ *
+ * `source` is treated as an optional B2 name prefix. Empty, omitted, or `/`
+ * source scans the whole bucket only for dry-runs or when
+ * `allow-bucket-cleanup: true` is set. By default, non-dry-run cleanup also
+ * skips uploads whose parts look active or whose part diagnostics are
+ * incomplete; `cleanup-unfinished-force: true` opts into canceling those
+ * matches.
+ */
+async function cleanupUnfinishedCommand(bucket, inputs, signal) {
+    const bucketWide = inputs.source === undefined || inputs.source === '' || inputs.source === '/';
+    if (bucketWide && !inputs.dryRun && !inputs.allowBucketCleanup) {
+        throw new Error("'allow-bucket-cleanup' must be true for whole-bucket cleanup-unfinished (set 'source' to a prefix for scoped cleanup)");
+    }
+    const prefix = bucketWide ? '' : (inputs.source ?? '');
+    const files = [];
+    let errors = 0;
+    const now = Date.now();
+    startGroup(`${inputs.dryRun ? 'dry-run' : 'cleanup'} unfinished large uploads b2://${bucket.name}/${prefix}`);
+    try {
+        if (prefix === '' && !inputs.dryRun) {
+            warning(`cleanup-unfinished will cancel unfinished uploads across bucket "${bucket.name}". Continuing because allow-bucket-cleanup is true.`);
+        }
+        if (inputs.cleanupUnfinishedForce && !inputs.dryRun) {
+            warning('cleanup-unfinished-force is true; active or diagnostically unknown uploads may be canceled.');
+        }
+        for await (const unfinished of bucket.paginateUnfinishedLargeFiles({
+            ...(prefix !== '' ? { namePrefix: prefix } : {}),
+            ...(signal !== undefined ? { signal } : {}),
+        })) {
+            signal?.throwIfAborted();
+            const parts = await summarizeParts(bucket, unfinished.fileId, signal);
+            const baseEntry = {
+                fileName: unfinished.fileName,
+                fileId: unfinished.fileId,
+                partCount: parts.partCount,
+                size: parts.size,
+                ...(parts.truncated ? { partsTruncated: true } : {}),
+            };
+            const guard = cleanupGuard(parts, inputs, now);
+            if (guard !== undefined) {
+                files.push({
+                    ...baseEntry,
+                    status: guard.status,
+                    reason: guard.reason,
+                });
+                info(`  skipped ${unfinished.fileName} (${unfinished.fileId}): ${guard.message}`);
+                continue;
+            }
+            if (inputs.dryRun) {
+                const entry = {
+                    ...baseEntry,
+                    status: 'would-cancel',
+                };
+                files.push(entry);
+                info(`  would cancel ${entry.fileName} (${entry.fileId}; ${formatPartSummary(entry)})`);
+                continue;
+            }
+            try {
+                await bucket.cancelLargeFile(unfinished.fileId);
+                const entry = {
+                    ...baseEntry,
+                    status: 'canceled',
+                };
+                files.push(entry);
+                info(`  canceled ${entry.fileName} (${entry.fileId}; ${formatPartSummary(entry)})`);
+            }
+            catch (error) {
+                errors++;
+                const diagnostic = cleanupFailureDiagnostic(error);
+                files.push({
+                    ...baseEntry,
+                    status: 'failed',
+                    error: diagnostic,
+                });
+                warning(`  failed to cancel ${unfinished.fileName} (${unfinished.fileId}): ${formatFailureDiagnostic(diagnostic)}`);
+            }
+        }
+    }
+    finally {
+        info(`  ${files.length} unfinished large upload(s) matched`);
+        endGroup();
+    }
+    return { files, errors };
+}
+async function summarizeParts(bucket, fileId, signal) {
+    let partCount = 0;
+    let size = 0;
+    let latestUploadTimestamp = null;
+    try {
+        const iterator = bucket
+            .paginateParts(fileId, {
+            pageSize: PART_DIAGNOSTIC_LIMIT,
+            ...(signal !== undefined ? { signal } : {}),
+        })[Symbol.asyncIterator]();
+        while (true) {
+            const next = await iterator.next();
+            if (next.done === true)
+                break;
+            if (partCount >= PART_DIAGNOSTIC_LIMIT) {
+                return {
+                    partCount,
+                    size,
+                    latestUploadTimestamp,
+                    truncated: true,
+                    failed: false,
+                };
+            }
+            partCount++;
+            size += next.value.contentLength;
+            if (isFiniteNonNegativeNumber(next.value.uploadTimestamp)) {
+                latestUploadTimestamp = Math.max(latestUploadTimestamp ?? Number.NEGATIVE_INFINITY, next.value.uploadTimestamp);
+            }
+        }
+    }
+    catch {
+        signal?.throwIfAborted();
+        warning(`  failed to inspect parts for ${fileId}; treating part count and size as unknown`);
+        return {
+            partCount: null,
+            size: null,
+            latestUploadTimestamp: null,
+            truncated: false,
+            failed: true,
+        };
+    }
+    return {
+        partCount,
+        size,
+        latestUploadTimestamp,
+        truncated: false,
+        failed: false,
+    };
+}
+function cleanupGuard(parts, inputs, now) {
+    if (inputs.cleanupUnfinishedForce)
+        return undefined;
+    if (parts.failed) {
+        return {
+            status: 'skipped-unknown',
+            reason: 'parts-scan-failed',
+            message: 'part diagnostics failed; set cleanup-unfinished-force to cancel anyway',
+        };
+    }
+    if (parts.truncated) {
+        return {
+            status: 'skipped-unknown',
+            reason: 'parts-truncated',
+            message: `part diagnostics reached the ${PART_DIAGNOSTIC_LIMIT}-part cap; set cleanup-unfinished-force to cancel anyway`,
+        };
+    }
+    if (parts.partCount === 0 || parts.latestUploadTimestamp === null) {
+        return {
+            status: 'skipped-unknown',
+            reason: 'no-parts',
+            message: 'no uploaded parts or part timestamps found; set cleanup-unfinished-force to cancel anyway',
+        };
+    }
+    const idleMs = inputs.cleanupUnfinishedIdleMinutes * 60 * 1000;
+    if (now - parts.latestUploadTimestamp < idleMs) {
+        return {
+            status: 'skipped-active',
+            reason: 'recent-parts',
+            message: `latest part is newer than cleanup-unfinished-idle-minutes (${inputs.cleanupUnfinishedIdleMinutes})`,
+        };
+    }
+    return undefined;
+}
+function cleanupFailureDiagnostic(error) {
+    const details = typeof error === 'object' && error !== null
+        ? error
+        : {};
+    return {
+        message: 'cancel failed',
+        ...(isFiniteNonNegativeNumber(details.status) ? { status: Math.trunc(details.status) } : {}),
+        ...(typeof details.code === 'string' ? { code: safeDiagnosticToken(details.code) } : {}),
+        ...(typeof details.retryable === 'boolean' ? { retryable: details.retryable } : {}),
+        ...(isFiniteNonNegativeNumber(details.retryAfter)
+            ? { retryAfter: Math.ceil(details.retryAfter) }
+            : {}),
+    };
+}
+function formatFailureDiagnostic(diagnostic) {
+    const details = [
+        diagnostic.status !== undefined ? `status ${diagnostic.status}` : undefined,
+        diagnostic.code !== undefined ? `code ${diagnostic.code}` : undefined,
+        diagnostic.retryable !== undefined ? `retryable ${diagnostic.retryable}` : undefined,
+        diagnostic.retryAfter !== undefined ? `retry after ${diagnostic.retryAfter}s` : undefined,
+    ].filter((value) => value !== undefined);
+    return details.length > 0 ? `${diagnostic.message} (${details.join(', ')})` : diagnostic.message;
+}
+function formatPartSummary(entry) {
+    const prefix = entry.partsTruncated === true ? '>=' : '';
+    const parts = entry.partCount === null ? 'unknown part count' : `${prefix}${entry.partCount} part(s)`;
+    const bytes = entry.size === null ? 'unknown bytes' : `${prefix}${entry.size} bytes`;
+    return entry.partsTruncated === true ? `${parts}, ${bytes} (truncated)` : `${parts}, ${bytes}`;
+}
+function safeDiagnosticToken(value) {
+    const normalized = value.trim();
+    if (/^(bad_auth_token|expired_auth_token)$/i.test(normalized))
+        return normalized;
+    if (/(authorization|application.?key|password|private.?key|secret|signature|token)/i.test(normalized)) {
+        return 'unknown';
+    }
+    if (/^[A-Za-z0-9_.-]{1,80}$/.test(normalized))
+        return normalized;
+    return 'unknown';
+}
+function isFiniteNonNegativeNumber(value) {
+    return typeof value === 'number' && Number.isFinite(value) && value >= 0;
+}
+
 // EXTERNAL MODULE: external "node:buffer"
 var external_node_buffer_ = __nccwpck_require__(4573);
 // EXTERNAL MODULE: external "node:crypto"
@@ -39151,6 +39367,7 @@ const VALID_ACTIONS = [
     'retention',
     'head',
     'purge',
+    'cleanup-unfinished',
 ];
 /**
  * Runtime side-effect policy for each action verb.
@@ -39171,6 +39388,7 @@ const ACTION_EFFECTS = {
     retention: { kind: 'write', honorsDryRun: false },
     head: { kind: 'read', honorsDryRun: false },
     purge: { kind: 'write', honorsDryRun: true },
+    'cleanup-unfinished': { kind: 'write', honorsDryRun: true },
 };
 const VALID_COMPARE = ['modtime', 'size', 'none'];
 const VALID_KEEP = ['no-delete', 'delete', 'keep-days'];
@@ -39191,6 +39409,7 @@ const CONTENT_HEADER_FILE_INFO_KEYS = [
     ['expires', 'b2-expires'],
 ];
 const inputs_utf8Encoder = new TextEncoder();
+const DEFAULT_CLEANUP_UNFINISHED_IDLE_MINUTES = 24 * 60;
 /**
  * Sensitive raw values that can appear in parser-scope errors before
  * {@link parseInputs} returns its structured output.
@@ -39230,7 +39449,8 @@ function parseInputs() {
     const bucket = required('bucket');
     const sourceBucket = optional('source-bucket');
     const allowBucketPurge = parseBool('allow-bucket-purge', getInput('allow-bucket-purge') || 'false');
-    const source = optionalSource(action, allowBucketPurge);
+    const allowBucketCleanup = parseBool('allow-bucket-cleanup', getInput('allow-bucket-cleanup') || 'false');
+    const source = optionalSource(action, { allowBucketPurge, allowBucketCleanup });
     const destination = optional('destination');
     const include = splitCsv(optional('include'));
     const exclude = splitCsv(optional('exclude'));
@@ -39239,6 +39459,9 @@ function parseInputs() {
     const partSize = partSizeInput !== undefined ? parsePositiveInt('part-size', partSizeInput) : undefined;
     const resume = parseBool('resume', getInput('resume') || 'true');
     const dryRun = parseBool('dry-run', getInput('dry-run') || 'false');
+    const cleanupUnfinishedForce = parseBool('cleanup-unfinished-force', getInput('cleanup-unfinished-force') || 'false');
+    const cleanupUnfinishedIdleMinutes = parseNonNegativeInt('cleanup-unfinished-idle-minutes', getInput('cleanup-unfinished-idle-minutes') ||
+        String(DEFAULT_CLEANUP_UNFINISHED_IDLE_MINUTES));
     const failOnEmpty = parseBool('fail-on-empty', getInput('fail-on-empty') || 'true');
     const bypassGovernance = parseBool('bypass-governance', getInput('bypass-governance') || 'false');
     const presignTtlSeconds = parsePositiveInt('presign-ttl', getInput('presign-ttl') || '3600');
@@ -39281,6 +39504,9 @@ function parseInputs() {
         preserveMtime,
         dryRun,
         allowBucketPurge,
+        allowBucketCleanup,
+        cleanupUnfinishedForce,
+        cleanupUnfinishedIdleMinutes,
         presignTtlSeconds,
         endpoint,
         failOnEmpty,
@@ -39344,11 +39570,15 @@ function optional(name) {
     const v = getInput(name);
     return v === '' ? undefined : v;
 }
-function optionalSource(action, allowBucketPurge) {
+function optionalSource(action, options) {
     const v = getInput('source');
     if (v !== '')
         return v;
-    return action === 'purge' && allowBucketPurge ? '' : undefined;
+    if (action === 'purge' && options.allowBucketPurge)
+        return '';
+    if (action === 'cleanup-unfinished' && options.allowBucketCleanup)
+        return '';
+    return undefined;
 }
 function addSecretValue(secretValues, value) {
     if (value === undefined || value === '')
@@ -39380,6 +39610,14 @@ function resolveCredential(inputName, envName) {
     if (fromEnv !== undefined && fromEnv !== '')
         return fromEnv;
     throw new Error(`Missing credential: set input '${inputName}' or env var '${envName}'`);
+}
+function parseNonNegativeInt(name, raw) {
+    const trimmed = raw.trim();
+    const n = Number(trimmed);
+    if (!/^\d+$/.test(trimmed) || !Number.isSafeInteger(n)) {
+        throw new Error(`Invalid '${name}' input: "${raw}". Must be a non-negative integer`);
+    }
+    return n;
 }
 /**
  * Parse a comma-separated action input, trimming entries and dropping blanks.
@@ -49494,6 +49732,7 @@ function escapeHtml(value) {
 
 
 
+
 /**
  * Action entrypoint. Parses inputs, builds an authorized B2Client, dispatches
  * to the requested subcommand, and writes structured outputs back via
@@ -49657,6 +49896,11 @@ async function run() {
             case 'delete': {
                 const result = await deleteCommand(bucket, inputs, signal);
                 await emitDeletionSummary('delete', result, inputs);
+                return;
+            }
+            case 'cleanup-unfinished': {
+                const result = await cleanupUnfinishedCommand(bucket, inputs, signal);
+                await emitCleanupUnfinishedSummary(result, inputs);
                 return;
             }
             case 'presign': {
@@ -49871,6 +50115,48 @@ async function emitDeletionSummary(verb, result, inputs) {
             status: f.skipped ? future : past,
         })),
     });
+}
+async function emitCleanupUnfinishedSummary(result, inputs) {
+    const canceled = result.files.filter((f) => f.status === 'canceled').length;
+    setOutput('files-deleted', String(canceled));
+    setFileCountOutput(result.files.length);
+    setSummaryJsonOutput(result.files);
+    if (result.errors > 0) {
+        throw new Error(`Cleanup unfinished completed with ${result.errors} error(s)`);
+    }
+    await writeStepSummary({
+        title: inputs.dryRun
+            ? 'Backblaze B2: cleanup-unfinished (dry-run)'
+            : 'Backblaze B2: cleanup-unfinished',
+        totals: {
+            files: result.files.length,
+            bytes: result.files.reduce((sum, f) => sum + (f.size ?? 0), 0),
+        },
+        ...stepSummaryRows(result.files, (f) => ({
+            fileName: f.fileName,
+            ...(f.size !== null ? { size: f.size } : {}),
+            fileId: f.fileId,
+            status: cleanupUnfinishedSummaryStatus(f),
+        })),
+    });
+}
+function cleanupUnfinishedSummaryStatus(file) {
+    const parts = file.partCount === null
+        ? 'unknown parts'
+        : `${file.partsTruncated === true ? '>=' : ''}${file.partCount} part${file.partCount === 1 ? '' : 's'}`;
+    const partSummary = file.partsTruncated === true ? `${parts}, truncated` : parts;
+    switch (file.status) {
+        case 'would-cancel':
+            return `would cancel (${partSummary})`;
+        case 'canceled':
+            return `canceled (${partSummary})`;
+        case 'skipped-active':
+            return `skipped active (${partSummary})`;
+        case 'skipped-unknown':
+            return `skipped unknown (${partSummary})`;
+        case 'failed':
+            return `failed (${partSummary})`;
+    }
 }
 function stepSummaryRows(items, row) {
     // Pre-slice here to avoid mapping very large result sets; writeStepSummary
