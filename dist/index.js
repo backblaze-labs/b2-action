@@ -39023,7 +39023,7 @@ class SecretMaskingAccountInfo extends InMemoryAccountInfo {
  */
 async function buildClient(options) {
     const actionUserAgent = `b2-github-action/${version_VERSION}`;
-    const userAgent = options.userAgentPrefix !== undefined
+    const userAgent = options.userAgentPrefix
         ? `${options.userAgentPrefix} ${actionUserAgent}`
         : actionUserAgent;
     const client = new B2Client({

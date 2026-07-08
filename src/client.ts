@@ -75,10 +75,9 @@ class SecretMaskingAccountInfo extends InMemoryAccountInfo {
  */
 export async function buildClient(options: BuildClientOptions): Promise<AuthorizedClient> {
   const actionUserAgent = `b2-github-action/${VERSION}`
-  const userAgent =
-    options.userAgentPrefix !== undefined
-      ? `${options.userAgentPrefix} ${actionUserAgent}`
-      : actionUserAgent
+  const userAgent = options.userAgentPrefix
+    ? `${options.userAgentPrefix} ${actionUserAgent}`
+    : actionUserAgent
 
   const client = new B2Client({
     applicationKeyId: options.applicationKeyId,
