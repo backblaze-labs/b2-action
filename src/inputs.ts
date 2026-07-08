@@ -95,6 +95,8 @@ const CONTENT_HEADER_FILE_INFO_KEYS = [
   ['content-language', 'b2-content-language'],
   ['expires', 'b2-expires'],
 ] as const
+export const USER_AGENT_PREFIX_MAX_BYTES = 128
+const USER_AGENT_PREFIX_ALLOWED_SYMBOLS = "!#$%&'*+-.^_`|~/"
 const utf8Encoder = new TextEncoder()
 
 /**
@@ -386,20 +388,32 @@ function optional(name: string): string | undefined {
   return v === '' ? undefined : v
 }
 
-function parseUserAgentPrefix(value: string | undefined): string | undefined {
+export function parseUserAgentPrefix(value: string | undefined): string | undefined {
   if (value === undefined) return undefined
-  if (hasHttpHeaderControlCharacter(value)) {
-    throw new Error("Invalid 'user-agent-prefix' input: must not contain control characters.")
+  const byteLength = utf8Encoder.encode(value).byteLength
+  if (byteLength > USER_AGENT_PREFIX_MAX_BYTES) {
+    throw new Error(
+      `Invalid 'user-agent-prefix' input: ${byteLength} bytes exceeds ${USER_AGENT_PREFIX_MAX_BYTES}.`,
+    )
+  }
+  if (!isUserAgentPrefixSafe(value)) {
+    throw new Error(
+      "Invalid 'user-agent-prefix' input: use only ASCII letters, digits, '/', and RFC 9110 token symbols (!#$%&'*+-.^_`|~).",
+    )
   }
   return value
 }
 
-function hasHttpHeaderControlCharacter(value: string): boolean {
+function isUserAgentPrefixSafe(value: string): boolean {
   for (let i = 0; i < value.length; i++) {
     const code = value.charCodeAt(i)
-    if (code < 0x20 || code === 0x7f) return true
+    if (code >= 0x30 && code <= 0x39) continue
+    if (code >= 0x41 && code <= 0x5a) continue
+    if (code >= 0x61 && code <= 0x7a) continue
+    if (USER_AGENT_PREFIX_ALLOWED_SYMBOLS.includes(value[i] ?? '')) continue
+    return false
   }
-  return false
+  return true
 }
 
 function optionalSource(action: ActionName, allowBucketPurge: boolean): string | undefined {

@@ -1,5 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { collectInputSecretsForScrubbing, parseInputs } from '../src/inputs.ts'
+import {
+  collectInputSecretsForScrubbing,
+  parseInputs,
+  parseUserAgentPrefix,
+  USER_AGENT_PREFIX_MAX_BYTES,
+} from '../src/inputs.ts'
 import { captureStdout, resetInputEnv, setInput } from './_helpers.ts'
 
 describe('parseInputs', () => {
@@ -233,13 +238,34 @@ describe('parseInputs', () => {
     setInput('user-agent-prefix', 'ci-trace/123')
 
     expect(parseInputs().userAgentPrefix).toBe('ci-trace/123')
+  })
 
-    resetInputEnv()
+  it.each([
+    ['CR', 'bad\rtrace'],
+    ['LF', 'bad\ntrace'],
+    ['TAB', 'bad\ttrace'],
+    ['NUL', 'bad\0trace'],
+    ['DEL', `bad${String.fromCharCode(0x7f)}trace`],
+    ['emoji', 'bad🚀trace'],
+    ['surrogate', `bad${String.fromCharCode(0xd800)}trace`],
+  ])('rejects unsafe user-agent prefix characters: %s', (_label, value) => {
+    expect(() => parseUserAgentPrefix(value)).toThrow(/Invalid 'user-agent-prefix'.*ASCII/)
+  })
+
+  it('rejects oversized user-agent prefixes', () => {
+    const oversized = 'a'.repeat(USER_AGENT_PREFIX_MAX_BYTES + 1)
+
+    expect(() => parseUserAgentPrefix(oversized)).toThrow(
+      `Invalid 'user-agent-prefix' input: ${USER_AGENT_PREFIX_MAX_BYTES + 1} bytes exceeds ${USER_AGENT_PREFIX_MAX_BYTES}.`,
+    )
+  })
+
+  it('rejects invalid user-agent prefixes before client construction', () => {
     setInput('action', 'list')
     setInput('application-key-id', 'k')
     setInput('application-key', 's')
     setInput('bucket', 'b')
-    setInput('user-agent-prefix', 'bad\ntrace')
+    setInput('user-agent-prefix', 'bad trace')
 
     expect(() => parseInputs()).toThrow(/Invalid 'user-agent-prefix'/)
   })
