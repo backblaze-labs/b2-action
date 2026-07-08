@@ -219,6 +219,16 @@ Exact-name `copy`, single-file `delete`, and `retention` operate only when the l
     source-bucket: my-staging-bucket # source
     source: app.tar.gz
     destination: app.tar.gz
+
+# Copy an SSE-C source and set destination encryption
+- uses: backblaze-labs/b2-action@v1
+  with:
+    action: copy
+    bucket: my-prod-bucket
+    source: encrypted/app.tar.gz
+    destination: encrypted-copy/app.tar.gz
+    source-sse: C:${{ secrets.B2_SOURCE_SSE_C_KEY_B64 }}
+    sse: B2
 ```
 
 ### List, dry-run-delete, delete
@@ -326,7 +336,7 @@ That outputs ~44 characters. Paste the generated value into a GitHub repository 
 A few things to know before you commit to SSE-C:
 
 - **You own the key, Backblaze does not.** B2 never stores it. **Lose the key, lose the data**: no recovery.
-- **The same key must be supplied at download time** as was used at upload. The action's `download` verb takes the same `sse: C:<key>` input.
+- **The same key must be supplied at download time** as was used at upload. The action's `download` verb takes the same `sse: C:<key>` input. For `copy`, provide the source key via `source-sse: C:<key>`; `sse` controls the destination encryption.
 - **Rotating the key invalidates any existing SSE-C objects** encrypted with the old value. You'd need to download-then-reupload everything with the new key.
 - **The action auto-masks the key** in workflow logs via `::add-mask::`, but that masking does not survive copy-paste. Keep secrets out of bug reports.
 
@@ -393,7 +403,8 @@ Set `bypass-governance: true` to shorten governance-mode retention or to remove 
 | `presign-ttl` | no | `3600` | Presigned URL TTL in seconds. Must be a positive decimal integer. |
 | `endpoint` | no | | Override B2 realm (staging/custom). |
 | `fail-on-empty` | no | `true` | Fail if an upload glob matches zero files. |
-| `sse` | no | | Server-side encryption: `B2` (SSE-B2) or `C:<base64-32-byte-key>` (SSE-C). SSE-C keys must use canonical base64 and decode to exactly 32 bytes. |
+| `sse` | no | | Server-side encryption setting for upload destinations, download sources, and copy destinations: `B2` (SSE-B2) or `C:<base64-32-byte-key>` (SSE-C). SSE-C keys must use canonical base64 and decode to exactly 32 bytes. |
+| `source-sse` | copy only | | SSE-C source key for copy: `C:<base64-32-byte-key>`. Use when the source object was encrypted with SSE-C. |
 | `compare-mode` | no | `modtime` | Sync comparison: `modtime` \| `size` \| `none`. |
 | `keep-mode` | no | `no-delete` | Sync deletion of orphans: `no-delete` \| `delete` \| `keep-days`. |
 | `direction` | no | `auto` | Sync direction: `auto` \| `up` (local→B2) \| `down` (B2→local). |

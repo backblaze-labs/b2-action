@@ -39088,7 +39088,7 @@ var external_node_crypto_ = __nccwpck_require__(7598);
 
 const CANONICAL_BASE64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
 /**
- * Parse the `sse` input into an SDK {@link EncryptionSetting}.
+ * Parse an SSE input into an SDK {@link EncryptionSetting}.
  *
  * Accepted forms:
  *   - `undefined` / empty → no encryption setting passed (B2 still applies any
@@ -39104,34 +39104,39 @@ const CANONICAL_BASE64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9
  * `customerKey` field of the SDK setting which the SDK marks as a secret in
  * any error / debug output.
  */
-function parseSse(raw) {
+function parseSse(raw, { inputName = 'sse', allowB2 = true } = {}) {
     if (raw === undefined || raw === '')
         return undefined;
     const normalized = raw.trim();
-    if (normalized.toUpperCase() === 'B2')
-        return SSE_B2;
+    if (normalized.toUpperCase() === 'B2') {
+        if (allowB2)
+            return SSE_B2;
+        throw new Error(`Invalid '${inputName}' input. Expected "C:<base64-32-byte-key>".`);
+    }
     if (normalized.startsWith('C:') || normalized.startsWith('c:')) {
         const base64Key = normalized.slice(2).trim();
         if (base64Key === '') {
-            throw new Error("SSE-C key is empty. Use 'C:<base64-encoded-32-byte-key>'.");
+            throw new Error(`Invalid '${inputName}' input: SSE-C key is empty. Use 'C:<base64-32-byte-key>'.`);
         }
         // Node's `Buffer.from(str, 'base64')` silently drops invalid chars instead
         // of throwing, so validate the canonical alphabet and padding first.
         if (!CANONICAL_BASE64.test(base64Key)) {
-            throw new Error("SSE-C key must be valid canonical base64. Use 'C:<base64-encoded-32-byte-key>'.");
+            throw new Error(`Invalid '${inputName}' input: SSE-C key must be valid canonical base64. Use 'C:<base64-32-byte-key>'.`);
         }
         const keyBytes = external_node_buffer_.Buffer.from(base64Key, 'base64');
         if (keyBytes.byteLength !== 32) {
-            throw new Error(`SSE-C key must decode to exactly 32 bytes (256 bits); got ${keyBytes.byteLength}.`);
+            throw new Error(`Invalid '${inputName}' input: SSE-C key must decode to exactly 32 bytes (256 bits); got ${keyBytes.byteLength}.`);
         }
         const customerKey = keyBytes.toString('base64');
         if (customerKey !== base64Key) {
-            throw new Error("SSE-C key must be valid canonical base64. Use 'C:<base64-encoded-32-byte-key>'.");
+            throw new Error(`Invalid '${inputName}' input: SSE-C key must be valid canonical base64. Use 'C:<base64-32-byte-key>'.`);
         }
         const customerKeyMd5 = (0,external_node_crypto_.createHash)('md5').update(keyBytes).digest('base64');
         return sseCustomer(customerKey, customerKeyMd5);
     }
-    throw new Error(`Invalid 'sse' input: "${raw}". Expected "B2" or "C:<base64-32-byte-key>".`);
+    const expected = allowB2 ? '"B2" or "C:<base64-32-byte-key>"' : '"C:<base64-32-byte-key>"';
+    const received = allowB2 ? `: "${raw}"` : '';
+    throw new Error(`Invalid '${inputName}' input${received}. Expected ${expected}.`);
 }
 
 ;// CONCATENATED MODULE: ./src/inputs.ts
@@ -39202,6 +39207,7 @@ function collectInputSecretsForScrubbing() {
     addSecretValue(secretValues, getInput('application-key'));
     addSecretValue(secretValues, process.env[APPLICATION_KEY_ENV]);
     addSseSecretValue(secretValues, getInput('sse'));
+    addSseSecretValue(secretValues, getInput('source-sse'));
     return [...secretValues];
 }
 /**
@@ -39246,6 +39252,8 @@ function parseInputs() {
     const endpoint = optional('endpoint');
     const sse = optional('sse');
     const encryption = parseSse(sse);
+    const sourceSse = optional('source-sse');
+    const sourceEncryption = parseSse(sourceSse, { inputName: 'source-sse', allowB2: false });
     const contentType = optional('content-type');
     const fileInfo = parseFileInfo(optional('file-info'));
     for (const [inputName, fileInfoKey] of CONTENT_HEADER_FILE_INFO_KEYS) {
@@ -39286,6 +39294,8 @@ function parseInputs() {
         failOnEmpty,
         sse,
         encryption,
+        sourceSse,
+        sourceEncryption,
         compareMode,
         keepMode,
         syncDirection,
@@ -39509,6 +39519,8 @@ function parsePositiveInt(name, raw) {
 
 
 
+
+const DEFAULT_COPY_CONTENT_TYPE = 'b2/x-auto';
 /**
  * Server-side copy of one B2 object to a new name, within the same bucket or
  * across two buckets in the same account.
@@ -39545,12 +39557,29 @@ async function copyCommand(client, destinationBucket, inputs, signal) {
             ...(sourceBucketName !== destinationBucket.name
                 ? { destinationBucketId: destinationBucket.id }
                 : {}),
+            ...(inputs.sourceEncryption !== undefined
+                ? { sourceServerSideEncryption: inputs.sourceEncryption }
+                : {}),
+            ...(inputs.encryption !== undefined
+                ? { destinationServerSideEncryption: inputs.encryption }
+                : {}),
         };
         const result = isLarge
-            ? await destinationBucket.copyLargeFile({
-                ...copyOptions,
-                ...(signal !== undefined ? { signal } : {}),
-            })
+            ? inputs.encryption?.mode === 'SSE-B2'
+                ? await copyLargeFileWithSseB2Destination(client, destinationBucket, {
+                    sourceFile: hit,
+                    fileName: destination,
+                    destinationServerSideEncryption: inputs.encryption,
+                    concurrency: inputs.concurrency,
+                    ...(inputs.sourceEncryption !== undefined
+                        ? { sourceServerSideEncryption: inputs.sourceEncryption }
+                        : {}),
+                    ...(signal !== undefined ? { signal } : {}),
+                })
+                : await destinationBucket.copyLargeFile({
+                    ...copyOptions,
+                    ...(signal !== undefined ? { signal } : {}),
+                })
             : await destinationBucket.copyFile(copyOptions);
         info(`  copied → fileId=${result.fileId}, size=${result.contentLength}`);
         return {
@@ -39564,6 +39593,81 @@ async function copyCommand(client, destinationBucket, inputs, signal) {
     }
     finally {
         endGroup();
+    }
+}
+async function copyLargeFileWithSseB2Destination(client, destinationBucket, options) {
+    const accountInfo = client.accountInfo;
+    const apiUrl = accountInfo.getApiUrl();
+    const authToken = accountInfo.getAuthToken();
+    const partSize = Math.max(accountInfo.getRecommendedPartSize(), accountInfo.getAbsoluteMinimumPartSize());
+    const ranges = planCopyRanges(options.sourceFile.contentLength, partSize);
+    options.signal?.throwIfAborted();
+    const startResp = await client.raw.startLargeFile(apiUrl, authToken, {
+        bucketId: destinationBucket.id,
+        fileName: options.fileName,
+        contentType: options.sourceFile.contentType ?? DEFAULT_COPY_CONTENT_TYPE,
+        fileInfo: options.sourceFile.fileInfo ?? {},
+        serverSideEncryption: options.destinationServerSideEncryption,
+    });
+    const largeFileId = startResp.fileId;
+    const partSha1s = new Array(ranges.length);
+    try {
+        let nextRangeIndex = 0;
+        let stopCopyParts = false;
+        const workerCount = Math.min(options.concurrency, ranges.length);
+        await Promise.all(Array.from({ length: workerCount }, async () => {
+            try {
+                while (!stopCopyParts) {
+                    const range = ranges[nextRangeIndex];
+                    nextRangeIndex += 1;
+                    if (range === undefined)
+                        return;
+                    options.signal?.throwIfAborted();
+                    const resp = await client.raw.copyPart(apiUrl, authToken, {
+                        sourceFileId: options.sourceFile.fileId,
+                        largeFileId: fileId(largeFileId),
+                        partNumber: range.partNumber,
+                        range: copy_byteRangeHeader(range.start, range.end),
+                        ...(options.sourceServerSideEncryption !== undefined
+                            ? { sourceServerSideEncryption: options.sourceServerSideEncryption }
+                            : {}),
+                    });
+                    partSha1s[range.partNumber - 1] = resp.contentSha1;
+                }
+            }
+            catch (error) {
+                stopCopyParts = true;
+                throw error;
+            }
+        }));
+        options.signal?.throwIfAborted();
+        return await client.raw.finishLargeFile(apiUrl, authToken, {
+            fileId: largeFileId,
+            partSha1Array: partSha1s,
+        });
+    }
+    catch (error) {
+        await copy_cancelLargeFileBestEffort(client, largeFileId);
+        throw error;
+    }
+}
+function planCopyRanges(totalSize, partSize) {
+    const ranges = [];
+    for (let start = 0, partNumber = 1; start < totalSize; start += partSize, partNumber += 1) {
+        const end = Math.min(start + partSize, totalSize) - 1;
+        ranges.push({ partNumber, start, end });
+    }
+    return ranges;
+}
+function copy_byteRangeHeader(start, end) {
+    return `bytes=${start}-${end}`;
+}
+async function copy_cancelLargeFileBestEffort(client, largeFileId) {
+    try {
+        await client.raw.cancelLargeFile(client.accountInfo.getApiUrl(), client.accountInfo.getAuthToken(), { fileId: largeFileId });
+    }
+    catch {
+        // Nothing useful to report without risking noisy logs for a cleanup path.
     }
 }
 

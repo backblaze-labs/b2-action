@@ -49,6 +49,21 @@ describe('parseInputs', () => {
     expect(stdout.match(/::add-mask::/g)).toHaveLength(3)
   })
 
+  it('masks source-sse raw and key values before parsing', async () => {
+    const key = Buffer.alloc(32, 0x62).toString('base64')
+    const raw = `C:${key}`
+    setInput('source-sse', raw)
+
+    let secrets: string[] = []
+    const stdout = await captureStdout(() => {
+      secrets = collectInputSecretsForScrubbing()
+    })
+
+    expect(secrets).toEqual([raw, key])
+    expect(stdout).toContain(`::add-mask::${raw}`)
+    expect(stdout).toContain(`::add-mask::${key}`)
+  })
+
   it('rejects an unknown action value', () => {
     setInput('action', 'whatever')
     setInput('bucket', 'b')
@@ -206,6 +221,31 @@ describe('parseInputs', () => {
     setInput('file-info', Array.from({ length: 11 }, (_, i) => `k${i}=v`).join('\n'))
 
     expect(() => parseInputs()).toThrow(/Invalid fileInfo: 11 entries exceeds 10/)
+  })
+
+  it('parses copy source-sse separately from destination sse', () => {
+    const sourceKey = Buffer.alloc(32, 0x63).toString('base64')
+    setInput('action', 'copy')
+    setInput('application-key-id', 'k')
+    setInput('application-key', 's')
+    setInput('bucket', 'b')
+    setInput('sse', 'B2')
+    setInput('source-sse', `C:${sourceKey}`)
+
+    const r = parseInputs()
+    expect(r.encryption?.mode).toBe('SSE-B2')
+    expect(r.sourceSse).toBe(`C:${sourceKey}`)
+    expect(r.sourceEncryption?.mode).toBe('SSE-C')
+  })
+
+  it('rejects SSE-B2 for source-sse', () => {
+    setInput('action', 'copy')
+    setInput('application-key-id', 'k')
+    setInput('application-key', 's')
+    setInput('bucket', 'b')
+    setInput('source-sse', 'B2')
+
+    expect(() => parseInputs()).toThrow(/Invalid 'source-sse' input/)
   })
 
   it('parses booleans and integers', () => {

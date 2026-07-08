@@ -32,6 +32,8 @@ export function makeParsedInputs(
     failOnEmpty: true,
     sse: undefined,
     encryption: undefined,
+    sourceSse: undefined,
+    sourceEncryption: undefined,
     compareMode: 'modtime',
     keepMode: 'no-delete',
     syncDirection: 'auto',

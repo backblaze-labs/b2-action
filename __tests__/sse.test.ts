@@ -53,4 +53,17 @@ describe('parseSse', () => {
   it('rejects an unknown SSE value', () => {
     expect(() => parseSse('AES256')).toThrow(/Expected "B2"/)
   })
+
+  it('rejects SSE-B2 when parsing a source SSE-C key', () => {
+    expect(() => parseSse('B2', { inputName: 'source-sse', allowB2: false })).toThrow(
+      /Invalid 'source-sse' input/,
+    )
+  })
+
+  it('names source-sse in SSE-C key validation errors', () => {
+    const tooShort = Buffer.alloc(16).toString('base64')
+    expect(() => parseSse(`C:${tooShort}`, { inputName: 'source-sse', allowB2: false })).toThrow(
+      /Invalid 'source-sse' input: SSE-C key must decode to exactly 32 bytes/,
+    )
+  })
 })
