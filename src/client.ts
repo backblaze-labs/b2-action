@@ -31,6 +31,8 @@ export interface BuildClientOptions {
   bucket: string
   /** Override the default B2 realm endpoint. Only set for staging / custom realms. */
   endpoint?: string | undefined
+  /** Optional User-Agent prefix for workflow traceability. */
+  userAgentPrefix?: string | undefined
   /** Inject a custom transport (used by tests with the SDK's `B2Simulator`). */
   transport?: HttpTransport | undefined
 }
@@ -53,9 +55,10 @@ class SecretMaskingAccountInfo extends InMemoryAccountInfo {
  * Build an authorized B2Client.
  *
  * Steps:
- *   1. Construct the client with `userAgent: 'b2-github-action/<version>'`. The
- *      SDK preserves its own `b2-sdk-typescript/` and `@backblaze-labs/b2-sdk` tokens before
- *      ours so Backblaze server-side logs see both attribution layers.
+ *   1. Construct the client with `userAgent: 'b2-github-action/<version>'`, optionally
+ *      prefixed by a caller-provided workflow marker. The SDK preserves its own
+ *      `b2-sdk-typescript/` and `@backblaze-labs/b2-sdk` tokens before ours so
+ *      Backblaze server-side logs see both attribution layers.
  *   2. `await client.authorize()`. This is one-shot for the lifetime of the
  *      action invocation. B2 auth tokens carry a 24h TTL; typical GitHub
  *      Actions runs finish well inside that window. If a long-running job
@@ -71,7 +74,10 @@ class SecretMaskingAccountInfo extends InMemoryAccountInfo {
  * default FetchTransport with its built-in SSRF guard.
  */
 export async function buildClient(options: BuildClientOptions): Promise<AuthorizedClient> {
-  const userAgent = `b2-github-action/${VERSION}`
+  const actionUserAgent = `b2-github-action/${VERSION}`
+  const userAgent = options.userAgentPrefix
+    ? `${options.userAgentPrefix} ${actionUserAgent}`
+    : actionUserAgent
 
   const client = new B2Client({
     applicationKeyId: options.applicationKeyId,

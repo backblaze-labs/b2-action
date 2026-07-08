@@ -39003,9 +39003,10 @@ class SecretMaskingAccountInfo extends InMemoryAccountInfo {
  * Build an authorized B2Client.
  *
  * Steps:
- *   1. Construct the client with `userAgent: 'b2-github-action/<version>'`. The
- *      SDK preserves its own `b2-sdk-typescript/` and `@backblaze-labs/b2-sdk` tokens before
- *      ours so Backblaze server-side logs see both attribution layers.
+ *   1. Construct the client with `userAgent: 'b2-github-action/<version>'`, optionally
+ *      prefixed by a caller-provided workflow marker. The SDK preserves its own
+ *      `b2-sdk-typescript/` and `@backblaze-labs/b2-sdk` tokens before ours so
+ *      Backblaze server-side logs see both attribution layers.
  *   2. `await client.authorize()`. This is one-shot for the lifetime of the
  *      action invocation. B2 auth tokens carry a 24h TTL; typical GitHub
  *      Actions runs finish well inside that window. If a long-running job
@@ -39021,7 +39022,10 @@ class SecretMaskingAccountInfo extends InMemoryAccountInfo {
  * default FetchTransport with its built-in SSRF guard.
  */
 async function buildClient(options) {
-    const userAgent = `b2-github-action/${version_VERSION}`;
+    const actionUserAgent = `b2-github-action/${version_VERSION}`;
+    const userAgent = options.userAgentPrefix
+        ? `${options.userAgentPrefix} ${actionUserAgent}`
+        : actionUserAgent;
     const client = new B2Client({
         applicationKeyId: options.applicationKeyId,
         applicationKey: options.applicationKey,
@@ -39190,6 +39194,9 @@ const CONTENT_HEADER_FILE_INFO_KEYS = [
     ['content-language', 'b2-content-language'],
     ['expires', 'b2-expires'],
 ];
+/** Maximum UTF-8 byte length accepted for the `user-agent-prefix` input. */
+const USER_AGENT_PREFIX_MAX_BYTES = 128;
+const USER_AGENT_PREFIX_ALLOWED_SYMBOLS = "!#$%&'*+-.^_`|~/";
 const inputs_utf8Encoder = new TextEncoder();
 /**
  * Sensitive raw values that can appear in parser-scope errors before
@@ -39244,6 +39251,7 @@ function parseInputs() {
     const presignTtlSeconds = parsePositiveInt('presign-ttl', getInput('presign-ttl') || '3600');
     const maxResults = parsePositiveInt('max-results', getInput('max-results') || '1000');
     const endpoint = optional('endpoint');
+    const userAgentPrefix = parseUserAgentPrefix(optional('user-agent-prefix'));
     const sse = optional('sse');
     const encryption = parseSse(sse);
     const contentType = optional('content-type');
@@ -39283,6 +39291,7 @@ function parseInputs() {
         allowBucketPurge,
         presignTtlSeconds,
         endpoint,
+        userAgentPrefix,
         failOnEmpty,
         sse,
         encryption,
@@ -39343,6 +39352,37 @@ function required(name) {
 function optional(name) {
     const v = getInput(name);
     return v === '' ? undefined : v;
+}
+/**
+ * Validate the optional `user-agent-prefix` input before it reaches the SDK
+ * transport and return the prefix when it is present.
+ */
+function parseUserAgentPrefix(value) {
+    if (value === undefined)
+        return undefined;
+    const byteLength = Buffer.byteLength(value, 'utf8');
+    if (byteLength > USER_AGENT_PREFIX_MAX_BYTES) {
+        throw new Error(`Invalid 'user-agent-prefix' input: ${byteLength} bytes exceeds ${USER_AGENT_PREFIX_MAX_BYTES}.`);
+    }
+    if (!isUserAgentPrefixSafe(value)) {
+        throw new Error("Invalid 'user-agent-prefix' input: use only ASCII letters, digits, '/', and RFC 9110 token symbols (!#$%&'*+-.^_`|~).");
+    }
+    return value;
+}
+function isUserAgentPrefixSafe(value) {
+    for (let i = 0; i < value.length; i++) {
+        const code = value.charCodeAt(i);
+        if (code >= 0x30 && code <= 0x39)
+            continue;
+        if (code >= 0x41 && code <= 0x5a)
+            continue;
+        if (code >= 0x61 && code <= 0x7a)
+            continue;
+        if (USER_AGENT_PREFIX_ALLOWED_SYMBOLS.includes(value[i] ?? ''))
+            continue;
+        return false;
+    }
+    return true;
 }
 function optionalSource(action, allowBucketPurge) {
     const v = getInput('source');
@@ -49538,6 +49578,7 @@ async function run() {
             applicationKey: inputs.applicationKey,
             bucket: inputs.bucket,
             ...(inputs.endpoint !== undefined ? { endpoint: inputs.endpoint } : {}),
+            ...(inputs.userAgentPrefix !== undefined ? { userAgentPrefix: inputs.userAgentPrefix } : {}),
         });
         const authToken = authorized.client.accountInfo.getAuthToken();
         if (authToken)

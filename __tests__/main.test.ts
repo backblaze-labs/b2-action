@@ -156,6 +156,40 @@ describe('main dispatcher', () => {
     })
   })
 
+  it('passes user-agent prefix only when the parsed input supplies one', async () => {
+    const ctx = await loadMain()
+    const files = [
+      listedFile({
+        fileName: 'trace.txt',
+        fileId: 'id-trace',
+        size: 12,
+      }),
+    ]
+    ctx.parseInputs.mockReturnValue(inputs('list', { userAgentPrefix: 'ci-trace/123' }))
+    ctx.commands.listCommand.mockResolvedValue({ files, truncated: false })
+
+    await ctx.run()
+
+    expect(ctx.buildClient).toHaveBeenCalledWith({
+      applicationKeyId: TEST_APPLICATION_KEY_ID,
+      applicationKey: TEST_APPLICATION_KEY,
+      bucket: DISPATCH_BUCKET,
+      userAgentPrefix: 'ci-trace/123',
+    })
+
+    const withoutPrefix = await loadMain()
+    withoutPrefix.parseInputs.mockReturnValue(inputs('list'))
+    withoutPrefix.commands.listCommand.mockResolvedValue({ files, truncated: false })
+
+    await withoutPrefix.run()
+
+    expect(withoutPrefix.buildClient).toHaveBeenCalledWith({
+      applicationKeyId: TEST_APPLICATION_KEY_ID,
+      applicationKey: TEST_APPLICATION_KEY,
+      bucket: DISPATCH_BUCKET,
+    })
+  })
+
   it('renders copy summaries with source and destination URLs', async () => {
     const ctx = await loadMain()
     setupSuccessfulAction(ctx, 'copy')

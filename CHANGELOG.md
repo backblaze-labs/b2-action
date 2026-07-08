@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- Add `user-agent-prefix` for workflow traceability in B2 User-Agent attribution. The prefix is validated as a short ASCII, header-safe product marker and prepended before `b2-github-action/<version>`. ([#106](https://github.com/backblaze-labs/b2-action/issues/106))
+
 ## [1.1.0] - 2026-06-23
 
 ### Security

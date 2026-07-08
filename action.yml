@@ -82,6 +82,9 @@ inputs:
   endpoint:
     description: 'Override the B2 realm endpoint. Leave empty for production.'
     required: false
+  user-agent-prefix:
+    description: "Optional workflow traceability prefix prepended before b2-github-action/<version> with a separating space. Maximum 128 UTF-8 bytes; use only ASCII letters, digits, '/', and RFC 9110 token symbols (!#$%&'*+-.^_`|~). Control characters, spaces, non-ASCII, surrogate characters, and other unsafe header characters are rejected. Do not include secrets."
+    required: false
   fail-on-empty:
     description: 'Fail the action if an upload glob matches zero files (default true).'
     required: false

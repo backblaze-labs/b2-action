@@ -392,6 +392,7 @@ Set `bypass-governance: true` to shorten governance-mode retention or to remove 
 | `allow-bucket-purge` | purge only | `false` | Permit `purge` to target the entire bucket when `source` is empty or `/`. |
 | `presign-ttl` | no | `3600` | Presigned URL TTL in seconds. Must be a positive decimal integer. |
 | `endpoint` | no | | Override B2 realm (staging/custom). |
+| `user-agent-prefix` | no | | Custom workflow traceability prefix prepended before the action User-Agent token. Do not include secrets. |
 | `fail-on-empty` | no | `true` | Fail if an upload glob matches zero files. |
 | `sse` | no | | Server-side encryption: `B2` (SSE-B2) or `C:<base64-32-byte-key>` (SSE-C). SSE-C keys must use canonical base64 and decode to exactly 32 bytes. |
 | `compare-mode` | no | `modtime` | Sync comparison: `modtime` \| `size` \| `none`. |
@@ -405,6 +406,16 @@ Set `bypass-governance: true` to shorten governance-mode retention or to remove 
 | `bypass-governance` | no | `false` | Allow governance-mode retention bypass for retention changes and `delete`/`purge` removals. Requires the B2 application key to include `bypassGovernance`. |
 
 \* Either set the input or one of the env-var fallbacks.
+
+`user-agent-prefix`, when set, is prepended to the SDK User-Agent attribution as
+`<prefix> b2-github-action/<version>`. Prefixes are limited to 128 UTF-8 bytes
+and may contain only ASCII letters, digits, `/`, and these RFC 9110 token
+symbols: ``!#$%&'*+-.^_`|~``. Spaces, control characters, non-ASCII
+characters, surrogate characters, and other unsafe header characters are
+rejected before the SDK client is constructed.
+
+For repository/workflow traceability, use a compact product token such as
+`repository/backblaze-labs-b2-action.workflow/ci.run/123456789`.
 
 ## Outputs (full reference)
 

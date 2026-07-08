@@ -95,6 +95,9 @@ const CONTENT_HEADER_FILE_INFO_KEYS = [
   ['content-language', 'b2-content-language'],
   ['expires', 'b2-expires'],
 ] as const
+/** Maximum UTF-8 byte length accepted for the `user-agent-prefix` input. */
+export const USER_AGENT_PREFIX_MAX_BYTES = 128
+const USER_AGENT_PREFIX_ALLOWED_SYMBOLS = "!#$%&'*+-.^_`|~/"
 const utf8Encoder = new TextEncoder()
 
 /**
@@ -152,6 +155,8 @@ export interface ParsedInputs {
   presignTtlSeconds: number
   /** Override B2 realm endpoint for staging / custom realms. */
   endpoint: string | undefined
+  /** Optional User-Agent prefix for workflow traceability. */
+  userAgentPrefix: string | undefined
   /** Fail the action when upload/sync matches zero files. */
   failOnEmpty: boolean
   /** Raw `sse:` input value as the user typed it. Retained for diagnostics. */
@@ -246,6 +251,7 @@ export function parseInputs(): ParsedInputs {
   const maxResults = parsePositiveInt('max-results', core.getInput('max-results') || '1000')
 
   const endpoint = optional('endpoint')
+  const userAgentPrefix = parseUserAgentPrefix(optional('user-agent-prefix'))
   const sse = optional('sse')
   const encryption = parseSse(sse)
 
@@ -308,6 +314,7 @@ export function parseInputs(): ParsedInputs {
     allowBucketPurge,
     presignTtlSeconds,
     endpoint,
+    userAgentPrefix,
     failOnEmpty,
     sse,
     encryption,
@@ -380,6 +387,38 @@ function required(name: string): string {
 function optional(name: string): string | undefined {
   const v = core.getInput(name)
   return v === '' ? undefined : v
+}
+
+/**
+ * Validate the optional `user-agent-prefix` input before it reaches the SDK
+ * transport and return the prefix when it is present.
+ */
+export function parseUserAgentPrefix(value: string | undefined): string | undefined {
+  if (value === undefined) return undefined
+  const byteLength = Buffer.byteLength(value, 'utf8')
+  if (byteLength > USER_AGENT_PREFIX_MAX_BYTES) {
+    throw new Error(
+      `Invalid 'user-agent-prefix' input: ${byteLength} bytes exceeds ${USER_AGENT_PREFIX_MAX_BYTES}.`,
+    )
+  }
+  if (!isUserAgentPrefixSafe(value)) {
+    throw new Error(
+      "Invalid 'user-agent-prefix' input: use only ASCII letters, digits, '/', and RFC 9110 token symbols (!#$%&'*+-.^_`|~).",
+    )
+  }
+  return value
+}
+
+function isUserAgentPrefixSafe(value: string): boolean {
+  for (let i = 0; i < value.length; i++) {
+    const code = value.charCodeAt(i)
+    if (code >= 0x30 && code <= 0x39) continue
+    if (code >= 0x41 && code <= 0x5a) continue
+    if (code >= 0x61 && code <= 0x7a) continue
+    if (USER_AGENT_PREFIX_ALLOWED_SYMBOLS.includes(value[i] ?? '')) continue
+    return false
+  }
+  return true
 }
 
 function optionalSource(action: ActionName, allowBucketPurge: boolean): string | undefined {
