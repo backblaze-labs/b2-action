@@ -39184,12 +39184,6 @@ const FILE_INFO_KEY_MAX_BYTES = 50;
 const FILE_INFO_MAX_ENTRIES = 10;
 const FILE_INFO_TOTAL_MAX_BYTES = 7000;
 const FILE_INFO_TOTAL_MAX_BYTES_WITH_ENCRYPTION = 2048;
-const CONTENT_HEADER_FILE_INFO_KEYS = [
-    ['cache-control', 'b2-cache-control'],
-    ['content-disposition', 'b2-content-disposition'],
-    ['content-language', 'b2-content-language'],
-    ['expires', 'b2-expires'],
-];
 const inputs_utf8Encoder = new TextEncoder();
 /**
  * Sensitive raw values that can appear in parser-scope errors before
@@ -39243,14 +39237,24 @@ function parseInputs() {
     const bypassGovernance = parseBool('bypass-governance', getInput('bypass-governance') || 'false');
     const presignTtlSeconds = parsePositiveInt('presign-ttl', getInput('presign-ttl') || '3600');
     const maxResults = parsePositiveInt('max-results', getInput('max-results') || '1000');
+    const contentType = optional('content-type');
+    const contentDisposition = optional('content-disposition');
+    const cacheControl = optional('cache-control');
+    const responseContentDisposition = optional('response-content-disposition');
+    const responseContentType = optional('response-content-type');
+    const responseCacheControl = optional('response-cache-control');
     const endpoint = optional('endpoint');
     const sse = optional('sse');
     const encryption = parseSse(sse);
-    const contentType = optional('content-type');
     const fileInfo = parseFileInfo(optional('file-info'));
-    for (const [inputName, fileInfoKey] of CONTENT_HEADER_FILE_INFO_KEYS) {
-        addFileInfo(fileInfo, fileInfoKey, optional(inputName), inputName, { allowReserved: true });
-    }
+    addFileInfo(fileInfo, 'b2-cache-control', cacheControl, 'cache-control', { allowReserved: true });
+    addFileInfo(fileInfo, 'b2-content-disposition', contentDisposition, 'content-disposition', {
+        allowReserved: true,
+    });
+    addFileInfo(fileInfo, 'b2-content-language', optional('content-language'), 'content-language', {
+        allowReserved: true,
+    });
+    addFileInfo(fileInfo, 'b2-expires', optional('expires'), 'expires', { allowReserved: true });
     validateFileInfo(fileInfo, uploadFileInfoTotalMaxBytes(encryption));
     const preserveMtime = parseBool('preserve-mtime', getInput('preserve-mtime') || 'false');
     if (preserveMtime && Object.hasOwn(fileInfo, 'src_last_modified_millis')) {
@@ -39279,6 +39283,9 @@ function parseInputs() {
         contentType,
         fileInfo,
         preserveMtime,
+        responseContentDisposition,
+        responseContentType,
+        responseCacheControl,
         dryRun,
         allowBucketPurge,
         presignTtlSeconds,
@@ -39719,6 +39726,159 @@ var promises_ = __nccwpck_require__(1455);
 var external_node_stream_ = __nccwpck_require__(7075);
 ;// CONCATENATED MODULE: external "node:stream/promises"
 const external_node_stream_promises_namespaceObject = __WEBPACK_EXTERNAL_createRequire(import.meta.url)("node:stream/promises");
+;// CONCATENATED MODULE: ./src/download-overrides.ts
+const DOWNLOAD_OVERRIDE_QUERY_PARAMS = {
+    b2ContentDisposition: 'b2ContentDisposition',
+    b2ContentType: 'b2ContentType',
+    b2CacheControl: 'b2CacheControl',
+};
+const HTTP_TOKEN_RE = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
+const MAX_CONTENT_DISPOSITION_LENGTH = 1024;
+const MAX_CONTENT_TYPE_LENGTH = 255;
+const MAX_CACHE_CONTROL_LENGTH = 1024;
+function downloadHeaderOverridesFromInputs(inputs) {
+    const contentDisposition = validateContentDisposition(inputs.responseContentDisposition);
+    const contentType = validateContentType(inputs.responseContentType);
+    const cacheControl = validateCacheControl(inputs.responseCacheControl);
+    return {
+        ...(contentDisposition !== undefined ? { b2ContentDisposition: contentDisposition } : {}),
+        ...(contentType !== undefined ? { b2ContentType: contentType } : {}),
+        ...(cacheControl !== undefined ? { b2CacheControl: cacheControl } : {}),
+    };
+}
+function appendDownloadHeaderOverrides(url, overrides) {
+    const entries = Object.entries(DOWNLOAD_OVERRIDE_QUERY_PARAMS);
+    if (entries.every(([key]) => overrides[key] === undefined))
+        return url;
+    const parsed = new URL(url);
+    for (const [key, param] of entries) {
+        const value = overrides[key];
+        if (value !== undefined) {
+            parsed.searchParams.set(param, value);
+        }
+    }
+    return parsed.toString();
+}
+function validateContentDisposition(value) {
+    return validateHeaderValue('response-content-disposition', value, MAX_CONTENT_DISPOSITION_LENGTH, isContentDisposition, 'must start with a disposition token and contain only valid parameters');
+}
+function validateContentType(value) {
+    return validateHeaderValue('response-content-type', value, MAX_CONTENT_TYPE_LENGTH, isContentType, 'must be a media type such as application/pdf, with optional valid parameters');
+}
+function validateCacheControl(value) {
+    return validateHeaderValue('response-cache-control', value, MAX_CACHE_CONTROL_LENGTH, isCacheControl, 'must contain comma-separated Cache-Control directives');
+}
+function validateHeaderValue(inputName, value, maxLength, isValidFormat, formatDescription) {
+    if (value === undefined)
+        return undefined;
+    if (value.length > maxLength) {
+        throw new Error(`Invalid '${inputName}' input: must be at most ${maxLength} characters`);
+    }
+    if (containsHttpControlCharacter(value)) {
+        throw new Error(`Invalid '${inputName}' input: must not contain HTTP control characters`);
+    }
+    if (!isValidFormat(value)) {
+        throw new Error(`Invalid '${inputName}' input: ${formatDescription}`);
+    }
+    return value;
+}
+function containsHttpControlCharacter(value) {
+    for (let i = 0; i < value.length; i += 1) {
+        const code = value.charCodeAt(i);
+        if (code <= 0x1f || code === 0x7f)
+            return true;
+    }
+    return false;
+}
+function isContentDisposition(value) {
+    const parts = splitOutsideQuotes(value, ';');
+    if (parts === null || parts.length === 0 || !isHttpToken(parts[0]))
+        return false;
+    return parts.slice(1).every(isParameter);
+}
+function isContentType(value) {
+    const parts = splitOutsideQuotes(value, ';');
+    if (parts === null || parts.length === 0)
+        return false;
+    const [type, subtype, ...extra] = parts[0]?.split('/') ?? [];
+    if (extra.length > 0 || !isHttpToken(type) || !isHttpToken(subtype))
+        return false;
+    return parts.slice(1).every(isParameter);
+}
+function isCacheControl(value) {
+    const directives = splitOutsideQuotes(value, ',');
+    if (directives === null || directives.length === 0)
+        return false;
+    return directives.every((directive) => {
+        if (directive === '')
+            return false;
+        const equals = directive.indexOf('=');
+        if (equals === -1)
+            return isHttpToken(directive);
+        const name = directive.slice(0, equals).trim();
+        const rawValue = directive.slice(equals + 1).trim();
+        return isHttpToken(name) && isHeaderParameterValue(rawValue);
+    });
+}
+function isParameter(value) {
+    const equals = value.indexOf('=');
+    if (equals <= 0)
+        return false;
+    const name = value.slice(0, equals).trim();
+    const rawValue = value.slice(equals + 1).trim();
+    return isHttpToken(name) && isHeaderParameterValue(rawValue);
+}
+function isHeaderParameterValue(value) {
+    return isHttpToken(value) || isQuotedString(value);
+}
+function isHttpToken(value) {
+    return value !== undefined && HTTP_TOKEN_RE.test(value);
+}
+function isQuotedString(value) {
+    if (value.length < 2 || !value.startsWith('"') || !value.endsWith('"'))
+        return false;
+    for (let i = 1; i < value.length - 1; i += 1) {
+        const char = value[i];
+        if (char === '"')
+            return false;
+        if (char === '\\') {
+            i += 1;
+            if (i >= value.length - 1)
+                return false;
+        }
+    }
+    return true;
+}
+function splitOutsideQuotes(value, separator) {
+    const parts = [];
+    let start = 0;
+    let quoted = false;
+    let escaped = false;
+    for (let i = 0; i < value.length; i += 1) {
+        const char = value[i];
+        if (escaped) {
+            escaped = false;
+            continue;
+        }
+        if (quoted && char === '\\') {
+            escaped = true;
+            continue;
+        }
+        if (char === '"') {
+            quoted = !quoted;
+            continue;
+        }
+        if (!quoted && char === separator) {
+            parts.push(value.slice(start, i).trim());
+            start = i + 1;
+        }
+    }
+    if (quoted || escaped)
+        return null;
+    parts.push(value.slice(start).trim());
+    return parts;
+}
+
 ;// CONCATENATED MODULE: ./src/fs.ts
 
 /**
@@ -39794,6 +39954,7 @@ function makeProgressListener(label, intervalMs = 1000) {
 
 
 
+
 /**
  * Download from B2 to the local runner.
  *
@@ -39809,10 +39970,11 @@ async function downloadCommand(bucket, inputs, signal) {
     const source = requireSource(inputs.source, 'download', 'a B2 file name or prefix');
     const isPrefix = source.endsWith('/');
     const sseDownload = sseFromInputs(inputs);
+    const downloadOverrides = downloadHeaderOverridesFromInputs(inputs);
     if (isPrefix) {
-        return downloadPrefix(bucket, source, inputs.destination ?? '.', sseDownload, signal);
+        return downloadPrefix(bucket, source, inputs.destination ?? '.', sseDownload, downloadOverrides, signal);
     }
-    const out = await downloadOne(bucket, source, inputs.destination, sseDownload, signal);
+    const out = await downloadOne(bucket, source, inputs.destination, sseDownload, downloadOverrides, signal);
     return { files: [out], bytesTransferred: out.size };
 }
 function sseFromInputs(inputs) {
@@ -39825,7 +39987,7 @@ function sseFromInputs(inputs) {
         customerKeyMd5: e.customerKeyMd5,
     };
 }
-async function downloadPrefix(bucket, prefix, destinationDir, sseDownload, signal) {
+async function downloadPrefix(bucket, prefix, destinationDir, sseDownload, downloadOverrides, signal) {
     const destRoot = (0,external_node_path_.resolve)(destinationDir);
     await (0,promises_.mkdir)(destRoot, { recursive: true });
     const pathSafety = await createPathSafetyContext(destRoot);
@@ -39867,7 +40029,7 @@ async function downloadPrefix(bucket, prefix, destinationDir, sseDownload, signa
         signal?.throwIfAborted();
         startGroup(`download b2://${bucket.name}/${plan.fileName} → ${plan.localPath}`);
         try {
-            const r = await downloadOne(bucket, plan.fileName, plan.localPath, sseDownload, signal, downloadPathSafety);
+            const r = await downloadOne(bucket, plan.fileName, plan.localPath, sseDownload, downloadOverrides, signal, downloadPathSafety);
             files.push(r);
             total += r.size;
         }
@@ -39877,7 +40039,7 @@ async function downloadPrefix(bucket, prefix, destinationDir, sseDownload, signa
     }
     return { files, bytesTransferred: total };
 }
-async function downloadOne(bucket, fileName, destination, sseDownload, signal, pathSafety) {
+async function downloadOne(bucket, fileName, destination, sseDownload, downloadOverrides, signal, pathSafety) {
     const localPath = pathSafety !== undefined && destination !== undefined
         ? (0,external_node_path_.resolve)(destination)
         : await resolveLocalPath(fileName, destination);
@@ -39890,6 +40052,7 @@ async function downloadOne(bucket, fileName, destination, sseDownload, signal, p
     }
     const result = await bucket.download(fileName, {
         ...(sseDownload !== undefined ? { serverSideEncryption: sseDownload } : {}),
+        ...downloadOverrides,
         ...(signal !== undefined ? { signal } : {}),
     });
     const size = result.headers.contentLength;
@@ -40661,6 +40824,7 @@ function isTrustedNativeDownloadHost(hostname) {
 
 
 
+
 /**
  * Generate a presigned download URL for one B2 file or every file under a
  * prefix.
@@ -40681,13 +40845,19 @@ async function presignCommand(client, bucket, inputs) {
     if (source.endsWith('/')) {
         return presignPrefix(client, bucket, inputs, source);
     }
-    return { files: [await presignOne(client, bucket, source, inputs.presignTtlSeconds, source)] };
+    const downloadOverrides = downloadHeaderOverridesFromInputs(inputs);
+    return {
+        files: [
+            await presignOne(client, bucket, source, inputs.presignTtlSeconds, source, downloadOverrides),
+        ],
+    };
 }
 async function presignPrefix(client, bucket, inputs, prefix) {
     const downloadUrl = client.accountInfo.getDownloadUrl();
+    const downloadOverrides = downloadHeaderOverridesFromInputs(inputs);
     // One auth token covers the whole prefix (that's exactly what
     // `b2_get_download_authorization` is designed for).
-    const auth = await bucket.getDownloadAuthorization(prefix, inputs.presignTtlSeconds);
+    const auth = await getDownloadAuthorization(client, bucket, prefix, inputs.presignTtlSeconds, downloadOverrides);
     core_setSecret(auth.authorizationToken);
     const expiresAt = Math.floor(Date.now() / 1000) + inputs.presignTtlSeconds;
     const files = [];
@@ -40704,7 +40874,7 @@ async function presignPrefix(client, bucket, inputs, prefix) {
             for (const f of page.files) {
                 if (f.action !== 'upload')
                     continue;
-                const url = presignGetObjectUrl(downloadUrl, bucket.name, f.fileName, auth.authorizationToken, inputs.presignTtlSeconds);
+                const url = appendDownloadHeaderOverrides(presignGetObjectUrl(downloadUrl, bucket.name, f.fileName, auth.authorizationToken, inputs.presignTtlSeconds), downloadOverrides);
                 core_setSecret(url);
                 files.push({ fileName: f.fileName, url, expiresAt });
                 if (files.length >= inputs.maxResults)
@@ -40721,15 +40891,24 @@ async function presignPrefix(client, bucket, inputs, prefix) {
     }
     return { files };
 }
-async function presignOne(client, bucket, fileName, ttlSeconds, authPrefix) {
-    const auth = await bucket.getDownloadAuthorization(authPrefix, ttlSeconds);
+async function presignOne(client, bucket, fileName, ttlSeconds, authPrefix, downloadOverrides) {
+    const auth = await getDownloadAuthorization(client, bucket, authPrefix, ttlSeconds, downloadOverrides);
     const downloadUrl = client.accountInfo.getDownloadUrl();
-    const url = presignGetObjectUrl(downloadUrl, bucket.name, fileName, auth.authorizationToken, ttlSeconds);
+    const url = appendDownloadHeaderOverrides(presignGetObjectUrl(downloadUrl, bucket.name, fileName, auth.authorizationToken, ttlSeconds), downloadOverrides);
     core_setSecret(auth.authorizationToken);
     core_setSecret(url);
     const expiresAt = Math.floor(Date.now() / 1000) + ttlSeconds;
     info(`presigned URL for ${fileName} valid for ${ttlSeconds}s (expires at ${expiresAt})`);
     return { fileName, url, expiresAt };
+}
+async function getDownloadAuthorization(client, bucket, fileNamePrefix, validDurationInSeconds, downloadOverrides) {
+    const request = {
+        bucketId: bucket.id,
+        fileNamePrefix,
+        validDurationInSeconds,
+        ...downloadOverrides,
+    };
+    return await client.raw.getDownloadAuthorization(client.accountInfo.getApiUrl(), client.accountInfo.getAuthToken(), request);
 }
 
 ;// CONCATENATED MODULE: ./src/commands/purge.ts

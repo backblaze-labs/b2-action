@@ -63,6 +63,15 @@ inputs:
   expires:
     description: 'Expires response header to store with uploaded files.'
     required: false
+  response-content-disposition:
+    description: 'Response Content-Disposition override for presign/download, such as attachment; filename="report.pdf".'
+    required: false
+  response-content-type:
+    description: 'Response Content-Type override for presign/download.'
+    required: false
+  response-cache-control:
+    description: 'Response Cache-Control override for presign/download.'
+    required: false
   preserve-mtime:
     description: 'Store each uploaded file''s local modification time as B2 src_last_modified_millis. Default false.'
     required: false

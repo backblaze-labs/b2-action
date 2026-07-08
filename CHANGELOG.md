@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- `presign` and `download`: add `response-content-disposition`, `response-content-type`, and `response-cache-control` inputs for B2 response header overrides. ([#95](https://github.com/backblaze-labs/b2-action/issues/95))
+
 ## [1.1.0] - 2026-06-23
 
 ### Security

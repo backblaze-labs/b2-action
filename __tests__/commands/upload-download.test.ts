@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto'
 import { mkdir, readFile, rename, rm, stat, symlink, utimes, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { Bucket, FileVersion, ProgressEvent } from '@backblaze-labs/b2-sdk'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { downloadCommand, replaceDownloadedFile } from '../../src/commands/download.ts'
 import { uploadCommand } from '../../src/commands/upload.ts'
 import type { ParsedInputs } from '../../src/inputs.ts'
@@ -247,6 +247,53 @@ describe('upload + download commands (B2Simulator)', () => {
     expect(downloaded.files).toHaveLength(1)
     const got = await readFile(outPath)
     expect(got.equals(payload)).toBe(true)
+  })
+
+  it('passes response header overrides to downloads', async () => {
+    await seedFile(fx, 'reports/private-report.bin', 'download me as pdf')
+    const download = vi.spyOn(fx.bucket, 'download')
+
+    await downloadCommand(fx.bucket, {
+      ...baseInputs(),
+      action: 'download',
+      source: 'reports/private-report.bin',
+      destination: join(fx.workDir, 'report.pdf'),
+      responseContentDisposition: 'attachment; filename="report.pdf"',
+      responseContentType: 'application/pdf',
+      responseCacheControl: 'private, max-age=60',
+    })
+
+    expect(download.mock.calls[0]?.[1]).toMatchObject({
+      b2ContentDisposition: 'attachment; filename="report.pdf"',
+      b2ContentType: 'application/pdf',
+      b2CacheControl: 'private, max-age=60',
+    })
+  })
+
+  it.each([
+    [
+      'response-content-disposition',
+      { responseContentDisposition: 'attachment; filename="safe.pdf"\r\nX-Evil: 1' },
+    ],
+    ['response-content-type', { responseContentType: 'text/plain\nX-Evil: 1' }],
+    ['response-cache-control', { responseCacheControl: 'private\u0000, max-age=60' }],
+  ] as const)('rejects malicious %s before download requests', async (inputName, override) => {
+    const download = vi.fn()
+    const bucket = {
+      name: 'gh-action-test',
+      download,
+    } as unknown as Parameters<typeof downloadCommand>[0]
+
+    await expect(
+      downloadCommand(bucket, {
+        ...baseInputs(),
+        action: 'download',
+        source: 'reports/private-report.bin',
+        destination: join(fx.workDir, 'report.pdf'),
+        ...override,
+      }),
+    ).rejects.toThrow(inputName)
+    expect(download).not.toHaveBeenCalled()
   })
 
   it('downloads every file under a prefix', async () => {

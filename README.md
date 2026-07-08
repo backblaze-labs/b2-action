@@ -287,8 +287,10 @@ the step; comparable SHA-1 mismatches also fail.
     bucket: my-bucket
     source: reports/2026-q1.pdf
     presign-ttl: 7200
+    response-content-disposition: 'attachment; filename="q1-report.pdf"'
+    response-content-type: application/pdf
 
-- run: curl -fSL "${{ steps.link.outputs.presigned-url }}" -o report.pdf
+- run: curl --fail --show-error --location "${{ steps.link.outputs.presigned-url }}" -o report.pdf
 ```
 
 ### Server-side encryption
@@ -387,6 +389,9 @@ Set `bypass-governance: true` to shorten governance-mode retention or to remove 
 | `content-disposition` | no | | Content-Disposition response header to store with uploaded files. |
 | `content-language` | no | | Content-Language response header to store with uploaded files. |
 | `expires` | no | | Expires response header to store with uploaded files. |
+| `response-content-disposition` | no | | Response Content-Disposition override for `presign` and `download`, such as `attachment; filename="report.pdf"`. |
+| `response-content-type` | no | | Response Content-Type override for `presign` and `download`. |
+| `response-cache-control` | no | | Response Cache-Control override for `presign` and `download`. |
 | `preserve-mtime` | no | `false` | Store each uploaded file's local modification time as B2 `src_last_modified_millis`. |
 | `dry-run` | no | `false` | Preview only (sync/delete/purge). |
 | `allow-bucket-purge` | purge only | `false` | Permit `purge` to target the entire bucket when `source` is empty or `/`. |

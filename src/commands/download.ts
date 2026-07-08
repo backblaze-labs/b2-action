@@ -6,6 +6,10 @@ import { Readable, Transform } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import * as core from '@actions/core'
 import type { Bucket, SseCDownloadKey } from '@backblaze-labs/b2-sdk'
+import {
+  type DownloadHeaderOverrides,
+  downloadHeaderOverridesFromInputs,
+} from '../download-overrides.ts'
 import { tryStat } from '../fs.ts'
 import { type ParsedInputs, requireSource } from '../inputs.ts'
 import { makeProgressListener } from '../progress.ts'
@@ -76,11 +80,26 @@ export async function downloadCommand(
   const isPrefix = source.endsWith('/')
 
   const sseDownload = sseFromInputs(inputs)
+  const downloadOverrides = downloadHeaderOverridesFromInputs(inputs)
 
   if (isPrefix) {
-    return downloadPrefix(bucket, source, inputs.destination ?? '.', sseDownload, signal)
+    return downloadPrefix(
+      bucket,
+      source,
+      inputs.destination ?? '.',
+      sseDownload,
+      downloadOverrides,
+      signal,
+    )
   }
-  const out = await downloadOne(bucket, source, inputs.destination, sseDownload, signal)
+  const out = await downloadOne(
+    bucket,
+    source,
+    inputs.destination,
+    sseDownload,
+    downloadOverrides,
+    signal,
+  )
   return { files: [out], bytesTransferred: out.size }
 }
 
@@ -99,6 +118,7 @@ async function downloadPrefix(
   prefix: string,
   destinationDir: string,
   sseDownload: SseCDownloadKey | undefined,
+  downloadOverrides: DownloadHeaderOverrides,
   signal?: AbortSignal,
 ): Promise<DownloadResult> {
   const destRoot = resolve(destinationDir)
@@ -159,6 +179,7 @@ async function downloadPrefix(
         plan.fileName,
         plan.localPath,
         sseDownload,
+        downloadOverrides,
         signal,
         downloadPathSafety,
       )
@@ -177,6 +198,7 @@ async function downloadOne(
   fileName: string,
   destination: string | undefined,
   sseDownload: SseCDownloadKey | undefined,
+  downloadOverrides: DownloadHeaderOverrides,
   signal?: AbortSignal,
   pathSafety?: DownloadPathSafety,
 ): Promise<DownloadedFile> {
@@ -194,6 +216,7 @@ async function downloadOne(
 
   const result = await bucket.download(fileName, {
     ...(sseDownload !== undefined ? { serverSideEncryption: sseDownload } : {}),
+    ...downloadOverrides,
     ...(signal !== undefined ? { signal } : {}),
   })
   const size = result.headers.contentLength

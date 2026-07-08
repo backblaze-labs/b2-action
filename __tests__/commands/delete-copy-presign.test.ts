@@ -1,6 +1,6 @@
 import { rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { copyCommand } from '../../src/commands/copy.ts'
 import { deleteCommand } from '../../src/commands/delete.ts'
 import { presignCommand } from '../../src/commands/presign.ts'
@@ -322,5 +322,67 @@ describe('presign command', () => {
     expect(first?.url).toContain('Authorization=')
     expect(first?.url).toContain('expires=')
     expect(first?.expiresAt).toBeGreaterThan(Math.floor(Date.now() / 1000))
+  })
+
+  it('adds response header overrides to presigned URLs and authorization', async () => {
+    const local = join(fx.workDir, 'private-report.bin')
+    await writeFile(local, 'share me as pdf')
+    await uploadCommand(fx.bucket, {
+      ...baseInputs('upload'),
+      source: local,
+      destination: 'reports/private-report.bin',
+    })
+    const getAuth = vi.spyOn(fx.client.raw, 'getDownloadAuthorization')
+
+    const result = await presignCommand(fx.client, fx.bucket, {
+      ...baseInputs('presign'),
+      source: 'reports/private-report.bin',
+      responseContentDisposition: 'attachment; filename="report.pdf"',
+      responseContentType: 'application/pdf',
+      responseCacheControl: 'private, max-age=60',
+    })
+
+    const request = getAuth.mock.calls[0]?.[2]
+    expect(request).toMatchObject({
+      b2ContentDisposition: 'attachment; filename="report.pdf"',
+      b2ContentType: 'application/pdf',
+      b2CacheControl: 'private, max-age=60',
+    })
+    const url = new URL(result.files[0]?.url ?? '')
+    expect(url.searchParams.get('b2ContentDisposition')).toBe('attachment; filename="report.pdf"')
+    expect(url.searchParams.get('b2ContentType')).toBe('application/pdf')
+    expect(url.searchParams.get('b2CacheControl')).toBe('private, max-age=60')
+  })
+
+  it.each([
+    [
+      'response-content-disposition',
+      { responseContentDisposition: 'attachment; filename="safe.pdf"\r\nX-Evil: 1' },
+    ],
+    ['response-content-type', { responseContentType: 'text/plain\nX-Evil: 1' }],
+    ['response-cache-control', { responseCacheControl: 'private\u0000, max-age=60' }],
+  ] as const)('rejects malicious %s before presign authorization', async (inputName, override) => {
+    const getAuth = vi.fn()
+    const client = {
+      raw: { getDownloadAuthorization: getAuth },
+      accountInfo: {
+        getApiUrl: () => 'https://api.example.invalid',
+        getAuthToken: () => 'auth-token',
+        getDownloadUrl: () => 'https://download.example.invalid',
+      },
+    } as unknown as Parameters<typeof presignCommand>[0]
+    const bucket = {
+      id: 'bucket-id',
+      name: 'gh-action-misc',
+    } as unknown as Parameters<typeof presignCommand>[1]
+
+    await expect(
+      presignCommand(client, bucket, {
+        ...baseInputs('presign'),
+        source: 'reports/private-report.bin',
+        ...override,
+      }),
+    ).rejects.toThrow(inputName)
+    expect(getAuth).not.toHaveBeenCalled()
   })
 })
