@@ -121,6 +121,7 @@ export interface ParsedInputs {
    * Verb-dependent source. Upload/sync: a local path or glob. Download/copy/
    * delete/presign/list/hide/unhide/verify/retention/head/purge: a B2 file
    * name or prefix (trailing `/` means prefix mode for verbs that support it).
+   * Download may omit this when `fileId` is set.
    */
   source: string | undefined
   /**
@@ -168,6 +169,10 @@ export interface ParsedInputs {
   maxResults: number
   /** Literal SHA-1 to compare against in `verify` (when set, no local read). */
   expectedSha1: string | undefined
+  /** B2 file version ID to download. When set, download ignores `source` lookup by name. */
+  fileId: string | undefined
+  /** Single HTTP byte range for download requests, e.g. `bytes=0-1023`. */
+  range: string | undefined
   /** Object Lock retention mode to apply (`retention` verb). */
   retentionMode: RetentionMode | undefined
   /** ISO-8601 timestamp until which retention applies. Required with `retentionMode`. */
@@ -260,6 +265,8 @@ export function parseInputs(): ParsedInputs {
     throw new Error(`Duplicate fileInfo key "src_last_modified_millis" from 'preserve-mtime' input`)
   }
   const expectedSha1 = optional('expected-sha1')
+  const fileId = optional('file-id')
+  const range = optional('range')
   const retentionUntil = optional('retention-until')
 
   const compareMode = parseEnum(
@@ -316,6 +323,8 @@ export function parseInputs(): ParsedInputs {
     syncDirection,
     maxResults,
     expectedSha1,
+    fileId,
+    range,
     retentionMode,
     retentionUntil,
     legalHold,

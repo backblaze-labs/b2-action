@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto'
 import { mkdir, readFile, rename, rm, stat, symlink, utimes, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { Bucket, FileVersion, ProgressEvent } from '@backblaze-labs/b2-sdk'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { downloadCommand, replaceDownloadedFile } from '../../src/commands/download.ts'
 import { uploadCommand } from '../../src/commands/upload.ts'
 import type { ParsedInputs } from '../../src/inputs.ts'
@@ -247,6 +247,205 @@ describe('upload + download commands (B2Simulator)', () => {
     expect(downloaded.files).toHaveLength(1)
     const got = await readFile(outPath)
     expect(got.equals(payload)).toBe(true)
+  })
+
+  it('downloads a specific file version by file-id', async () => {
+    const local = join(fx.workDir, 'versioned.txt')
+    await writeFile(local, 'first version')
+    const firstUpload = await uploadCommand(fx.bucket, {
+      ...baseInputs(),
+      source: local,
+      destination: 'versioned.txt',
+    })
+    const firstFileId = firstUpload.files[0]?.fileId
+    if (firstFileId === undefined) throw new Error('upload did not return a fileId')
+
+    await writeFile(local, 'second version')
+    await uploadCommand(fx.bucket, {
+      ...baseInputs(),
+      source: local,
+      destination: 'versioned.txt',
+    })
+
+    const outPath = join(fx.workDir, 'downloaded-version.txt')
+    const downloaded = await downloadCommand(fx.bucket, {
+      ...baseInputs(),
+      action: 'download',
+      fileId: firstFileId,
+      destination: outPath,
+    })
+
+    expect(downloaded.files[0]?.fileName).toBe('versioned.txt')
+    await expect(readFile(outPath, 'utf8')).resolves.toBe('first version')
+  })
+
+  it('rejects a file-id from another bucket before writing bytes', async () => {
+    const otherBucket = await fx.client.createBucket({
+      bucketName: 'gh-action-test-other',
+      bucketType: 'allPrivate',
+    })
+    const local = join(fx.workDir, 'other-bucket.txt')
+    await writeFile(local, 'cross-bucket')
+    const uploaded = await uploadCommand(otherBucket, {
+      ...baseInputs(),
+      source: local,
+      destination: 'other-bucket.txt',
+    })
+    const fileId = uploaded.files[0]?.fileId
+    if (fileId === undefined) throw new Error('upload did not return a fileId')
+
+    const outPath = join(fx.workDir, 'cross-bucket-out.txt')
+    await expect(
+      downloadCommand(fx.bucket, {
+        ...baseInputs(),
+        action: 'download',
+        fileId,
+        destination: outPath,
+      }),
+    ).rejects.toThrow(/not configured bucket/)
+    await expect(readFile(outPath)).rejects.toThrow(/ENOENT/u)
+  })
+
+  it('downloads only the requested byte range by name', async () => {
+    await seedFile(fx, 'range.txt', '0123456789')
+
+    const outPath = join(fx.workDir, 'range-out.txt')
+    const downloaded = await downloadCommand(fx.bucket, {
+      ...baseInputs(),
+      action: 'download',
+      source: 'range.txt',
+      destination: outPath,
+      range: 'bytes=2-5',
+    })
+
+    expect(downloaded.bytesTransferred).toBe(4)
+    expect(downloaded.files[0]?.size).toBe(4)
+    expect(downloaded.files[0]?.contentSha1).toBeNull()
+    await expect(readFile(outPath, 'utf8')).resolves.toBe('2345')
+  })
+
+  it('rejects malformed ranges before logging or downloading', async () => {
+    const bucket = {
+      name: 'mock-bucket',
+      download: vi.fn(),
+    } as unknown as Parameters<typeof downloadCommand>[0]
+    const ranges = ['bytes=5-2', 'bytes=0-1,3-4', 'bytes=0-1\n::warning::injected']
+
+    const out = await captureStdout(async () => {
+      for (const range of ranges) {
+        await expect(
+          downloadCommand(bucket, {
+            ...baseInputs(),
+            action: 'download',
+            source: 'range.txt',
+            range,
+          }),
+        ).rejects.toThrow(/'range' input/)
+      }
+    })
+
+    expect(bucket.download).not.toHaveBeenCalled()
+    expect(out).not.toContain('::warning::injected')
+    expect(out).not.toContain('download range')
+  })
+
+  it('rejects file-id line breaks before logging or downloading', async () => {
+    const bucket = {
+      name: 'mock-bucket',
+      file: vi.fn(),
+    } as unknown as Parameters<typeof downloadCommand>[0]
+    const fileIds = ['4_z123\n::warning::injected', '4_z123\r::warning::injected']
+
+    const out = await captureStdout(async () => {
+      for (const fileId of fileIds) {
+        await expect(
+          downloadCommand(bucket, {
+            ...baseInputs(),
+            action: 'download',
+            fileId,
+            range: 'bytes=0-1',
+          }),
+        ).rejects.toThrow(/'file-id' input/)
+      }
+    })
+
+    expect(bucket.file).not.toHaveBeenCalled()
+    expect(out).not.toContain('::warning::injected')
+    expect(out).not.toContain('download range')
+  })
+
+  it('uses the file-id, not source hint, for file-info lookup', async () => {
+    const fileId = '4_z_000000000000000000000003'
+    const getFileInfo = vi.fn(async () => ({
+      bucketId: 'bucket-id',
+      fileName: 'remote-name.txt',
+    }))
+    const downloadById = vi.fn(async () => ({
+      headers: {
+        contentLength: 7,
+        contentSha1: 'f07e5a815613c5abeddc4b682247a4c42d8a95df',
+        contentType: 'text/plain',
+        fileId,
+        fileInfo: {},
+        fileName: 'remote-name.txt',
+        uploadTimestamp: Date.now(),
+      },
+      body: new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('payload'))
+          controller.close()
+        },
+      }),
+    }))
+    const file = vi.fn((name: string) => {
+      if (name === fileId) return { getFileInfo }
+      if (name === 'remote-name.txt') return { downloadById }
+      throw new Error(`unexpected file handle ${name}`)
+    })
+    const bucket = {
+      id: 'bucket-id',
+      name: 'mock-bucket',
+      file,
+    } as unknown as Parameters<typeof downloadCommand>[0]
+
+    const outPath = join(fx.workDir, 'source-hint-out.txt')
+    await downloadCommand(bucket, {
+      ...baseInputs(),
+      action: 'download',
+      source: 'local-only-hint.txt',
+      fileId,
+      destination: outPath,
+    })
+
+    expect(file).toHaveBeenNthCalledWith(1, fileId)
+    expect(file).toHaveBeenNthCalledWith(2, 'remote-name.txt')
+    expect(getFileInfo).toHaveBeenCalledTimes(1)
+    expect(downloadById).toHaveBeenCalledTimes(1)
+    await expect(readFile(outPath, 'utf8')).resolves.toBe('payload')
+  })
+
+  it('passes range through when downloading by file-id', async () => {
+    const local = join(fx.workDir, 'id-range.txt')
+    await writeFile(local, '0123456789')
+    const uploaded = await uploadCommand(fx.bucket, {
+      ...baseInputs(),
+      source: local,
+      destination: 'id-range.txt',
+    })
+    const fileId = uploaded.files[0]?.fileId
+    if (fileId === undefined) throw new Error('upload did not return a fileId')
+
+    const outPath = join(fx.workDir, 'id-range-out.txt')
+    const downloaded = await downloadCommand(fx.bucket, {
+      ...baseInputs(),
+      action: 'download',
+      fileId,
+      destination: outPath,
+      range: 'bytes=4-7',
+    })
+
+    expect(downloaded.files[0]?.contentSha1).toBeNull()
+    await expect(readFile(outPath, 'utf8')).resolves.toBe('4567')
   })
 
   it('downloads every file under a prefix', async () => {
@@ -999,6 +1198,43 @@ describe('upload + download: log + branch coverage', () => {
         makeInputs('download', fx, { source: 'fd/', destination: join(fx.workDir, 'nested') }),
       ),
     ).rejects.toThrow(/download path collision/)
+  })
+
+  it('cancels the response body when local setup fails after download starts', async () => {
+    const parentFile = join(fx.workDir, 'not-a-directory')
+    await writeFile(parentFile, 'blocking parent')
+    const cancelBody = vi.fn()
+    const bucket = {
+      name: 'mock-bucket',
+      download: vi.fn(async () => ({
+        headers: {
+          contentLength: 7,
+          contentSha1: 'f07e5a815613c5abeddc4b682247a4c42d8a95df',
+          contentType: 'text/plain',
+          fileId: 'mock-file-id',
+          fileInfo: {},
+          fileName: 'post-response.txt',
+          uploadTimestamp: Date.now(),
+        },
+        body: new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode('payload'))
+          },
+          cancel: cancelBody,
+        }),
+      })),
+    } as unknown as Parameters<typeof downloadCommand>[0]
+
+    await expect(
+      downloadCommand(
+        bucket,
+        makeInputs('download', fx, {
+          source: 'post-response.txt',
+          destination: join(parentFile, 'out.txt'),
+        }),
+      ),
+    ).rejects.toThrow(/EEXIST|ENOTDIR|not a directory/u)
+    expect(cancelBody).toHaveBeenCalledTimes(1)
   })
 })
 

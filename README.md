@@ -89,7 +89,7 @@ Exact-version releases publish an attested `dist/index.js` asset for provenance 
 | Verb | What it does | Required inputs |
 | --- | --- | --- |
 | `upload` | Single-file or glob upload. Streams the file from disk so multi-GB payloads stay memory-bounded; auto-routes to multipart for large files. | `source`, `bucket` |
-| `download` | Single-file or prefix-bulk download. | `source`, `bucket` |
+| `download` | Single-file, file-ID, or prefix-bulk download. | `bucket` plus `source` or `file-id` |
 | `sync` | Mirror a local directory ↔ a B2 prefix. Direction auto-detected. | `source`, `destination`, `bucket` |
 | `copy` | Server-side copy. Same bucket by default; cross-bucket with `source-bucket`. | `source`, `destination`, `bucket` |
 | `delete` | Single file by name, or prefix-bulk via `b2_list_file_versions`. Supports `dry-run` and `bypass-governance` for governance-retained versions. | `source`, `bucket` |
@@ -169,6 +169,23 @@ Exact-name `copy`, single-file `delete`, and `retention` operate only when the l
     source: cache/node_modules.tar
     destination: ./node_modules.tar
 
+# Specific version by file ID
+- uses: backblaze-labs/b2-action@v1
+  with:
+    action: download
+    bucket: my-bucket
+    file-id: 4_z1234567890abcdef
+    destination: ./node_modules.tar
+
+# Byte range
+- uses: backblaze-labs/b2-action@v1
+  with:
+    action: download
+    bucket: my-bucket
+    source: large/data.parquet
+    destination: ./sample.parquet
+    range: bytes=0-1048575
+
 # Prefix (note the trailing slash)
 - uses: backblaze-labs/b2-action@v1
   with:
@@ -177,6 +194,10 @@ Exact-name `copy`, single-file `delete`, and `retention` operate only when the l
     source: releases/v1.2.3/
     destination: ./downloads
 ```
+
+Ranged downloads intentionally omit the `content-sha1` output and skip whole-object SHA-1
+verification: B2 returns the full-object SHA-1 header, which does not describe the partial
+response body.
 
 ### Sync (both directions)
 
@@ -374,7 +395,9 @@ Set `bypass-governance: true` to shorten governance-mode retention or to remove 
 | `application-key` | no\* | | B2 application key. Falls back to `$B2_APPLICATION_KEY`. |
 | `bucket` | yes | | Destination bucket name. |
 | `source-bucket` | copy only | `bucket` | Source bucket for cross-bucket copy. |
-| `source` | command-dependent | | Local path/glob (upload/sync up); B2 file name or prefix (everything else). Prefix downloads reject keys with empty, `.`, `..`, or control-character path segments. For whole-bucket purge, omit `source` or set `/` and set `allow-bucket-purge: true`. |
+| `source` | command-dependent | | Local path/glob (upload/sync up); B2 file name or prefix (everything else). Download may omit `source` when `file-id` is set. Prefix downloads reject keys with empty, `.`, `..`, or control-character path segments. For whole-bucket purge, omit `source` or set `/` and set `allow-bucket-purge: true`. |
+| `file-id` | download only | | B2 file version ID to download. When set, `download` fetches that exact version instead of resolving `source` by name. |
+| `range` | download only | | Single HTTP byte range, such as `bytes=0-1023`, `bytes=1024-`, or `bytes=-1024`. Ranged downloads write only the returned bytes and skip whole-object SHA-1 verification. |
 | `destination` | command-dependent | | B2 file/prefix (upload/sync up/copy); local path (download/sync down/verify). Upload destinations are not normalized by the action; SDK/B2 key validation errors are surfaced rather than silently rewriting `/` characters. |
 | `include` | no | | CSV of glob patterns to include (upload). |
 | `exclude` | no | `.git/**` | CSV of glob patterns to exclude (upload). |
@@ -412,7 +435,7 @@ Set `bypass-governance: true` to shorten governance-mode retention or to remove 
 | --- | --- | --- |
 | `file-id` | upload / copy / hide / retention / head; unhide if a hide marker was removed | B2 file ID. For `unhide`, this identifies the removed hide marker, not the target object. |
 | `file-name` | single-file ops | B2 file name (path). |
-| `content-sha1` | upload / download / head when available | SHA-1 hex. Omitted when B2 does not expose a whole-file SHA-1, including multipart objects. |
+| `content-sha1` | upload / download / head when available | SHA-1 hex. Omitted when B2 does not expose a whole-file SHA-1, including multipart objects. Also omitted for ranged downloads because the B2 SHA-1 header describes the whole object, not the partial response body. |
 | `bytes-transferred` | upload / download / sync / copy / head | Total bytes moved. Head emits `0`. |
 | `file-count` | every command | Aggregate count of files matched or processed, including skipped sync entries and dry-run delete/purge matches. Prefer verb-specific count outputs when available. |
 | `files-uploaded` | upload / sync up | Count. |

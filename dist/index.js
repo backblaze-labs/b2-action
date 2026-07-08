@@ -39257,6 +39257,8 @@ function parseInputs() {
         throw new Error(`Duplicate fileInfo key "src_last_modified_millis" from 'preserve-mtime' input`);
     }
     const expectedSha1 = optional('expected-sha1');
+    const fileId = optional('file-id');
+    const range = optional('range');
     const retentionUntil = optional('retention-until');
     const compareMode = parseEnum('compare-mode', (getInput('compare-mode') || 'modtime').toLowerCase(), VALID_COMPARE);
     const keepMode = parseEnum('keep-mode', (getInput('keep-mode') || 'no-delete').toLowerCase(), VALID_KEEP);
@@ -39291,6 +39293,8 @@ function parseInputs() {
         syncDirection,
         maxResults,
         expectedSha1,
+        fileId,
+        range,
         retentionMode,
         retentionUntil,
         legalHold,
@@ -39794,25 +39798,41 @@ function makeProgressListener(label, intervalMs = 1000) {
 
 
 
+
 /**
  * Download from B2 to the local runner.
  *
  * Modes:
+ *   - If `file-id` is set, download that exact B2 file version. `source` is
+ *     only used as an optional local filename hint when B2 omits a name.
  *   - If `source` ends with `/`, treat it as a prefix and download every file
  *     under it to the local directory at `destination` (defaults to `.`).
  *   - Otherwise download a single file. If `destination` ends with `/` or
  *     resolves to an existing directory, write into that directory using the
  *     basename of `source`. Else `destination` is the exact output file path.
  *     If unset, the file's basename is used in the current working directory.
+ *
+ * When `range` is set it is passed to the SDK download call and
+ * `contentSha1` is returned as `null`, because a B2 whole-object SHA-1 does
+ * not verify the partial response body.
  */
 async function downloadCommand(bucket, inputs, signal) {
-    const source = requireSource(inputs.source, 'download', 'a B2 file name or prefix');
-    const isPrefix = source.endsWith('/');
     const sseDownload = sseFromInputs(inputs);
-    if (isPrefix) {
-        return downloadPrefix(bucket, source, inputs.destination ?? '.', sseDownload, signal);
+    const fileId = inputs.fileId === undefined ? undefined : validateDownloadFileId(inputs.fileId);
+    const range = inputs.range === undefined ? undefined : validateDownloadRange(inputs.range);
+    if (range !== undefined) {
+        info(`download range ${range} requested; whole-object SHA-1 verification is skipped for partial responses`);
     }
-    const out = await downloadOne(bucket, source, inputs.destination, sseDownload, signal);
+    if (fileId !== undefined) {
+        const out = await downloadOne(bucket, { kind: 'id', fileId, fileNameHint: inputs.source }, inputs.destination, sseDownload, range, signal);
+        return { files: [out], bytesTransferred: out.size };
+    }
+    const source = requireSource(inputs.source, 'download', 'a B2 file name or prefix, or file-id');
+    const isPrefix = source.endsWith('/');
+    if (isPrefix) {
+        return downloadPrefix(bucket, source, inputs.destination ?? '.', sseDownload, range, signal);
+    }
+    const out = await downloadOne(bucket, { kind: 'name', fileName: source }, inputs.destination, sseDownload, range, signal);
     return { files: [out], bytesTransferred: out.size };
 }
 function sseFromInputs(inputs) {
@@ -39825,7 +39845,32 @@ function sseFromInputs(inputs) {
         customerKeyMd5: e.customerKeyMd5,
     };
 }
-async function downloadPrefix(bucket, prefix, destinationDir, sseDownload, signal) {
+function validateDownloadRange(range) {
+    if (range.includes('\r') || range.includes('\n')) {
+        throw new Error("'range' input must be a single HTTP byte range without line breaks");
+    }
+    const match = /^bytes=(?:(\d+)-(\d*)|-(\d+))$/.exec(range);
+    if (match === null) {
+        throw new Error("'range' input must be a single HTTP byte range like bytes=0-1023, bytes=1024-, or bytes=-1024");
+    }
+    const start = match[1];
+    const end = match[2];
+    const suffixLength = match[3];
+    if (start !== undefined && end !== undefined && end !== '' && BigInt(end) < BigInt(start)) {
+        throw new Error("'range' input end byte must be greater than or equal to the start byte");
+    }
+    if (suffixLength !== undefined && BigInt(suffixLength) === 0n) {
+        throw new Error("'range' input suffix length must be greater than zero");
+    }
+    return range;
+}
+function validateDownloadFileId(fileId) {
+    if (fileId.includes('\r') || fileId.includes('\n')) {
+        throw new Error("'file-id' input must not contain line breaks");
+    }
+    return fileId;
+}
+async function downloadPrefix(bucket, prefix, destinationDir, sseDownload, range, signal) {
     const destRoot = (0,external_node_path_.resolve)(destinationDir);
     await (0,promises_.mkdir)(destRoot, { recursive: true });
     const pathSafety = await createPathSafetyContext(destRoot);
@@ -39867,7 +39912,7 @@ async function downloadPrefix(bucket, prefix, destinationDir, sseDownload, signa
         signal?.throwIfAborted();
         startGroup(`download b2://${bucket.name}/${plan.fileName} → ${plan.localPath}`);
         try {
-            const r = await downloadOne(bucket, plan.fileName, plan.localPath, sseDownload, signal, downloadPathSafety);
+            const r = await downloadOne(bucket, { kind: 'name', fileName: plan.fileName }, plan.localPath, sseDownload, range, signal, downloadPathSafety);
             files.push(r);
             total += r.size;
         }
@@ -39877,68 +39922,112 @@ async function downloadPrefix(bucket, prefix, destinationDir, sseDownload, signa
     }
     return { files, bytesTransferred: total };
 }
-async function downloadOne(bucket, fileName, destination, sseDownload, signal, pathSafety) {
-    const localPath = pathSafety !== undefined && destination !== undefined
-        ? (0,external_node_path_.resolve)(destination)
-        : await resolveLocalPath(fileName, destination);
-    if (pathSafety !== undefined) {
-        await assertFreshAncestryInsideRoot(pathSafety, localPath, fileName);
-    }
-    await (0,promises_.mkdir)((0,external_node_path_.dirname)(localPath), { recursive: true });
-    if (pathSafety !== undefined) {
-        await assertFreshAncestryInsideRoot(pathSafety, localPath, fileName);
-    }
-    const result = await bucket.download(fileName, {
-        ...(sseDownload !== undefined ? { serverSideEncryption: sseDownload } : {}),
-        ...(signal !== undefined ? { signal } : {}),
-    });
-    const size = result.headers.contentLength;
-    const sha1 = result.headers.contentSha1;
-    // Wrap the body in a byte-counting Transform that synthesizes ProgressEvents
-    // for the shared progress listener. The SDK doesn't expose progress for
-    // single-shot downloads; we compute it here from the known content-length.
-    const onProgress = makeProgressListener(`download[${fileName}]`);
-    const startedAt = Date.now();
-    let bytesSeen = 0;
-    const counter = new external_node_stream_.Transform({
-        transform(chunk, _enc, cb) {
-            // The transform only runs when the body has bytes to push; for a zero-
-            // length response Node's stream pipeline closes without invoking it,
-            // so `size` is provably > 0 here.
-            bytesSeen += chunk.length;
-            onProgress({
-                bytesTransferred: bytesSeen,
-                totalBytes: size,
-                partsCompleted: 0,
-                totalParts: null,
-                elapsedMs: Date.now() - startedAt,
-            });
-            cb(null, chunk);
-        },
-    });
-    if (pathSafety !== undefined) {
-        await assertFreshAncestryInsideRoot(pathSafety, localPath, fileName);
-    }
-    const tempPath = `${localPath}.b2-action-download-${(0,external_node_crypto_.randomUUID)()}.tmp`;
-    const writeStream = (0,external_node_fs_.createWriteStream)(tempPath, { flags: 'wx' });
+async function downloadOne(bucket, target, destination, sseDownload, range, signal, pathSafety) {
+    const result = await downloadTarget(bucket, target, sseDownload, range, signal);
+    let fileName = '';
+    let localPath = '';
+    let size = 0;
+    let sha1 = null;
+    let tempPath;
+    let bodyConsumed = false;
     try {
+        fileName = downloadResultFileName(target, result.headers.fileName);
+        localPath =
+            pathSafety !== undefined && destination !== undefined
+                ? (0,external_node_path_.resolve)(destination)
+                : await resolveLocalPath(fileName, destination);
+        if (pathSafety !== undefined) {
+            await assertFreshAncestryInsideRoot(pathSafety, localPath, fileName);
+        }
+        await (0,promises_.mkdir)((0,external_node_path_.dirname)(localPath), { recursive: true });
+        if (pathSafety !== undefined) {
+            await assertFreshAncestryInsideRoot(pathSafety, localPath, fileName);
+        }
+        size = result.headers.contentLength;
+        sha1 = range === undefined ? result.headers.contentSha1 : null;
+        // Wrap the body in a byte-counting Transform that synthesizes ProgressEvents
+        // for the shared progress listener. The SDK doesn't expose progress for
+        // single-shot downloads; we compute it here from the known content-length.
+        const onProgress = makeProgressListener(`download[${fileName}]`);
+        const startedAt = Date.now();
+        let bytesSeen = 0;
+        const counter = new external_node_stream_.Transform({
+            transform(chunk, _enc, cb) {
+                // The transform only runs when chunks are emitted. Empty responses
+                // complete without progress events, leaving final byte reporting to
+                // the command result.
+                bytesSeen += chunk.length;
+                onProgress({
+                    bytesTransferred: bytesSeen,
+                    totalBytes: size,
+                    partsCompleted: 0,
+                    totalParts: null,
+                    elapsedMs: Date.now() - startedAt,
+                });
+                cb(null, chunk);
+            },
+        });
+        if (pathSafety !== undefined) {
+            await assertFreshAncestryInsideRoot(pathSafety, localPath, fileName);
+        }
+        tempPath = `${localPath}.b2-action-download-${(0,external_node_crypto_.randomUUID)()}.tmp`;
+        const writeStream = (0,external_node_fs_.createWriteStream)(tempPath, { flags: 'wx' });
         await (0,external_node_stream_promises_namespaceObject.pipeline)(external_node_stream_.Readable.fromWeb(result.body), counter, writeStream);
+        bodyConsumed = true;
         await replaceDownloadedFile(tempPath, localPath);
     }
     catch (err) {
+        if (!bodyConsumed) {
+            await cancelDownloadBody(result.body);
+        }
         // Partial download on disk is worse than no file. Write through a
         // same-directory temporary file and rename only after the body completes,
         // which also avoids following an existing symlink at the final leaf.
-        try {
-            await (0,promises_.unlink)(tempPath);
-        }
-        catch {
-            // ignore: best-effort cleanup, the original error matters more
+        if (tempPath !== undefined) {
+            try {
+                await (0,promises_.unlink)(tempPath);
+            }
+            catch {
+                // ignore: best-effort cleanup, the original error matters more
+            }
         }
         throw err;
     }
-    info(`  wrote ${size} bytes to ${localPath} (sha1=${sha1 ?? 'multipart'})`);
+    const sha1Label = range !== undefined ? 'skipped-range' : (sha1 ?? 'multipart');
+    info(`  wrote ${size} bytes to ${localPath} (sha1=${sha1Label})`);
     return { fileName, localPath, size, contentSha1: sha1 };
+}
+async function downloadTarget(bucket, target, sseDownload, range, signal) {
+    const options = {
+        ...(sseDownload !== undefined ? { serverSideEncryption: sseDownload } : {}),
+        ...(range !== undefined ? { range } : {}),
+        ...(signal !== undefined ? { signal } : {}),
+    };
+    if (target.kind === 'id') {
+        const b2FileId = fileId(target.fileId);
+        const fileInfo = await bucket.file(target.fileId).getFileInfo(b2FileId);
+        if (fileInfo.bucketId !== bucket.id) {
+            throw new Error(`file-id ${target.fileId} belongs to bucket ${fileInfo.bucketId}, not configured bucket ${bucket.id}`);
+        }
+        return await bucket.file(fileInfo.fileName).downloadById(b2FileId, options);
+    }
+    return await bucket.download(target.fileName, options);
+}
+async function cancelDownloadBody(body) {
+    try {
+        await body.cancel();
+    }
+    catch {
+        // If Node already locked or canceled the stream while wiring pipeline,
+        // there is nothing useful to do here. Preserve the original failure.
+    }
+}
+function downloadResultFileName(target, responseFileName) {
+    if (responseFileName !== '')
+        return responseFileName;
+    if (target.kind === 'name')
+        return target.fileName;
+    return target.fileNameHint ?? target.fileId;
 }
 /**
  * Atomically move a completed same-directory download into place.

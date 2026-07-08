@@ -37,6 +37,8 @@ export function makeParsedInputs(
     syncDirection: 'auto',
     maxResults: 1000,
     expectedSha1: undefined,
+    fileId: undefined,
+    range: undefined,
     retentionMode: undefined,
     retentionUntil: undefined,
     legalHold: undefined,

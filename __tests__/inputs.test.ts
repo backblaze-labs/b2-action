@@ -208,6 +208,19 @@ describe('parseInputs', () => {
     expect(() => parseInputs()).toThrow(/Invalid fileInfo: 11 entries exceeds 10/)
   })
 
+  it('parses download file-id and range inputs', () => {
+    setInput('action', 'download')
+    setInput('application-key-id', 'k')
+    setInput('application-key', 's')
+    setInput('bucket', 'b')
+    setInput('file-id', '4_z123')
+    setInput('range', 'bytes=0-1023')
+
+    const r = parseInputs()
+    expect(r.fileId).toBe('4_z123')
+    expect(r.range).toBe('bytes=0-1023')
+  })
+
   it('parses booleans and integers', () => {
     setInput('action', 'upload')
     setInput('application-key-id', 'k')
