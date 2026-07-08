@@ -152,6 +152,8 @@ export interface ParsedInputs {
   presignTtlSeconds: number
   /** Override B2 realm endpoint for staging / custom realms. */
   endpoint: string | undefined
+  /** Optional User-Agent prefix for workflow traceability. */
+  userAgentPrefix: string | undefined
   /** Fail the action when upload/sync matches zero files. */
   failOnEmpty: boolean
   /** Raw `sse:` input value as the user typed it. Retained for diagnostics. */
@@ -246,6 +248,7 @@ export function parseInputs(): ParsedInputs {
   const maxResults = parsePositiveInt('max-results', core.getInput('max-results') || '1000')
 
   const endpoint = optional('endpoint')
+  const userAgentPrefix = parseUserAgentPrefix(optional('user-agent-prefix'))
   const sse = optional('sse')
   const encryption = parseSse(sse)
 
@@ -308,6 +311,7 @@ export function parseInputs(): ParsedInputs {
     allowBucketPurge,
     presignTtlSeconds,
     endpoint,
+    userAgentPrefix,
     failOnEmpty,
     sse,
     encryption,
@@ -380,6 +384,22 @@ function required(name: string): string {
 function optional(name: string): string | undefined {
   const v = core.getInput(name)
   return v === '' ? undefined : v
+}
+
+function parseUserAgentPrefix(value: string | undefined): string | undefined {
+  if (value === undefined) return undefined
+  if (hasHttpHeaderControlCharacter(value)) {
+    throw new Error("Invalid 'user-agent-prefix' input: must not contain control characters.")
+  }
+  return value
+}
+
+function hasHttpHeaderControlCharacter(value: string): boolean {
+  for (let i = 0; i < value.length; i++) {
+    const code = value.charCodeAt(i)
+    if (code < 0x20 || code === 0x7f) return true
+  }
+  return false
 }
 
 function optionalSource(action: ActionName, allowBucketPurge: boolean): string | undefined {

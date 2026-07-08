@@ -225,6 +225,25 @@ describe('parseInputs', () => {
     expect(r.dryRun).toBe(true)
   })
 
+  it('parses and validates a custom user-agent prefix', () => {
+    setInput('action', 'list')
+    setInput('application-key-id', 'k')
+    setInput('application-key', 's')
+    setInput('bucket', 'b')
+    setInput('user-agent-prefix', 'ci-trace/123')
+
+    expect(parseInputs().userAgentPrefix).toBe('ci-trace/123')
+
+    resetInputEnv()
+    setInput('action', 'list')
+    setInput('application-key-id', 'k')
+    setInput('application-key', 's')
+    setInput('bucket', 'b')
+    setInput('user-agent-prefix', 'bad\ntrace')
+
+    expect(() => parseInputs()).toThrow(/Invalid 'user-agent-prefix'/)
+  })
+
   it('keeps an empty purge source only when whole-bucket purge is confirmed', () => {
     setInput('action', 'purge')
     setInput('application-key-id', 'k')

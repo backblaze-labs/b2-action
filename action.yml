@@ -82,6 +82,9 @@ inputs:
   endpoint:
     description: 'Override the B2 realm endpoint. Leave empty for production.'
     required: false
+  user-agent-prefix:
+    description: 'Optional custom User-Agent prefix for workflow traceability. Do not include secrets.'
+    required: false
   fail-on-empty:
     description: 'Fail the action if an upload glob matches zero files (default true).'
     required: false

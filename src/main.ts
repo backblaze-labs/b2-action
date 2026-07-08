@@ -67,6 +67,7 @@ export async function run(): Promise<void> {
       applicationKey: inputs.applicationKey,
       bucket: inputs.bucket,
       ...(inputs.endpoint !== undefined ? { endpoint: inputs.endpoint } : {}),
+      ...(inputs.userAgentPrefix !== undefined ? { userAgentPrefix: inputs.userAgentPrefix } : {}),
     })
     const authToken = authorized.client.accountInfo.getAuthToken()
     if (authToken) registerSecretValue(secretValues, authToken)

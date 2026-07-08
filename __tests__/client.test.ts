@@ -134,6 +134,17 @@ describe('client helpers', () => {
     expect(constructedOptions[1]).toMatchObject({
       realm: TEST_ENDPOINT,
     })
+
+    await buildMockedClient({
+      applicationKeyId: 'mock-key-id',
+      applicationKey: 'mock-key',
+      bucket: 'trace-bucket',
+      userAgentPrefix: 'ci-trace/123',
+    })
+
+    expect(constructedOptions[2]).toMatchObject({
+      userAgent: expect.stringMatching(/^ci-trace\/123 b2-github-action\//),
+    })
   })
 
   describe('fixture-backed helpers', () => {

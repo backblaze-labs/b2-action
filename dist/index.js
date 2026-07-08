@@ -39003,9 +39003,10 @@ class SecretMaskingAccountInfo extends InMemoryAccountInfo {
  * Build an authorized B2Client.
  *
  * Steps:
- *   1. Construct the client with `userAgent: 'b2-github-action/<version>'`. The
- *      SDK preserves its own `b2-sdk-typescript/` and `@backblaze-labs/b2-sdk` tokens before
- *      ours so Backblaze server-side logs see both attribution layers.
+ *   1. Construct the client with `userAgent: 'b2-github-action/<version>'`, optionally
+ *      prefixed by a caller-provided workflow marker. The SDK preserves its own
+ *      `b2-sdk-typescript/` and `@backblaze-labs/b2-sdk` tokens before ours so
+ *      Backblaze server-side logs see both attribution layers.
  *   2. `await client.authorize()`. This is one-shot for the lifetime of the
  *      action invocation. B2 auth tokens carry a 24h TTL; typical GitHub
  *      Actions runs finish well inside that window. If a long-running job
@@ -39021,7 +39022,10 @@ class SecretMaskingAccountInfo extends InMemoryAccountInfo {
  * default FetchTransport with its built-in SSRF guard.
  */
 async function buildClient(options) {
-    const userAgent = `b2-github-action/${version_VERSION}`;
+    const actionUserAgent = `b2-github-action/${version_VERSION}`;
+    const userAgent = options.userAgentPrefix !== undefined
+        ? `${options.userAgentPrefix} ${actionUserAgent}`
+        : actionUserAgent;
     const client = new B2Client({
         applicationKeyId: options.applicationKeyId,
         applicationKey: options.applicationKey,
@@ -39244,6 +39248,7 @@ function parseInputs() {
     const presignTtlSeconds = parsePositiveInt('presign-ttl', getInput('presign-ttl') || '3600');
     const maxResults = parsePositiveInt('max-results', getInput('max-results') || '1000');
     const endpoint = optional('endpoint');
+    const userAgentPrefix = parseUserAgentPrefix(optional('user-agent-prefix'));
     const sse = optional('sse');
     const encryption = parseSse(sse);
     const contentType = optional('content-type');
@@ -39283,6 +39288,7 @@ function parseInputs() {
         allowBucketPurge,
         presignTtlSeconds,
         endpoint,
+        userAgentPrefix,
         failOnEmpty,
         sse,
         encryption,
@@ -39343,6 +39349,22 @@ function required(name) {
 function optional(name) {
     const v = getInput(name);
     return v === '' ? undefined : v;
+}
+function parseUserAgentPrefix(value) {
+    if (value === undefined)
+        return undefined;
+    if (hasHttpHeaderControlCharacter(value)) {
+        throw new Error("Invalid 'user-agent-prefix' input: must not contain control characters.");
+    }
+    return value;
+}
+function hasHttpHeaderControlCharacter(value) {
+    for (let i = 0; i < value.length; i++) {
+        const code = value.charCodeAt(i);
+        if (code < 0x20 || code === 0x7f)
+            return true;
+    }
+    return false;
 }
 function optionalSource(action, allowBucketPurge) {
     const v = getInput('source');
@@ -49538,6 +49560,7 @@ async function run() {
             applicationKey: inputs.applicationKey,
             bucket: inputs.bucket,
             ...(inputs.endpoint !== undefined ? { endpoint: inputs.endpoint } : {}),
+            ...(inputs.userAgentPrefix !== undefined ? { userAgentPrefix: inputs.userAgentPrefix } : {}),
         });
         const authToken = authorized.client.accountInfo.getAuthToken();
         if (authToken)

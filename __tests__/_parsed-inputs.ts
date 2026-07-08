@@ -29,6 +29,7 @@ export function makeParsedInputs(
     allowBucketPurge: false,
     presignTtlSeconds: 3600,
     endpoint: undefined,
+    userAgentPrefix: undefined,
     failOnEmpty: true,
     sse: undefined,
     encryption: undefined,
