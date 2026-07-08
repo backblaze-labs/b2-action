@@ -414,6 +414,9 @@ symbols: ``!#$%&'*+-.^_`|~``. Spaces, control characters, non-ASCII
 characters, surrogate characters, and other unsafe header characters are
 rejected before the SDK client is constructed.
 
+For repository/workflow traceability, use a compact product token such as
+`repository/backblaze-labs-b2-action.workflow/ci.run/123456789`.
+
 ## Outputs (full reference)
 
 | Output | When | Description |
