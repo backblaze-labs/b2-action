@@ -395,7 +395,7 @@ function optional(name: string): string | undefined {
  */
 export function parseUserAgentPrefix(value: string | undefined): string | undefined {
   if (value === undefined) return undefined
-  const byteLength = utf8Encoder.encode(value).byteLength
+  const byteLength = Buffer.byteLength(value, 'utf8')
   if (byteLength > USER_AGENT_PREFIX_MAX_BYTES) {
     throw new Error(
       `Invalid 'user-agent-prefix' input: ${byteLength} bytes exceeds ${USER_AGENT_PREFIX_MAX_BYTES}.`,

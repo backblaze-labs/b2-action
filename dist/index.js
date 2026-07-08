@@ -39360,7 +39360,7 @@ function optional(name) {
 function parseUserAgentPrefix(value) {
     if (value === undefined)
         return undefined;
-    const byteLength = inputs_utf8Encoder.encode(value).byteLength;
+    const byteLength = Buffer.byteLength(value, 'utf8');
     if (byteLength > USER_AGENT_PREFIX_MAX_BYTES) {
         throw new Error(`Invalid 'user-agent-prefix' input: ${byteLength} bytes exceeds ${USER_AGENT_PREFIX_MAX_BYTES}.`);
     }
