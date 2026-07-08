@@ -388,24 +388,28 @@ describe('copy command', () => {
         cancelLargeFile,
       },
     } as unknown as B2Client
-    const bucket = new B2Bucket(client, {
-      accountId: 'account-id',
-      bucketId: 'dest-bucket-id',
-      bucketName: 'dest-bucket',
-      bucketType: 'allPrivate',
-      bucketInfo: {},
-      corsRules: [],
-      defaultServerSideEncryption: { mode: 'none' },
-      fileLockConfiguration: { isClientAuthorizedToRead: true, value: null },
-      lifecycleRules: [],
-      options: [],
-      revision: 1,
-      defaultRetention: { mode: 'none', period: null },
-      replicationConfiguration: {
-        asReplicationSource: null,
-        asReplicationDestination: null,
-      },
-    } as unknown as ConstructorParameters<typeof B2Bucket>[1])
+    const bucket = new B2Bucket(
+      client,
+      {
+        accountId: 'account-id',
+        bucketId: 'dest-bucket-id',
+        bucketName: 'dest-bucket',
+        bucketType: 'allPrivate',
+        bucketInfo: {},
+        corsRules: [],
+        defaultServerSideEncryption: { mode: 'none' },
+        fileLockConfiguration: { isClientAuthorizedToRead: true, value: null },
+        lifecycleRules: [],
+        options: [],
+        revision: 1,
+        defaultRetention: { mode: 'none', period: null },
+        replicationConfiguration: {
+          asReplicationSource: null,
+          asReplicationDestination: null,
+        },
+      } as unknown as ConstructorParameters<typeof B2Bucket>[1],
+      { maxRetries: 0, maxRetryDelayMs: 0, initialRetryDelayMs: 0 },
+    )
     const controller = new AbortController()
 
     const out = await captureStdout(async () => {
