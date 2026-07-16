@@ -9,6 +9,7 @@ import { downloadCommand } from './commands/download.ts'
 import { headCommand } from './commands/head.ts'
 import { hideCommand } from './commands/hide.ts'
 import {
+  B2_LIST_KEYS_PAGE_SIZE_LIMIT,
   createKeyCommand,
   type DeleteKeyResult,
   deleteKeyCommand,
@@ -373,9 +374,11 @@ export async function run(): Promise<void> {
         const result = await listKeysCommand(authorized.client, inputs)
         core.setOutput('keys-listed', String(result.keys.length))
         if (result.truncated) {
-          core.warning(
-            `list-keys result truncated at max-results=${inputs.maxResults}; raise it to see more`,
-          )
+          const reason =
+            inputs.maxResults > B2_LIST_KEYS_PAGE_SIZE_LIMIT
+              ? `B2 page-size limit=${B2_LIST_KEYS_PAGE_SIZE_LIMIT}; max-results values above ${B2_LIST_KEYS_PAGE_SIZE_LIMIT} have no effect`
+              : `max-results=${inputs.maxResults}; raise it to see more`
+          core.warning(`list-keys result truncated at ${reason}`)
         }
         await writeStepSummary({
           title: `Backblaze B2: list-keys (${result.keys.length}${result.truncated ? '+' : ''})`,

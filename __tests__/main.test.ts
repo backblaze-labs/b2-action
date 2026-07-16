@@ -179,6 +179,18 @@ describe('main dispatcher', () => {
     expect(ctx.getBucket).not.toHaveBeenCalled()
   })
 
+  it('warns that list-keys truncation is capped by the B2 page-size limit', async () => {
+    const ctx = await loadMain()
+    ctx.parseInputs.mockReturnValue(inputs('list-keys', { maxResults: 2500 }))
+    ctx.commands.listKeysCommand.mockResolvedValue({ keys: [], truncated: true })
+
+    await ctx.run()
+
+    expect(ctx.core.warning).toHaveBeenCalledWith(
+      'list-keys result truncated at B2 page-size limit=1000; max-results values above 1000 have no effect',
+    )
+  })
+
   it('renders copy summaries with source and destination URLs', async () => {
     const ctx = await loadMain()
     setupSuccessfulAction(ctx, 'copy')
@@ -1319,6 +1331,7 @@ async function loadMain() {
   vi.doMock('../src/commands/head.ts', () => ({ headCommand: commands.headCommand }))
   vi.doMock('../src/commands/purge.ts', () => ({ purgeCommand: commands.purgeCommand }))
   vi.doMock('../src/commands/keys.ts', () => ({
+    B2_LIST_KEYS_PAGE_SIZE_LIMIT: 1000,
     createKeyCommand: commands.createKeyCommand,
     listKeysCommand: commands.listKeysCommand,
     deleteKeyCommand: commands.deleteKeyCommand,

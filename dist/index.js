@@ -40518,7 +40518,7 @@ async function assertNoExistingKeyWithName(client, keyName) {
 }
 async function findKeysByName(client, keyName) {
     const matches = [];
-    for await (const key of client.paginateKeys({ pageSize: 1000 })) {
+    for await (const key of client.paginateKeys({ pageSize: B2_LIST_KEYS_PAGE_SIZE_LIMIT })) {
         if (key.keyName === keyName)
             matches.push(keyMetadata(key));
     }
@@ -40526,7 +40526,7 @@ async function findKeysByName(client, keyName) {
 }
 async function findKeyById(client, targetApplicationKeyId) {
     try {
-        for await (const key of client.paginateKeys({ pageSize: 1000 })) {
+        for await (const key of client.paginateKeys({ pageSize: B2_LIST_KEYS_PAGE_SIZE_LIMIT })) {
             if (key.applicationKeyId === targetApplicationKeyId)
                 return keyMetadata(key);
         }
@@ -50208,7 +50208,10 @@ async function run() {
                 const result = await listKeysCommand(authorized.client, inputs);
                 setOutput('keys-listed', String(result.keys.length));
                 if (result.truncated) {
-                    warning(`list-keys result truncated at max-results=${inputs.maxResults}; raise it to see more`);
+                    const reason = inputs.maxResults > B2_LIST_KEYS_PAGE_SIZE_LIMIT
+                        ? `B2 page-size limit=${B2_LIST_KEYS_PAGE_SIZE_LIMIT}; max-results values above ${B2_LIST_KEYS_PAGE_SIZE_LIMIT} have no effect`
+                        : `max-results=${inputs.maxResults}; raise it to see more`;
+                    warning(`list-keys result truncated at ${reason}`);
                 }
                 await writeStepSummary({
                     title: `Backblaze B2: list-keys (${result.keys.length}${result.truncated ? '+' : ''})`,

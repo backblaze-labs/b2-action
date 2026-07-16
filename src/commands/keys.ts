@@ -19,7 +19,7 @@ const SAFE_CREATE_KEY_CAPABILITIES = new Set<Capability>([
   Capability.ReadFileRetentions,
   Capability.WriteFileRetentions,
 ])
-const B2_LIST_KEYS_PAGE_SIZE_LIMIT = 1000
+export const B2_LIST_KEYS_PAGE_SIZE_LIMIT = 1000
 
 /** Application key metadata intentionally exposed by this action. */
 export interface KeyMetadata {
@@ -239,7 +239,7 @@ async function assertNoExistingKeyWithName(client: B2Client, keyName: string): P
 
 async function findKeysByName(client: B2Client, keyName: string): Promise<KeyMetadata[]> {
   const matches: KeyMetadata[] = []
-  for await (const key of client.paginateKeys({ pageSize: 1000 })) {
+  for await (const key of client.paginateKeys({ pageSize: B2_LIST_KEYS_PAGE_SIZE_LIMIT })) {
     if (key.keyName === keyName) matches.push(keyMetadata(key))
   }
   return matches
@@ -250,7 +250,7 @@ async function findKeyById(
   targetApplicationKeyId: string,
 ): Promise<KeyMetadata | null> {
   try {
-    for await (const key of client.paginateKeys({ pageSize: 1000 })) {
+    for await (const key of client.paginateKeys({ pageSize: B2_LIST_KEYS_PAGE_SIZE_LIMIT })) {
       if (key.applicationKeyId === targetApplicationKeyId) return keyMetadata(key)
     }
     return null
