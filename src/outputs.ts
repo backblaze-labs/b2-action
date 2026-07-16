@@ -57,10 +57,10 @@ interface BoundedJsonArray {
  * The serializer also omits credential-bearing field names for every command:
  * `url`, fields ending in `url`, and fields containing `authorization`,
  * `signature`, or `token` after case/underscore/hyphen normalization. Common
- * credential field names such as `applicationKey`, `secret`, `secretKey`, and
- * `accessKey` are omitted too. Commands that need to expose similarly named
- * non-secret data should project it to an explicit safe field name before
- * calling this helper.
+ * credential field names such as `applicationKey`, `secret`,
+ * `awsSecretAccessKey`, and `serviceApplicationKey` are omitted too. Commands
+ * that need to expose similarly named non-secret data should project it to an
+ * explicit safe field name before calling this helper.
  */
 export function buildSummaryJsonPayload<T>(
   items: readonly T[],
@@ -213,12 +213,11 @@ function isSensitiveSummaryJsonField(key: string): boolean {
     normalized.includes('authorization') ||
     normalized.includes('signature') ||
     normalized.includes('token') ||
-    normalized === 'applicationkey' ||
     normalized === 'secret' ||
-    normalized === 'secretkey' ||
-    normalized === 'accesskey' ||
     normalized.endsWith('secret') ||
-    normalized.endsWith('secretkey')
+    normalized.endsWith('secretkey') ||
+    normalized.endsWith('accesskey') ||
+    normalized.endsWith('applicationkey')
   )
 }
 

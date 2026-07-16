@@ -188,10 +188,14 @@ describe('summary-json output guard', () => {
       {
         keyName: 'created-key',
         applicationKeyId: 'id-created-key',
+        accessKeyId: 'id-access-key',
         applicationKey: 'one-time-secret',
         nested: {
           secretKey: 'nested-secret',
           access_key: 'access-secret',
+          secretAccessKey: 'secret-access-key',
+          awsSecretAccessKey: 'aws-secret-access-key',
+          serviceApplicationKey: 'service-application-key',
           safe: 'kept',
         },
       },
@@ -204,10 +208,14 @@ describe('summary-json output guard', () => {
     expect(payload.json).not.toContain('one-time-secret')
     expect(payload.json).not.toContain('nested-secret')
     expect(payload.json).not.toContain('access-secret')
+    expect(payload.json).not.toContain('secret-access-key')
+    expect(payload.json).not.toContain('aws-secret-access-key')
+    expect(payload.json).not.toContain('service-application-key')
     expect(JSON.parse(payload.json)).toEqual([
       {
         keyName: 'created-key',
         applicationKeyId: 'id-created-key',
+        accessKeyId: 'id-access-key',
         nested: {
           safe: 'kept',
         },
