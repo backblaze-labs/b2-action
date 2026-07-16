@@ -50303,8 +50303,8 @@ function applicationKeySummaryItem(key) {
 }
 function applicationKeySummaryRow(key) {
     return {
-        fileName: key.keyName,
-        fileId: key.applicationKeyId,
+        fileName: `keyName=${key.keyName}`,
+        fileId: `applicationKeyId=${key.applicationKeyId}`,
         status: applicationKeyStatusLine(key),
     };
 }

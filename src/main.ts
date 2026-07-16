@@ -495,8 +495,8 @@ function applicationKeySummaryItem(key: KeyMetadata | DeleteKeyResult) {
 
 function applicationKeySummaryRow(key: KeyMetadata | DeleteKeyResult): SummaryRow {
   return {
-    fileName: key.keyName,
-    fileId: key.applicationKeyId,
+    fileName: `keyName=${key.keyName}`,
+    fileId: `applicationKeyId=${key.applicationKeyId}`,
     status: applicationKeyStatusLine(key),
   }
 }

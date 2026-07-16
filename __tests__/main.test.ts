@@ -606,6 +606,13 @@ describe('main dispatcher', () => {
     expect(out['application-key-id']).toBe(result.applicationKeyId)
     expect(out['summary-json']).not.toContain('created-secret-value')
     expect(JSON.stringify(firstSummary(ctx))).not.toContain('created-secret-value')
+    expect(firstSummary(ctx)?.rows).toEqual([
+      {
+        fileName: `keyName=${result.keyName}`,
+        fileId: `applicationKeyId=${result.applicationKeyId}`,
+        status: 'capabilities=listFiles,readFiles buckets=all expires=never',
+      },
+    ])
     expect(JSON.parse(out['summary-json'] ?? '[]')).toEqual([
       {
         keyName: result.keyName,
