@@ -63,6 +63,16 @@ describe('parseInputs', () => {
     expect(() => parseInputs()).toThrow(/Missing credential/)
   })
 
+  it('does not require bucket for application-key management actions', () => {
+    setInput('action', 'list-keys')
+    setInput('application-key-id', 'k')
+    setInput('application-key', 's')
+
+    const r = parseInputs()
+    expect(r.bucket).toBeUndefined()
+    expect(r.action).toBe('list-keys')
+  })
+
   it('parses include/exclude as csv', () => {
     setInput('action', 'upload')
     setInput('application-key-id', 'k')
@@ -223,6 +233,33 @@ describe('parseInputs', () => {
     expect(r.partSize).toBe(5_000_000)
     expect(r.resume).toBe(false)
     expect(r.dryRun).toBe(true)
+  })
+
+  it('parses application-key management inputs', () => {
+    setInput('action', 'create-key')
+    setInput('application-key-id', 'k')
+    setInput('application-key', 's')
+    setInput('key-name', 'ci-key')
+    setInput('capabilities', 'listFiles, readFiles, writeFiles')
+    setInput('scope-bucket', 'deploy-bucket')
+    setInput('name-prefix', 'releases/')
+    setInput('valid-duration', '3600')
+
+    const r = parseInputs()
+    expect(r.keyName).toBe('ci-key')
+    expect(r.capabilities).toEqual(['listFiles', 'readFiles', 'writeFiles'])
+    expect(r.scopeBucket).toBe('deploy-bucket')
+    expect(r.namePrefix).toBe('releases/')
+    expect(r.validDurationInSeconds).toBe(3600)
+  })
+
+  it('rejects unknown application-key capabilities', () => {
+    setInput('action', 'create-key')
+    setInput('application-key-id', 'k')
+    setInput('application-key', 's')
+    setInput('capabilities', 'readFiles,nope')
+
+    expect(() => parseInputs()).toThrow(/Invalid 'capabilities' input/)
   })
 
   it('keeps an empty purge source only when whole-bucket purge is confirmed', () => {

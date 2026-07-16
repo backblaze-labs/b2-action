@@ -2,10 +2,10 @@
 
 [![CI](https://github.com/backblaze-labs/b2-action/actions/workflows/ci.yml/badge.svg)](https://github.com/backblaze-labs/b2-action/actions/workflows/ci.yml) [![Release](https://github.com/backblaze-labs/b2-action/actions/workflows/release.yml/badge.svg)](https://github.com/backblaze-labs/b2-action/actions/workflows/release.yml) [![Marketplace](https://img.shields.io/github/v/release/backblaze-labs/b2-action?label=marketplace&color=red&logo=githubactions&logoColor=white)](https://github.com/marketplace/actions/backblaze-b2-cloud-storage-action) [![Latest release](https://img.shields.io/github/v/release/backblaze-labs/b2-action?display_name=tag&sort=semver&color=blue)](https://github.com/backblaze-labs/b2-action/releases/latest) [![License: MIT](https://img.shields.io/badge/license-MIT-yellow.svg)](./LICENSE) [![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen.svg)](./vitest.config.ts) [![Docs](https://img.shields.io/github/deployments/backblaze-labs/b2-action/github-pages?label=docs&logo=readthedocs&logoColor=white)](https://backblaze-labs.github.io/b2-action/)
 
-A Backblaze-maintained B2 GitHub Action. TypeScript-native, built on [@backblaze-labs/b2-sdk](https://github.com/backblaze-labs/b2-sdk-typescript). Thirteen verbs covering every B2 operation a CI workflow needs. Currently incubating in [Backblaze Labs](https://github.com/backblaze-labs).
+A Backblaze-maintained B2 GitHub Action. TypeScript-native, built on [@backblaze-labs/b2-sdk](https://github.com/backblaze-labs/b2-sdk-typescript). Sixteen verbs covering every B2 operation a CI workflow needs. Currently incubating in [Backblaze Labs](https://github.com/backblaze-labs).
 
 - **Node 24 action.** No Docker. Sub-second cold start.
-- **Thirteen verbs.** `upload`, `download`, `sync`, `copy`, `delete`, `list`, `hide`, `unhide`, `verify`, `presign`, `retention`, `head`, `purge`: pick via the `action` input.
+- **Sixteen verbs.** `upload`, `download`, `sync`, `copy`, `delete`, `list`, `hide`, `unhide`, `verify`, `presign`, `retention`, `head`, `purge`, `create-key`, `list-keys`, `delete-key`: pick via the `action` input.
 - **Resumable multipart uploads** for any file size; streaming I/O so multi-GB payloads don't buffer in RAM.
 - **Server-side everything.** `copy` (same-bucket or cross-bucket) and `delete` operations stay server-side; bytes never traverse the runner.
 - **Server-side encryption.** SSE-B2 (managed) and SSE-C (customer key, base64).
@@ -37,6 +37,7 @@ A Backblaze-maintained B2 GitHub Action. TypeScript-native, built on [@backblaze
     - [Server-side encryption](#server-side-encryption)
       - [Generating an SSE-C key](#generating-an-sse-c-key)
     - [Object Lock retention + legal hold](#object-lock-retention--legal-hold)
+    - [Application keys](#application-keys)
     - [Chain outputs](#chain-outputs)
   - [Inputs (full reference)](#inputs-full-reference)
   - [Outputs (full reference)](#outputs-full-reference)
@@ -101,6 +102,9 @@ Exact-version releases publish an attested `dist/index.js` asset for provenance 
 | `retention` | Apply Object Lock retention + legal hold to a file. | `source`, `bucket`, plus `retention-mode` and/or `legal-hold` |
 | `head` | Fetch object metadata (size, sha1, contentType, fileInfo) via HEAD. No body transfer. | `source`, `bucket` |
 | `purge` | Permanently delete every file version under a prefix, including hide markers and history. Whole-bucket purge requires `allow-bucket-purge: true`. Supports `dry-run` and `bypass-governance` for governance-retained versions. | `source` or `allow-bucket-purge`, `bucket` |
+| `create-key` | Create a B2 application key, optionally bucket/prefix scoped and time-limited. The returned secret is masked and emitted only as `application-key`. | `key-name`, `capabilities` |
+| `list-keys` | List B2 application keys without secrets. | |
+| `delete-key` | Delete a B2 application key by ID. | `target-application-key-id` |
 
 Exact-name `copy`, single-file `delete`, and `retention` operate only when the latest exact-name version is an upload. If that latest version is a hide marker, these commands do not search older upload history under the same name; they fail with the same `File not found` diagnostic used for absent names so default workflow logs do not reveal hidden-object existence. Run `unhide` first to restore the prior upload, or use `purge` when you need to remove hide markers and historical versions.
 
@@ -347,6 +351,33 @@ If you don't need customer-managed keys, **`sse: B2`** (SSE-B2, B2-managed) is t
 
 Set `bypass-governance: true` to shorten governance-mode retention or to remove governance-retained versions with `delete` or `purge`. The B2 application key must include the `bypassGovernance` capability, in addition to the delete or retention capabilities required by the selected verb.
 
+### Application keys
+
+```yaml
+- id: scoped-key
+  uses: backblaze-labs/b2-action@v1
+  with:
+    action: create-key
+    key-name: deploy-${{ github.run_id }}
+    capabilities: listFiles,readFiles,writeFiles,deleteFiles
+    scope-bucket: my-bucket
+    name-prefix: releases/${{ github.sha }}/
+    valid-duration: 3600
+
+- uses: backblaze-labs/b2-action@v1
+  with:
+    action: list-keys
+    max-results: 100
+
+- uses: backblaze-labs/b2-action@v1
+  if: always()
+  with:
+    action: delete-key
+    target-application-key-id: ${{ steps.scoped-key.outputs.application-key-id }}
+```
+
+`create-key` masks the returned secret before writing the `application-key` output. B2 returns that secret only once; downstream steps should store it in an environment variable or pass it directly to tools that need it.
+
 ### Chain outputs
 
 ```yaml
@@ -369,10 +400,10 @@ Set `bypass-governance: true` to shorten governance-mode retention or to remove 
 
 | Input | Required | Default | Description |
 | --- | --- | --- | --- |
-| `action` | yes | | One of 13: `upload`, `download`, `sync`, `copy`, `delete`, `presign`, `list`, `hide`, `unhide`, `verify`, `retention`, `head`, `purge` |
+| `action` | yes | | One of 16: `upload`, `download`, `sync`, `copy`, `delete`, `presign`, `list`, `hide`, `unhide`, `verify`, `retention`, `head`, `purge`, `create-key`, `list-keys`, `delete-key` |
 | `application-key-id` | no\* | | B2 application key ID. Falls back to `$B2_APPLICATION_KEY_ID`. |
 | `application-key` | no\* | | B2 application key. Falls back to `$B2_APPLICATION_KEY`. |
-| `bucket` | yes | | Destination bucket name. |
+| `bucket` | file actions only | | Destination bucket name. Not required for application-key management actions. |
 | `source-bucket` | copy only | `bucket` | Source bucket for cross-bucket copy. |
 | `source` | command-dependent | | Local path/glob (upload/sync up); B2 file name or prefix (everything else). Prefix downloads reject keys with empty, `.`, `..`, or control-character path segments. For whole-bucket purge, omit `source` or set `/` and set `allow-bucket-purge: true`. |
 | `destination` | command-dependent | | B2 file/prefix (upload/sync up/copy); local path (download/sync down/verify). Upload destinations are not normalized by the action; SDK/B2 key validation errors are surfaced rather than silently rewriting `/` characters. |
@@ -397,12 +428,18 @@ Set `bypass-governance: true` to shorten governance-mode retention or to remove 
 | `compare-mode` | no | `modtime` | Sync comparison: `modtime` \| `size` \| `none`. |
 | `keep-mode` | no | `no-delete` | Sync deletion of orphans: `no-delete` \| `delete` \| `keep-days`. |
 | `direction` | no | `auto` | Sync direction: `auto` \| `up` (local→B2) \| `down` (B2→local). |
-| `max-results` | no | `1000` | `list` upper bound. Must be a positive decimal integer. Truncation is reported in the step summary. |
+| `max-results` | no | `1000` | `list` / `list-keys` upper bound. Must be a positive decimal integer. Truncation is reported in the step summary. |
 | `expected-sha1` | no | | `verify` literal 40-character hexadecimal SHA-1 to compare against; malformed values fail the action before comparison. Non-comparable remote SHA-1 headers such as `none` or `unverified:<sha1>` publish `verified=false` outputs before failing the step. |
 | `retention-mode` | no | | `retention` mode: `compliance` \| `governance` \| `none`. |
 | `retention-until` | no | | `retention` ISO 8601 expiry (required when mode is compliance/governance). |
 | `legal-hold` | no | | `retention` legal-hold value: `on` \| `off`. |
 | `bypass-governance` | no | `false` | Allow governance-mode retention bypass for retention changes and `delete`/`purge` removals. Requires the B2 application key to include `bypassGovernance`. |
+| `capabilities` | create-key only | | CSV of B2 capabilities to grant, for example `listFiles,readFiles,writeFiles`. |
+| `key-name` | create-key only | | Human-readable application key name. |
+| `scope-bucket` | create-key only | | Optional bucket name to scope the new key to. Omit for account-level scope. |
+| `name-prefix` | create-key only | | Optional file-name prefix restriction. Requires `scope-bucket`. |
+| `valid-duration` | create-key only | | Optional key lifetime in seconds. Must be a positive decimal integer. Omit for a non-expiring key. |
+| `target-application-key-id` | delete-key only | | Application key ID to delete. |
 
 \* Either set the input or one of the env-var fallbacks.
 
@@ -410,6 +447,10 @@ Set `bypass-governance: true` to shorten governance-mode retention or to remove 
 
 | Output | When | Description |
 | --- | --- | --- |
+| `application-key-id` | create-key / delete-key | Application key ID. |
+| `application-key` | create-key | Application key secret returned once by B2. Masked before the output is written. |
+| `key-name` | create-key / delete-key | Application key name. |
+| `keys-listed` | list-keys | Count returned (capped by `max-results`). |
 | `file-id` | upload / copy / hide / retention / head; unhide if a hide marker was removed | B2 file ID. For `unhide`, this identifies the removed hide marker, not the target object. |
 | `file-name` | single-file ops | B2 file name (path). |
 | `content-sha1` | upload / download / head when available | SHA-1 hex. Omitted when B2 does not expose a whole-file SHA-1, including multipart objects. |
@@ -423,7 +464,7 @@ Set `bypass-governance: true` to shorten governance-mode retention or to remove 
 | `verified` | verify | `true` / `false`. |
 | `remote-sha1` | verify | Normalized comparable remote SHA-1, raw non-comparable B2 value such as `none` or `unverified:<sha1>`, or empty when B2 does not expose one. |
 | `local-sha1` | verify | Local file SHA-1 (when computed from `destination`). |
-| `summary-json` | every command | Complete JSON array with per-file details when the result fits within 256 KiB of UTF-8 JSON text. When the result exceeds the cap, this output is `[]` instead of changing shape or emitting a partial array. Credential-like fields are omitted by name for every command. For `presign`, entries omit live presigned URLs. |
+| `summary-json` | every command | Complete JSON array with per-file or per-key details when the result fits within 256 KiB of UTF-8 JSON text. When the result exceeds the cap, this output is `[]` instead of changing shape or emitting a partial array. Credential-like fields are omitted by name for every command. For `presign`, entries omit live presigned URLs; for `create-key`, entries omit the one-time key secret. |
 | `summary-json-truncated` | every command | `true` / `false`. Always emitted. `true` means the full manifest exceeded the supported `summary-json` size cap. |
 | `summary-json-notice` | every command when truncated | Small JSON object describing why `summary-json` was truncated and where to find the bounded preview. |
 | `summary-json-preview` | every command when truncated | Bounded partial JSON array with the first 100 entries that fit the cap. Do not treat it as a complete manifest. Credential-like fields are omitted by name for every command. For `presign`, entries omit live presigned URLs. |

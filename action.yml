@@ -7,7 +7,7 @@ branding:
 
 inputs:
   action:
-    description: 'One of: upload | download | sync | copy | delete | presign | list | hide | unhide | verify | retention | head | purge'
+    description: 'One of: upload | download | sync | copy | delete | presign | list | hide | unhide | verify | retention | head | purge | create-key | list-keys | delete-key'
     required: true
   application-key-id:
     description: 'B2 application key ID. If unset, falls back to the $B2_APPLICATION_KEY_ID env var.'
@@ -16,8 +16,8 @@ inputs:
     description: 'B2 application key. If unset, falls back to the $B2_APPLICATION_KEY env var.'
     required: false
   bucket:
-    description: 'Target bucket name (the destination bucket for copy).'
-    required: true
+    description: 'Target bucket name (the destination bucket for copy). Required for bucket-scoped file operations; not required for application-key management actions.'
+    required: false
   source-bucket:
     description: 'Source bucket for cross-bucket copy. Defaults to `bucket`.'
     required: false
@@ -121,8 +121,34 @@ inputs:
     description: 'Allow governance-mode retention bypass for retention changes and delete/purge operations (requires bypassGovernance capability).'
     required: false
     default: 'false'
+  capabilities:
+    description: 'Comma-separated B2 capabilities to grant for `create-key`, for example `listFiles,readFiles,writeFiles`.'
+    required: false
+  key-name:
+    description: 'Human-readable application key name for `create-key`.'
+    required: false
+  scope-bucket:
+    description: 'Optional bucket name to scope a `create-key` application key to. Omit for an account-level key.'
+    required: false
+  name-prefix:
+    description: 'Optional file-name prefix restriction for `create-key`. Requires `scope-bucket`.'
+    required: false
+  valid-duration:
+    description: 'Optional validity duration in seconds for `create-key`. Omit for a key that does not expire.'
+    required: false
+  target-application-key-id:
+    description: 'Application key ID to delete for `delete-key`.'
+    required: false
 
 outputs:
+  application-key-id:
+    description: 'Application key ID returned by `create-key` or `delete-key`.'
+  application-key:
+    description: 'Application key secret returned once by `create-key`. The action masks this value before writing the output.'
+  key-name:
+    description: 'Application key name returned by `create-key` or `delete-key`.'
+  keys-listed:
+    description: 'Number of application keys returned by `list-keys`.'
   file-id:
     description: 'B2 file ID of a single-file op (upload, copy, hide, retention, head). For `unhide`, set only when a hide marker is removed and identifies that removed marker.'
   file-name:

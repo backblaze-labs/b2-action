@@ -82,6 +82,9 @@ describe('main dispatcher', () => {
     'retention',
     'head',
     'purge',
+    'create-key',
+    'list-keys',
+    'delete-key',
   ] satisfies ActionName[])('dispatches %s and emits its outputs', async (action) => {
     const ctx = await loadMain()
     const expectedOutputs = setupSuccessfulAction(ctx, action)
@@ -154,6 +157,26 @@ describe('main dispatcher', () => {
       bucket: DISPATCH_BUCKET,
       endpoint: TEST_ENDPOINT,
     })
+  })
+
+  it('does not resolve a bucket for application-key management actions', async () => {
+    const ctx = await loadMain()
+    ctx.parseInputs.mockReturnValue(
+      inputs('list-keys', {
+        bucket: undefined,
+      }),
+    )
+    ctx.commands.listKeysCommand.mockResolvedValue({ keys: [], truncated: false })
+
+    await ctx.run()
+
+    expect(ctx.core.setFailed).not.toHaveBeenCalled()
+    expect(ctx.buildClient).toHaveBeenCalledWith({
+      applicationKeyId: TEST_APPLICATION_KEY_ID,
+      applicationKey: TEST_APPLICATION_KEY,
+      bucket: undefined,
+    })
+    expect(ctx.getBucket).not.toHaveBeenCalled()
   })
 
   it('renders copy summaries with source and destination URLs', async () => {
@@ -566,6 +589,34 @@ describe('main dispatcher', () => {
     expect(out['summary-json']).not.toContain('Authorization')
     expect(JSON.parse(out['summary-json'] ?? '[]')).toEqual([
       { fileName: 'signed.txt', expiresAt: 1_900_000_000 },
+    ])
+  })
+
+  it('masks the one-time key secret and omits it from summary-json', async () => {
+    const ctx = await loadMain()
+    const result = keyResult('create-key', { applicationKey: 'created-secret-value' })
+    ctx.parseInputs.mockReturnValue(inputs('create-key'))
+    ctx.commands.createKeyCommand.mockResolvedValue(result)
+
+    await ctx.run()
+
+    const out = outputs(ctx)
+    expect(ctx.core.setSecret).toHaveBeenCalledWith('created-secret-value')
+    expect(out['application-key']).toBe('created-secret-value')
+    expect(out['application-key-id']).toBe(result.applicationKeyId)
+    expect(out['summary-json']).not.toContain('created-secret-value')
+    expect(JSON.parse(out['summary-json'] ?? '[]')).toEqual([
+      {
+        keyName: result.keyName,
+        applicationKeyId: result.applicationKeyId,
+        capabilities: result.capabilities,
+        accountId: result.accountId,
+        expirationTimestamp: result.expirationTimestamp,
+        bucketIds: result.bucketIds,
+        bucketId: result.bucketId,
+        namePrefix: result.namePrefix,
+        options: result.options,
+      },
     ])
   })
 
@@ -1228,6 +1279,9 @@ async function loadMain() {
     retentionCommand: vi.fn(),
     headCommand: vi.fn(),
     purgeCommand: vi.fn(),
+    createKeyCommand: vi.fn(),
+    listKeysCommand: vi.fn(),
+    deleteKeyCommand: vi.fn(),
   }
 
   vi.doMock('@actions/core', () => core)
@@ -1258,6 +1312,11 @@ async function loadMain() {
   }))
   vi.doMock('../src/commands/head.ts', () => ({ headCommand: commands.headCommand }))
   vi.doMock('../src/commands/purge.ts', () => ({ purgeCommand: commands.purgeCommand }))
+  vi.doMock('../src/commands/keys.ts', () => ({
+    createKeyCommand: commands.createKeyCommand,
+    listKeysCommand: commands.listKeysCommand,
+    deleteKeyCommand: commands.deleteKeyCommand,
+  }))
 
   const main = await importMainForTest()
   return {
@@ -1493,6 +1552,34 @@ function setupSuccessfulAction(ctx: LoadedMain, action: ActionName): Record<stri
         'summary-json': JSON.stringify(files),
       })
     }
+    case 'create-key': {
+      const applicationKey = 'created-secret'
+      const result = keyResult('created-key', { applicationKey })
+      ctx.commands.createKeyCommand.mockResolvedValue(result)
+      return completeSummaryOutput({
+        'application-key-id': result.applicationKeyId,
+        'application-key': applicationKey,
+        'key-name': result.keyName,
+        'summary-json': JSON.stringify([keySummary(result)]),
+      })
+    }
+    case 'list-keys': {
+      const result = keyResult('listed-key')
+      ctx.commands.listKeysCommand.mockResolvedValue({ keys: [result], truncated: false })
+      return completeSummaryOutput({
+        'keys-listed': '1',
+        'summary-json': JSON.stringify([keySummary(result)]),
+      })
+    }
+    case 'delete-key': {
+      const result = keyResult('deleted-key')
+      ctx.commands.deleteKeyCommand.mockResolvedValue(result)
+      return completeSummaryOutput({
+        'application-key-id': result.applicationKeyId,
+        'key-name': result.keyName,
+        'summary-json': JSON.stringify([keySummary(result)]),
+      })
+    }
   }
   const exhaustive: never = action
   throw new Error(`unhandled action: ${exhaustive}`)
@@ -1558,5 +1645,34 @@ function listedFile(override: {
     uploadTimestamp: FIXTURE_UPLOAD_TS,
     contentType: override.contentType ?? 'application/octet-stream',
     fileInfo: {},
+  }
+}
+
+function keyResult(keyName: string, override: { applicationKey?: string } = {}) {
+  return {
+    keyName,
+    applicationKeyId: `id-${keyName}`,
+    capabilities: ['listFiles', 'readFiles'],
+    accountId: 'account-id',
+    expirationTimestamp: null,
+    bucketIds: null,
+    bucketId: null,
+    namePrefix: null,
+    options: [],
+    ...override,
+  }
+}
+
+function keySummary(key: ReturnType<typeof keyResult>) {
+  return {
+    keyName: key.keyName,
+    applicationKeyId: key.applicationKeyId,
+    capabilities: key.capabilities,
+    accountId: key.accountId,
+    expirationTimestamp: key.expirationTimestamp,
+    bucketIds: key.bucketIds,
+    bucketId: key.bucketId,
+    namePrefix: key.namePrefix,
+    options: key.options,
   }
 }

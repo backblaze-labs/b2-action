@@ -1,5 +1,9 @@
 import * as core from '@actions/core'
-import type { EncryptionSetting } from '@backblaze-labs/b2-sdk'
+import {
+  Capability,
+  type EncryptionSetting,
+  type Capability as KeyCapability,
+} from '@backblaze-labs/b2-sdk'
 import { parseSse } from './sse.ts'
 
 /**
@@ -23,6 +27,9 @@ export type ActionName =
   | 'retention'
   | 'head'
   | 'purge'
+  | 'create-key'
+  | 'list-keys'
+  | 'delete-key'
 
 const VALID_ACTIONS: readonly ActionName[] = [
   'upload',
@@ -38,6 +45,9 @@ const VALID_ACTIONS: readonly ActionName[] = [
   'retention',
   'head',
   'purge',
+  'create-key',
+  'list-keys',
+  'delete-key',
 ]
 
 type ActionEffect = {
@@ -64,6 +74,9 @@ export const ACTION_EFFECTS = {
   retention: { kind: 'write', honorsDryRun: false },
   head: { kind: 'read', honorsDryRun: false },
   purge: { kind: 'write', honorsDryRun: true },
+  'create-key': { kind: 'write', honorsDryRun: false },
+  'list-keys': { kind: 'read', honorsDryRun: false },
+  'delete-key': { kind: 'write', honorsDryRun: false },
 } as const satisfies Record<ActionName, ActionEffect>
 
 /** How `sync` decides whether two files match. Drives the SDK's `synchronize()`. */
@@ -82,6 +95,7 @@ const VALID_KEEP: readonly KeepMode[] = ['no-delete', 'delete', 'keep-days']
 const VALID_DIRECTION: readonly SyncDirection[] = ['auto', 'up', 'down']
 const VALID_RETENTION_MODE: readonly RetentionMode[] = ['compliance', 'governance', 'none']
 const VALID_LEGAL_HOLD: readonly LegalHold[] = ['on', 'off']
+const VALID_CAPABILITIES = Object.values(Capability) as readonly KeyCapability[]
 const APPLICATION_KEY_ID_ENV = 'B2_APPLICATION_KEY_ID'
 const APPLICATION_KEY_ENV = 'B2_APPLICATION_KEY'
 const FILE_INFO_KEY_PATTERN = /^[a-zA-Z0-9_.`~!#$%^&*'|+-]+$/
@@ -113,8 +127,8 @@ export interface ParsedInputs {
   applicationKeyId: string
   /** B2 application key (the secret). Masked at parse time via `core.setSecret`. */
   applicationKey: string
-  /** Destination bucket name for the action. */
-  bucket: string
+  /** Destination bucket name for bucket-scoped actions. Key-management actions do not require it. */
+  bucket: string | undefined
   /** Cross-bucket `copy` source bucket. Undefined means same-bucket copy. */
   sourceBucket: string | undefined
   /**
@@ -176,6 +190,18 @@ export interface ParsedInputs {
   legalHold: LegalHold | undefined
   /** Allow shortening a governance-mode retention (requires key capability). */
   bypassGovernance: boolean
+  /** Capabilities granted to a key created by `create-key`. */
+  capabilities: KeyCapability[]
+  /** Human-readable B2 application key name for `create-key`. */
+  keyName: string | undefined
+  /** Optional bucket name used to scope a newly-created application key. */
+  scopeBucket: string | undefined
+  /** Optional file-name prefix restriction for a newly-created application key. */
+  namePrefix: string | undefined
+  /** Optional application-key lifetime in seconds for `create-key`. */
+  validDurationInSeconds: number | undefined
+  /** Application key ID operated on by `delete-key`. */
+  targetApplicationKeyId: string | undefined
 }
 
 /**
@@ -217,7 +243,7 @@ export function parseInputs(): ParsedInputs {
   core.setSecret(applicationKeyId)
   core.setSecret(applicationKey)
 
-  const bucket = required('bucket')
+  const bucket = actionRequiresBucket(action) ? required('bucket') : optional('bucket')
   const sourceBucket = optional('source-bucket')
   const allowBucketPurge = parseBool(
     'allow-bucket-purge',
@@ -261,6 +287,16 @@ export function parseInputs(): ParsedInputs {
   }
   const expectedSha1 = optional('expected-sha1')
   const retentionUntil = optional('retention-until')
+  const keyName = optional('key-name')
+  const capabilities = parseCapabilities(optional('capabilities'))
+  const scopeBucket = optional('scope-bucket')
+  const namePrefix = optional('name-prefix')
+  const validDurationInput = optional('valid-duration')
+  const validDurationInSeconds =
+    validDurationInput !== undefined
+      ? parsePositiveInt('valid-duration', validDurationInput)
+      : undefined
+  const targetApplicationKeyId = optional('target-application-key-id')
 
   const compareMode = parseEnum(
     'compare-mode',
@@ -320,6 +356,12 @@ export function parseInputs(): ParsedInputs {
     retentionUntil,
     legalHold,
     bypassGovernance,
+    capabilities,
+    keyName,
+    scopeBucket,
+    namePrefix,
+    validDurationInSeconds,
+    targetApplicationKeyId,
   }
 }
 
@@ -388,6 +430,10 @@ function optionalSource(action: ActionName, allowBucketPurge: boolean): string |
   return action === 'purge' && allowBucketPurge ? '' : undefined
 }
 
+function actionRequiresBucket(action: ActionName): boolean {
+  return action !== 'create-key' && action !== 'list-keys' && action !== 'delete-key'
+}
+
 function addSecretValue(secretValues: Set<string>, value: string | undefined): void {
   if (value === undefined || value === '') return
   const trimmed = value.trim()
@@ -430,6 +476,10 @@ export function splitCsv(value: string | undefined): string[] {
     .split(',')
     .map((s) => s.trim())
     .filter((s) => s.length > 0)
+}
+
+function parseCapabilities(value: string | undefined): KeyCapability[] {
+  return splitCsv(value).map((raw) => parseEnum('capabilities', raw, VALID_CAPABILITIES))
 }
 
 /**

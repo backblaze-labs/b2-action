@@ -39042,6 +39042,9 @@ async function buildClient(options) {
  * `undefined` return so the workflow log surfaces the misconfiguration.
  */
 async function getBucket(authorized) {
+    if (authorized.bucketName === undefined || authorized.bucketName === '') {
+        throw new Error("'bucket' input is required for this action");
+    }
     const bucket = await authorized.client.getBucket(authorized.bucketName);
     if (!bucket) {
         throw new Error(`Bucket "${authorized.bucketName}" not found, or the application key lacks listBuckets capability for it.`);
@@ -39078,6 +39081,85 @@ async function findFileByName(bucket, fileName, bucketDisplayName) {
     throw new Error(`File not found in bucket "${display}": ${fileName}`);
 }
 
+;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.2.0/node_modules/@backblaze-labs/b2-sdk/dist/types/auth.js
+//#region src/types/auth.ts
+/**
+* Named constants for the B2 API capabilities that can be granted to an
+* application key. Each capability controls access to a specific set of
+* API operations.
+*
+* Use these when constructing the `capabilities` array for an application
+* key request, or when checking required capabilities via
+* `B2Client.hasCapabilities`.
+*
+* @example
+* ```ts
+* const check = client.hasCapabilities([Capability.WriteFiles, Capability.ReadFiles])
+* if (!check.ok) throw new Error(`missing: ${check.missing.join(', ')}`)
+* ```
+*/
+var Capability = {
+	/** List application keys. */
+	ListKeys: "listKeys",
+	/** Create new application keys. */
+	WriteKeys: "writeKeys",
+	/** Delete application keys. */
+	DeleteKeys: "deleteKeys",
+	/** List buckets (subject to key restrictions). */
+	ListBuckets: "listBuckets",
+	/** List bucket names without other metadata. */
+	ListAllBucketNames: "listAllBucketNames",
+	/** Read bucket settings. */
+	ReadBuckets: "readBuckets",
+	/** Create and update buckets. */
+	WriteBuckets: "writeBuckets",
+	/** Remove existing buckets from the account. */
+	DeleteBuckets: "deleteBuckets",
+	/** Read bucket-level Object Lock retention settings. */
+	ReadBucketRetentions: "readBucketRetentions",
+	/** Modify bucket-level Object Lock retention settings. */
+	WriteBucketRetentions: "writeBucketRetentions",
+	/** Read default bucket encryption settings. */
+	ReadBucketEncryption: "readBucketEncryption",
+	/** Modify default bucket encryption settings. */
+	WriteBucketEncryption: "writeBucketEncryption",
+	/** Read bucket replication configuration. */
+	ReadBucketReplications: "readBucketReplications",
+	/** Modify bucket replication configuration. */
+	WriteBucketReplications: "writeBucketReplications",
+	/** Read bucket event-notification rules. */
+	ReadBucketNotifications: "readBucketNotifications",
+	/** Modify bucket event-notification rules. */
+	WriteBucketNotifications: "writeBucketNotifications",
+	/** Read bucket logging settings. */
+	ReadBucketLogging: "readBucketLogging",
+	/** Modify bucket logging settings. */
+	WriteBucketLogging: "writeBucketLogging",
+	/** List file names and versions. */
+	ListFiles: "listFiles",
+	/** Download files. */
+	ReadFiles: "readFiles",
+	/** Mint download authorisation tokens. */
+	ShareFiles: "shareFiles",
+	/** Upload files. */
+	WriteFiles: "writeFiles",
+	/** Delete file versions. */
+	DeleteFiles: "deleteFiles",
+	/** Read per-file legal hold flags. */
+	ReadFileLegalHolds: "readFileLegalHolds",
+	/** Modify per-file legal hold flags. */
+	WriteFileLegalHolds: "writeFileLegalHolds",
+	/** Read per-file Object Lock retention settings. */
+	ReadFileRetentions: "readFileRetentions",
+	/** Modify per-file Object Lock retention settings. */
+	WriteFileRetentions: "writeFileRetentions",
+	/** Shorten governance-mode retention. */
+	BypassGovernance: "bypassGovernance"
+};
+//#endregion
+
+
+//# sourceMappingURL=auth.js.map
 // EXTERNAL MODULE: external "node:buffer"
 var external_node_buffer_ = __nccwpck_require__(4573);
 // EXTERNAL MODULE: external "node:crypto"
@@ -39137,6 +39219,7 @@ function parseSse(raw) {
 ;// CONCATENATED MODULE: ./src/inputs.ts
 
 
+
 const VALID_ACTIONS = [
     'upload',
     'download',
@@ -39151,6 +39234,9 @@ const VALID_ACTIONS = [
     'retention',
     'head',
     'purge',
+    'create-key',
+    'list-keys',
+    'delete-key',
 ];
 /**
  * Runtime side-effect policy for each action verb.
@@ -39171,12 +39257,16 @@ const ACTION_EFFECTS = {
     retention: { kind: 'write', honorsDryRun: false },
     head: { kind: 'read', honorsDryRun: false },
     purge: { kind: 'write', honorsDryRun: true },
+    'create-key': { kind: 'write', honorsDryRun: false },
+    'list-keys': { kind: 'read', honorsDryRun: false },
+    'delete-key': { kind: 'write', honorsDryRun: false },
 };
 const VALID_COMPARE = ['modtime', 'size', 'none'];
 const VALID_KEEP = ['no-delete', 'delete', 'keep-days'];
 const VALID_DIRECTION = ['auto', 'up', 'down'];
 const VALID_RETENTION_MODE = ['compliance', 'governance', 'none'];
 const VALID_LEGAL_HOLD = ['on', 'off'];
+const VALID_CAPABILITIES = Object.values(Capability);
 const APPLICATION_KEY_ID_ENV = 'B2_APPLICATION_KEY_ID';
 const APPLICATION_KEY_ENV = 'B2_APPLICATION_KEY';
 const FILE_INFO_KEY_PATTERN = /^[a-zA-Z0-9_.`~!#$%^&*'|+-]+$/;
@@ -39227,7 +39317,7 @@ function parseInputs() {
     // already knows which key they passed.
     core_setSecret(applicationKeyId);
     core_setSecret(applicationKey);
-    const bucket = required('bucket');
+    const bucket = actionRequiresBucket(action) ? required('bucket') : optional('bucket');
     const sourceBucket = optional('source-bucket');
     const allowBucketPurge = parseBool('allow-bucket-purge', getInput('allow-bucket-purge') || 'false');
     const source = optionalSource(action, allowBucketPurge);
@@ -39258,6 +39348,15 @@ function parseInputs() {
     }
     const expectedSha1 = optional('expected-sha1');
     const retentionUntil = optional('retention-until');
+    const keyName = optional('key-name');
+    const capabilities = parseCapabilities(optional('capabilities'));
+    const scopeBucket = optional('scope-bucket');
+    const namePrefix = optional('name-prefix');
+    const validDurationInput = optional('valid-duration');
+    const validDurationInSeconds = validDurationInput !== undefined
+        ? parsePositiveInt('valid-duration', validDurationInput)
+        : undefined;
+    const targetApplicationKeyId = optional('target-application-key-id');
     const compareMode = parseEnum('compare-mode', (getInput('compare-mode') || 'modtime').toLowerCase(), VALID_COMPARE);
     const keepMode = parseEnum('keep-mode', (getInput('keep-mode') || 'no-delete').toLowerCase(), VALID_KEEP);
     const syncDirection = parseEnum('direction', (getInput('direction') || 'auto').toLowerCase(), VALID_DIRECTION);
@@ -39295,6 +39394,12 @@ function parseInputs() {
         retentionUntil,
         legalHold,
         bypassGovernance,
+        capabilities,
+        keyName,
+        scopeBucket,
+        namePrefix,
+        validDurationInSeconds,
+        targetApplicationKeyId,
     };
 }
 /**
@@ -39350,6 +39455,9 @@ function optionalSource(action, allowBucketPurge) {
         return v;
     return action === 'purge' && allowBucketPurge ? '' : undefined;
 }
+function actionRequiresBucket(action) {
+    return action !== 'create-key' && action !== 'list-keys' && action !== 'delete-key';
+}
 function addSecretValue(secretValues, value) {
     if (value === undefined || value === '')
         return;
@@ -39393,6 +39501,9 @@ function splitCsv(value) {
         .split(',')
         .map((s) => s.trim())
         .filter((s) => s.length > 0);
+}
+function parseCapabilities(value) {
+    return splitCsv(value).map((raw) => parseEnum('capabilities', raw, VALID_CAPABILITIES));
 }
 /**
  * Parse upload fileInfo metadata from newline-delimited or simple
@@ -40221,6 +40332,86 @@ async function hideCommand(bucket, inputs) {
         const result = await bucket.hideFile(source);
         info(`  hidden: ${result.fileName} (marker fileId=${result.fileId})`);
         return { fileName: result.fileName, fileId: result.fileId };
+    }
+    finally {
+        endGroup();
+    }
+}
+
+;// CONCATENATED MODULE: ./src/commands/keys.ts
+
+
+/**
+ * Create a scoped B2 application key.
+ *
+ * `scope-bucket` is a bucket name because that is the workflow-friendly
+ * identifier. The SDK/API require bucket IDs, so resolve the bucket first
+ * and then pass the ID into `createKey`.
+ */
+async function createKeyCommand(client, inputs) {
+    if (inputs.keyName === undefined || inputs.keyName === '') {
+        throw new Error("'key-name' input is required for 'create-key' action");
+    }
+    if (inputs.capabilities.length === 0) {
+        throw new Error("'capabilities' input is required for 'create-key' action");
+    }
+    if (inputs.namePrefix !== undefined && inputs.scopeBucket === undefined) {
+        throw new Error("'name-prefix' requires 'scope-bucket' for 'create-key' action");
+    }
+    startGroup(`create application key ${inputs.keyName}`);
+    try {
+        const scopedBucket = inputs.scopeBucket !== undefined ? await client.getBucket(inputs.scopeBucket) : null;
+        if (inputs.scopeBucket !== undefined && scopedBucket === null) {
+            throw new Error(`Bucket "${inputs.scopeBucket}" not found for 'scope-bucket'`);
+        }
+        const options = {
+            capabilities: inputs.capabilities,
+            keyName: inputs.keyName,
+            ...(scopedBucket !== null ? { bucketIds: [scopedBucket.id] } : {}),
+            ...(inputs.namePrefix !== undefined ? { namePrefix: inputs.namePrefix } : {}),
+            ...(inputs.validDurationInSeconds !== undefined
+                ? { validDurationInSeconds: inputs.validDurationInSeconds }
+                : {}),
+        };
+        const result = await client.createKey(options);
+        info(`  created ${result.applicationKeyId}`);
+        return result;
+    }
+    finally {
+        endGroup();
+    }
+}
+/**
+ * List application keys, capped by `max-results`.
+ *
+ * The SDK exposes one page at a time and reports a continuation key. Fetching
+ * only the requested page mirrors the existing `list` verb's bounded behavior.
+ */
+async function listKeysCommand(client, inputs) {
+    startGroup(`list application keys (max ${inputs.maxResults})`);
+    try {
+        const page = await client.listKeys({ pageSize: inputs.maxResults });
+        info(`  ${page.keys.length} key(s) listed`);
+        return {
+            keys: [...page.keys],
+            truncated: page.nextApplicationKeyId !== null,
+        };
+    }
+    finally {
+        endGroup();
+    }
+}
+/** Delete an application key by ID. */
+async function deleteKeyCommand(client, inputs) {
+    if (inputs.targetApplicationKeyId === undefined || inputs.targetApplicationKeyId === '') {
+        throw new Error("'target-application-key-id' input is required for 'delete-key' action");
+    }
+    const targetApplicationKeyId = inputs.targetApplicationKeyId;
+    startGroup(`delete application key ${targetApplicationKeyId}`);
+    try {
+        const result = await client.deleteKey(applicationKeyId(targetApplicationKeyId));
+        info(`  deleted ${result.applicationKeyId}`);
+        return result;
     }
     finally {
         endGroup();
@@ -49494,6 +49685,7 @@ function escapeHtml(value) {
 
 
 
+
 /**
  * Action entrypoint. Parses inputs, builds an authorized B2Client, dispatches
  * to the requested subcommand, and writes structured outputs back via
@@ -49542,9 +49734,14 @@ async function run() {
         const authToken = authorized.client.accountInfo.getAuthToken();
         if (authToken)
             registerSecretValue(secretValues, authToken);
-        const bucket = await getBucket(authorized);
+        let resolvedBucket;
+        const getActionBucket = async () => {
+            resolvedBucket ??= await getBucket(authorized);
+            return resolvedBucket;
+        };
         switch (inputs.action) {
             case 'upload': {
+                const bucket = await getActionBucket();
                 const result = await uploadCommand(bucket, inputs, signal);
                 const first = result.files[0];
                 if (first !== undefined) {
@@ -49572,6 +49769,7 @@ async function run() {
                 return;
             }
             case 'download': {
+                const bucket = await getActionBucket();
                 const result = await downloadCommand(bucket, inputs, signal);
                 const first = result.files[0];
                 if (first !== undefined) {
@@ -49597,6 +49795,7 @@ async function run() {
                 return;
             }
             case 'sync': {
+                const bucket = await getActionBucket();
                 const result = await syncCommand(bucket, inputs, signal);
                 setOutput('files-uploaded', String(result.uploaded));
                 setOutput('files-downloaded', String(result.downloaded));
@@ -49635,6 +49834,7 @@ async function run() {
                 return;
             }
             case 'copy': {
+                const bucket = await getActionBucket();
                 const result = await copyCommand(authorized.client, bucket, inputs, signal);
                 setOutput('file-id', result.fileId);
                 setOutput('file-name', result.destinationFileName);
@@ -49655,11 +49855,13 @@ async function run() {
                 return;
             }
             case 'delete': {
+                const bucket = await getActionBucket();
                 const result = await deleteCommand(bucket, inputs, signal);
                 await emitDeletionSummary('delete', result, inputs);
                 return;
             }
             case 'presign': {
+                const bucket = await getActionBucket();
                 const result = await presignCommand(authorized.client, bucket, inputs);
                 const first = result.files[0];
                 if (first !== undefined) {
@@ -49679,6 +49881,7 @@ async function run() {
                 return;
             }
             case 'list': {
+                const bucket = await getActionBucket();
                 const result = await listCommand(bucket, inputs);
                 setOutput('files-listed', String(result.files.length));
                 setFileCountOutput(result.files.length);
@@ -49703,6 +49906,7 @@ async function run() {
                 return;
             }
             case 'hide': {
+                const bucket = await getActionBucket();
                 const result = await hideCommand(bucket, inputs);
                 setOutput('file-id', result.fileId);
                 setOutput('file-name', result.fileName);
@@ -49715,6 +49919,7 @@ async function run() {
                 return;
             }
             case 'unhide': {
+                const bucket = await getActionBucket();
                 const result = await unhideCommand(bucket, inputs);
                 setOutput('file-name', result.fileName);
                 if (result.removedMarkerFileId !== null) {
@@ -49735,6 +49940,7 @@ async function run() {
                 return;
             }
             case 'verify': {
+                const bucket = await getActionBucket();
                 const result = await verifyCommand(bucket, inputs);
                 setOutput('verified', String(result.verified));
                 setOutput('file-name', result.fileName);
@@ -49761,6 +49967,7 @@ async function run() {
                 return;
             }
             case 'retention': {
+                const bucket = await getActionBucket();
                 const result = await retentionCommand(bucket, inputs);
                 setOutput('file-id', result.fileId);
                 setOutput('file-name', result.fileName);
@@ -49779,6 +49986,7 @@ async function run() {
                 return;
             }
             case 'head': {
+                const bucket = await getActionBucket();
                 const result = await headCommand(bucket, inputs);
                 setOutput('file-id', result.fileId);
                 setOutput('file-name', result.fileName);
@@ -49802,8 +50010,46 @@ async function run() {
                 return;
             }
             case 'purge': {
+                const bucket = await getActionBucket();
                 const result = await purgeCommand(bucket, inputs, signal);
                 await emitDeletionSummary('purge', result, inputs);
+                return;
+            }
+            case 'create-key': {
+                const result = await createKeyCommand(authorized.client, inputs);
+                registerSecretValue(secretValues, result.applicationKey);
+                setOutput('application-key-id', result.applicationKeyId);
+                setOutput('application-key', result.applicationKey);
+                setOutput('key-name', result.keyName);
+                await writeStepSummary({
+                    title: 'Backblaze B2: create-key',
+                    rows: [applicationKeySummaryRow(result)],
+                });
+                setSummaryJsonOutput([result], { item: applicationKeySummaryItem });
+                return;
+            }
+            case 'list-keys': {
+                const result = await listKeysCommand(authorized.client, inputs);
+                setOutput('keys-listed', String(result.keys.length));
+                if (result.truncated) {
+                    warning(`list-keys result truncated at max-results=${inputs.maxResults}; raise it to see more`);
+                }
+                await writeStepSummary({
+                    title: `Backblaze B2: list-keys (${result.keys.length}${result.truncated ? '+' : ''})`,
+                    ...stepSummaryRows(result.keys, applicationKeySummaryRow),
+                });
+                setSummaryJsonOutput(result.keys, { item: applicationKeySummaryItem });
+                return;
+            }
+            case 'delete-key': {
+                const result = await deleteKeyCommand(authorized.client, inputs);
+                setOutput('application-key-id', result.applicationKeyId);
+                setOutput('key-name', result.keyName);
+                await writeStepSummary({
+                    title: 'Backblaze B2: delete-key',
+                    rows: [applicationKeySummaryRow(result)],
+                });
+                setSummaryJsonOutput([result], { item: applicationKeySummaryItem });
                 return;
             }
         }
@@ -49880,6 +50126,36 @@ function stepSummaryRows(items, row) {
 }
 function presignSummaryItem(file) {
     return { fileName: file.fileName, expiresAt: file.expiresAt };
+}
+function applicationKeySummaryItem(key) {
+    return {
+        keyName: key.keyName,
+        applicationKeyId: key.applicationKeyId,
+        capabilities: key.capabilities,
+        accountId: key.accountId,
+        expirationTimestamp: key.expirationTimestamp,
+        bucketIds: key.bucketIds,
+        bucketId: key.bucketId,
+        namePrefix: key.namePrefix,
+        options: key.options,
+    };
+}
+function applicationKeySummaryRow(key) {
+    return {
+        fileName: key.keyName,
+        fileId: key.applicationKeyId,
+        status: applicationKeyStatusLine(key),
+    };
+}
+function applicationKeyStatusLine(key) {
+    const parts = [
+        `capabilities=${key.capabilities.join(',') || '-'}`,
+        `buckets=${key.bucketIds === null ? 'all' : key.bucketIds.join(',')}`,
+    ];
+    if (key.namePrefix !== null)
+        parts.push(`prefix=${key.namePrefix}`);
+    parts.push(`expires=${key.expirationTimestamp === null ? 'never' : new Date(key.expirationTimestamp).toISOString()}`);
+    return parts.join(' ');
 }
 function setFileCountOutput(count) {
     setOutput('file-count', String(count));
