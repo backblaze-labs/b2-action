@@ -1,6 +1,6 @@
 import { rm } from 'node:fs/promises'
-import { type B2Client, Capability } from '@backblaze-labs/b2-sdk'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { applicationKeyId, type B2Client, Capability } from '@backblaze-labs/b2-sdk'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createKeyCommand, deleteKeyCommand, listKeysCommand } from '../../src/commands/keys.ts'
 import { makeFixture, makeInputs, type TestFixture } from '../_helpers.ts'
 import { TEST_APPLICATION_KEY_ID } from '../_parsed-inputs.ts'
@@ -147,6 +147,33 @@ describe('application key commands', () => {
     expect(result.truncated).toBe(false)
   })
 
+  it('normalizes deprecated bucketId-only key responses', async () => {
+    const client = Object.create(fx.client) as B2Client
+    client.listKeys = (async () => ({
+      keys: [
+        {
+          keyName: 'legacy-bucket-key',
+          applicationKeyId: applicationKeyId('legacy-key-id'),
+          capabilities: [Capability.ListFiles],
+          accountId: 'account-id',
+          expirationTimestamp: null,
+          bucketId: fx.bucket.id,
+          namePrefix: null,
+          options: [],
+        },
+      ],
+      nextApplicationKeyId: null,
+    })) as unknown as B2Client['listKeys']
+
+    const result = await listKeysCommand(client, makeInputs('list-keys', { maxResults: 100 }))
+
+    expect(result.keys[0]).toMatchObject({
+      keyName: 'legacy-bucket-key',
+      applicationKeyId: 'legacy-key-id',
+      bucketIds: [fx.bucket.id],
+    })
+  })
+
   it('reports truncation when more keys exist beyond max-results', async () => {
     await fx.client.createKey({ keyName: 'first-page-key', capabilities: [Capability.ListFiles] })
     await fx.client.createKey({ keyName: 'second-page-key', capabilities: [Capability.ReadFiles] })
@@ -168,6 +195,65 @@ describe('application key commands', () => {
     await listKeysCommand(client, makeInputs('list-keys', { maxResults: 2500 }))
 
     expect(pageSizes).toEqual([1000])
+  })
+
+  it('aborts list-keys before starting the request', async () => {
+    const controller = new AbortController()
+    controller.abort(new Error('stop list-keys'))
+    const client = Object.create(fx.client) as B2Client
+    client.listKeys = vi.fn()
+
+    await expect(
+      listKeysCommand(client, makeInputs('list-keys', { maxResults: 100 }), controller.signal),
+    ).rejects.toThrow(/stop list-keys/)
+    expect(client.listKeys).not.toHaveBeenCalled()
+  })
+
+  it('aborts create-key uniqueness scans between pages', async () => {
+    const controller = new AbortController()
+    const client = Object.create(fx.client) as B2Client
+    client.listKeys = async () => {
+      controller.abort(new Error('stop key scan'))
+      return { keys: [], nextApplicationKeyId: applicationKeyId('next-page') }
+    }
+    client.createKey = vi.fn()
+
+    await expect(
+      createKeyCommand(
+        client,
+        makeInputs('create-key', fx, {
+          keyName: 'abort-scan-key',
+          capabilities: [Capability.ListFiles],
+          scopeBucket: fx.bucket.name,
+          validDurationInSeconds: 3600,
+        }),
+        controller.signal,
+      ),
+    ).rejects.toThrow(/stop key scan/)
+    expect(client.createKey).not.toHaveBeenCalled()
+  })
+
+  it('refuses create-key when the uniqueness scan reaches the page cap', async () => {
+    const client = Object.create(fx.client) as B2Client
+    client.listKeys = vi.fn(async () => ({
+      keys: [],
+      nextApplicationKeyId: applicationKeyId('next-page'),
+    }))
+    client.createKey = vi.fn()
+
+    await expect(
+      createKeyCommand(
+        client,
+        makeInputs('create-key', fx, {
+          keyName: 'scan-cap-key',
+          capabilities: [Capability.ListFiles],
+          scopeBucket: fx.bucket.name,
+          validDurationInSeconds: 3600,
+        }),
+      ),
+    ).rejects.toThrow(/create-key uniqueness check scanned 10000 application keys/)
+    expect(client.listKeys).toHaveBeenCalledTimes(10)
+    expect(client.createKey).not.toHaveBeenCalled()
   })
 
   it('deletes an application key by id', async () => {
@@ -301,5 +387,26 @@ describe('application key commands', () => {
       metadataVerified: false,
     })
     expect(after.keys.some((key) => key.applicationKeyId === created.applicationKeyId)).toBe(true)
+  })
+
+  it('refuses delete-key when target lookup reaches the page cap', async () => {
+    const client = Object.create(fx.client) as B2Client
+    client.listKeys = vi.fn(async () => ({
+      keys: [],
+      nextApplicationKeyId: applicationKeyId('next-page'),
+    }))
+    client.deleteKey = vi.fn()
+
+    await expect(
+      deleteKeyCommand(
+        client,
+        makeInputs('delete-key', {
+          targetApplicationKeyId: 'missing-key-id',
+          keyName: 'missing-key',
+        }),
+      ),
+    ).rejects.toThrow(/delete-key target lookup scanned 10000 application keys/)
+    expect(client.listKeys).toHaveBeenCalledTimes(10)
+    expect(client.deleteKey).not.toHaveBeenCalled()
   })
 })

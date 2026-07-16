@@ -377,14 +377,16 @@ Set `bypass-governance: true` to shorten governance-mode retention or to remove 
     key-name: deploy-${{ github.run_id }}
 ```
 
-`create-key` masks the returned secret before writing the `application-key` output. B2 returns that secret only once; downstream steps should store it in an environment variable or pass it directly to tools that need it.
-For retry safety, `create-key` refuses to mint a second key when the requested `key-name` already exists. If a run stops after B2 creates a key but before outputs or cleanup complete, rerunning the same deterministic `key-name` fails before creating a duplicate and logs the existing application key ID to revoke. The one-time secret cannot be recovered from an existing key.
+`create-key` masks the returned secret before writing the `application-key` output. B2 returns that secret only once; downstream steps should store it in an environment variable or pass it directly to trusted tools that need it. The output is still plaintext in `$GITHUB_OUTPUT` and can be read by later steps in the same job. Do not map it to a job, composite-action, or reusable-workflow output; GitHub does not reliably preserve masking when secrets are propagated that way. Do not enable `ACTIONS_STEP_DEBUG` for `create-key` jobs because the one-time secret can pass through SDK transport internals before the action can register it for masking.
+For retry safety, `create-key` refuses to mint a second key when the requested `key-name` already exists. The duplicate-name check is best-effort because B2 does not enforce key-name uniqueness atomically; concurrent same-name runs can both create keys. Use deterministic names that include a unique run or job identifier, and serialize workflows that must guarantee a single live key. If a run stops after B2 creates a key but before outputs or cleanup complete, rerunning the same deterministic `key-name` fails before creating a duplicate and logs the existing application key ID to revoke. The one-time secret cannot be recovered from an existing key.
 
 By default, `create-key` requires `scope-bucket` and `valid-duration`, and only allows file-level capabilities. Use `allow-account-level-key: true`, `allow-non-expiring-key: true`, or `allow-privileged-capabilities: true` only in reviewed workflows that intentionally need those broader credentials. Accepted B2 capabilities are:
 
 `listFiles`, `readFiles`, `shareFiles`, `writeFiles`, `deleteFiles`, `readFileLegalHolds`, `writeFileLegalHolds`, `readFileRetentions`, `writeFileRetentions`, `listKeys`, `writeKeys`, `deleteKeys`, `listBuckets`, `listAllBucketNames`, `readBuckets`, `writeBuckets`, `deleteBuckets`, `readBucketRetentions`, `writeBucketRetentions`, `readBucketEncryption`, `writeBucketEncryption`, `readBucketReplications`, `writeBucketReplications`, `readBucketNotifications`, `writeBucketNotifications`, `readBucketLogging`, `writeBucketLogging`, `bypassGovernance`.
 
-`delete-key` refuses arbitrary IDs unless the target key matches `key-name`, matches `target-key-name-prefix`, or `allow-unsafe-key-delete: true` is set. It refuses to delete the currently authorized application key. It treats an already-absent key as a successful no-op and honors `dry-run: true` by validating/reporting the target without deleting it.
+`delete-key` refuses arbitrary IDs unless the target key matches `key-name`, matches `target-key-name-prefix`, or `allow-unsafe-key-delete: true` is set. Only use `allow-unsafe-key-delete: true` in reviewed workflows, and never source `target-application-key-id` from untrusted event context such as issue comments, pull request text, or user-controlled dispatch inputs. It refuses to delete the currently authorized application key. It treats an already-absent key as a successful no-op and honors `dry-run: true` by validating/reporting the target without deleting it, except unsafe dry-runs explicitly report that existence and metadata were not validated.
+
+The safety lookups used by `create-key` and validated `delete-key` scan application keys in bounded pages and abort between pages on workflow cancellation. If the scan reaches the internal cap before proving uniqueness or finding the target, the action fails rather than continuing an unbounded full-account scan.
 
 ### Chain outputs
 
@@ -452,7 +454,7 @@ By default, `create-key` requires `scope-bucket` and `valid-duration`, and only 
 | `allow-account-level-key` | create-key only | `false` | Permit minting an account-level key without `scope-bucket`. |
 | `allow-non-expiring-key` | create-key only | `false` | Permit minting a key without `valid-duration`. |
 | `allow-privileged-capabilities` | create-key only | `false` | Permit key-management or account-administration capabilities such as `listKeys`, `writeKeys`, `deleteKeys`, bucket administration, or `bypassGovernance`. |
-| `allow-unsafe-key-delete` | delete-key only | `false` | Permit deletion without validating target key name or prefix. |
+| `allow-unsafe-key-delete` | delete-key only | `false` | Permit deletion without validating target key name or prefix. Never source `target-application-key-id` from untrusted event data when enabled. |
 
 \* Either set the input or one of the env-var fallbacks.
 
@@ -461,7 +463,7 @@ By default, `create-key` requires `scope-bucket` and `valid-duration`, and only 
 | Output | When | Description |
 | --- | --- | --- |
 | `application-key-id` | create-key / delete-key | Application key ID. |
-| `application-key` | create-key | Application key secret returned once by B2. Masked before the output is written. |
+| `application-key` | create-key | Application key secret returned once by B2. Masked before the output is written, but later steps can read the plaintext output; do not map it to job, composite, or reusable-workflow outputs. |
 | `key-name` | create-key / delete-key | Application key name. |
 | `keys-listed` | list-keys | Count returned (capped by `max-results`). |
 | `key-deleted` | delete-key | `true` when a key was deleted; `false` for dry-run or already-absent no-ops. |

@@ -155,7 +155,7 @@ inputs:
     required: false
     default: 'false'
   allow-unsafe-key-delete:
-    description: 'Permit `delete-key` without validating the target key name or prefix. Review carefully before enabling.'
+    description: 'Permit `delete-key` without validating the target key name or prefix. Review carefully before enabling, and never source `target-application-key-id` from untrusted event data.'
     required: false
     default: 'false'
 
@@ -163,7 +163,7 @@ outputs:
   application-key-id:
     description: 'Application key ID returned by `create-key` or `delete-key`.'
   application-key:
-    description: 'Application key secret returned once by `create-key`. The action masks this value before writing the output.'
+    description: 'Application key secret returned once by `create-key`. The action masks this value before writing the output, but later steps can read the plaintext output; do not map it to job, composite, or reusable-workflow outputs.'
   key-name:
     description: 'Application key name returned by `create-key` or `delete-key`.'
   keys-listed:

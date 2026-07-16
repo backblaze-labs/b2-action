@@ -358,11 +358,11 @@ export async function run(): Promise<void> {
         return
       }
       case 'create-key': {
-        const result = await createKeyCommand(authorized.client, inputs)
-        registerSecretValue(secretValues, result.applicationKey)
+        const result = await createKeyCommand(authorized.client, inputs, signal)
         core.setOutput('application-key-id', result.applicationKeyId)
-        core.setOutput('application-key', result.applicationKey)
         core.setOutput('key-name', result.keyName)
+        registerSecretValue(secretValues, result.applicationKey)
+        core.setOutput('application-key', result.applicationKey)
         await writeStepSummary({
           title: 'Backblaze B2: create-key',
           rows: [applicationKeySummaryRow(result)],
@@ -371,7 +371,7 @@ export async function run(): Promise<void> {
         return
       }
       case 'list-keys': {
-        const result = await listKeysCommand(authorized.client, inputs)
+        const result = await listKeysCommand(authorized.client, inputs, signal)
         core.setOutput('keys-listed', String(result.keys.length))
         if (result.truncated) {
           const reason =
@@ -388,7 +388,7 @@ export async function run(): Promise<void> {
         return
       }
       case 'delete-key': {
-        const result = await deleteKeyCommand(authorized.client, inputs)
+        const result = await deleteKeyCommand(authorized.client, inputs, signal)
         core.setOutput('application-key-id', result.applicationKeyId)
         core.setOutput('key-name', result.keyName)
         core.setOutput('key-deleted', String(result.deleted))

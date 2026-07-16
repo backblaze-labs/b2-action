@@ -39038,8 +39038,9 @@ async function buildClient(options) {
     return { client, bucketName: options.bucket };
 }
 /**
- * Resolve a bucket by name. Throws a clear error rather than the SDK's
- * `undefined` return so the workflow log surfaces the misconfiguration.
+ * Resolve a bucket by name. File actions validate that `bucket` is present
+ * before dispatch; this guard preserves a clear runtime error if a future
+ * call path reaches bucket resolution without that invariant.
  */
 async function getBucket(authorized) {
     if (authorized.bucketName === undefined || authorized.bucketName === '') {
@@ -40364,6 +40365,11 @@ const SAFE_CREATE_KEY_CAPABILITIES = new Set([
     Capability.WriteFileRetentions,
 ]);
 const B2_LIST_KEYS_PAGE_SIZE_LIMIT = 1000;
+const B2_KEY_SCAN_PAGE_LIMIT = 10;
+const B2_KEY_SCAN_ITEM_LIMIT = B2_LIST_KEYS_PAGE_SIZE_LIMIT * B2_KEY_SCAN_PAGE_LIMIT;
+class KeyScanLimitError extends Error {
+    name = 'KeyScanLimitError';
+}
 /**
  * Create a scoped B2 application key.
  *
@@ -40371,7 +40377,7 @@ const B2_LIST_KEYS_PAGE_SIZE_LIMIT = 1000;
  * identifier. The SDK/API require bucket IDs, so resolve the bucket first
  * and then pass the ID into `createKey`.
  */
-async function createKeyCommand(client, inputs) {
+async function createKeyCommand(client, inputs, signal) {
     if (inputs.keyName === undefined || inputs.keyName === '') {
         throw new Error("'key-name' input is required for 'create-key' action");
     }
@@ -40384,7 +40390,9 @@ async function createKeyCommand(client, inputs) {
     validateCreateKeySafety(inputs);
     startGroup(`create application key ${inputs.keyName}`);
     try {
+        signal?.throwIfAborted();
         const scopedBucket = inputs.scopeBucket !== undefined ? await client.getBucket(inputs.scopeBucket) : null;
+        signal?.throwIfAborted();
         if (inputs.scopeBucket !== undefined && scopedBucket === null) {
             throw new Error(`Bucket "${inputs.scopeBucket}" not found for 'scope-bucket', or the application key lacks listBuckets capability for it.`);
         }
@@ -40397,7 +40405,8 @@ async function createKeyCommand(client, inputs) {
                 ? { validDurationInSeconds: inputs.validDurationInSeconds }
                 : {}),
         };
-        await assertNoExistingKeyWithName(client, inputs.keyName);
+        await assertNoExistingKeyWithName(client, inputs.keyName, signal);
+        signal?.throwIfAborted();
         const result = await client.createKey(options);
         info(`  created application key id ${result.applicationKeyId}`);
         info('  B2 returns the application-key secret only once; if output writing or cleanup fails, revoke the logged application-key-id.');
@@ -40410,14 +40419,17 @@ async function createKeyCommand(client, inputs) {
 /**
  * List application keys, capped by `max-results`.
  *
- * The SDK exposes one page at a time and reports a continuation key. Fetching
- * only the requested page mirrors the existing `list` verb's bounded behavior.
+ * The SDK exposes one page at a time and reports a continuation key. This
+ * command intentionally fetches a single bounded page and reports truncation
+ * when more keys are available.
  */
-async function listKeysCommand(client, inputs) {
+async function listKeysCommand(client, inputs, signal) {
     const maxResults = Math.min(inputs.maxResults, B2_LIST_KEYS_PAGE_SIZE_LIMIT);
     startGroup(`list application keys (max ${maxResults})`);
     try {
+        signal?.throwIfAborted();
         const page = await client.listKeys({ pageSize: maxResults });
+        signal?.throwIfAborted();
         info(`  ${page.keys.length} key(s) listed`);
         return {
             keys: page.keys.map(keyMetadata),
@@ -40429,7 +40441,7 @@ async function listKeysCommand(client, inputs) {
     }
 }
 /** Delete an application key by ID. */
-async function deleteKeyCommand(client, inputs) {
+async function deleteKeyCommand(client, inputs, signal) {
     if (inputs.targetApplicationKeyId === undefined || inputs.targetApplicationKeyId === '') {
         throw new Error("'target-application-key-id' input is required for 'delete-key' action");
     }
@@ -40444,44 +40456,21 @@ async function deleteKeyCommand(client, inputs) {
     }
     startGroup(`delete application key ${targetApplicationKeyId}`);
     try {
-        const target = inputs.allowUnsafeKeyDelete
-            ? null
-            : await findKeyById(client, targetApplicationKeyId);
-        if (target === null) {
-            if (inputs.allowUnsafeKeyDelete && !inputs.dryRun) {
-                try {
-                    const result = await client.deleteKey(applicationKeyId(targetApplicationKeyId));
-                    info(`  deleted ${result.applicationKeyId}`);
-                    return { ...keyMetadata(result), deleted: true };
-                }
-                catch (err) {
-                    if (!isMissingKeyError(err))
-                        throw err;
-                }
-            }
-            if (inputs.allowUnsafeKeyDelete && inputs.dryRun) {
-                info(`  dry-run: would delete ${targetApplicationKeyId}; existence and metadata were not validated because allow-unsafe-key-delete is set`);
-                return unverifiedDeleteResult(inputs);
-            }
-            info(`  application key ${targetApplicationKeyId} is already absent; no-op`);
-            return missingDeleteResult(inputs);
+        if (inputs.allowUnsafeKeyDelete) {
+            return await deleteKeyWithoutMetadataValidation(client, inputs, targetApplicationKeyId, signal);
         }
+        const target = await findKeyById(client, targetApplicationKeyId, signal);
+        if (target === null)
+            return alreadyAbsentDeleteResult(inputs, targetApplicationKeyId);
         validateDeleteTarget(target, inputs);
         if (inputs.dryRun) {
             info(`  dry-run: would delete ${target.applicationKeyId}`);
             return { ...target, deleted: false };
         }
-        try {
-            const result = await client.deleteKey(applicationKeyId(targetApplicationKeyId));
-            info(`  deleted ${result.applicationKeyId}`);
-            return { ...keyMetadata(result), deleted: true };
-        }
-        catch (err) {
-            if (!isMissingKeyError(err))
-                throw err;
-            info(`  application key ${targetApplicationKeyId} is already absent; no-op`);
-            return { ...target, deleted: false };
-        }
+        const deleted = await deleteKeyIfPresent(client, targetApplicationKeyId, signal);
+        if (deleted === null)
+            return alreadyAbsentDeleteResult(inputs, targetApplicationKeyId, target);
+        return { ...deleted, deleted: true };
     }
     finally {
         endGroup();
@@ -40501,40 +40490,73 @@ function validateCreateKeySafety(inputs) {
         throw new Error(`Refusing privileged key capabilities without 'allow-privileged-capabilities: true': ${privileged.join(', ')}`);
     }
 }
-async function assertNoExistingKeyWithName(client, keyName) {
+async function assertNoExistingKeyWithName(client, keyName, signal) {
     let existing;
     try {
-        existing = await findKeysByName(client, keyName);
+        existing = await findKeyByName(client, keyName, signal);
     }
     catch (err) {
+        if (err instanceof KeyScanLimitError || (signal?.aborted === true && err === signal.reason)) {
+            throw err;
+        }
         const detail = err instanceof Error ? ` ${err.message}` : '';
         throw new Error(`'create-key' requires listKeys permission to verify key-name uniqueness before minting a one-time secret.${detail}`);
     }
-    if (existing.length === 0)
+    if (existing === null)
         return;
-    const ids = existing.map((key) => key.applicationKeyId).join(', ');
-    throw new Error(`Application key name "${keyName}" already exists (${ids}); refusing to create a duplicate. ` +
+    throw new Error(`Application key name "${keyName}" already exists (${existing.applicationKeyId}); refusing to create a duplicate. ` +
         'If a previous run crashed after B2 created the key, revoke the listed application-key-id because the one-time secret cannot be recovered.');
 }
-async function findKeysByName(client, keyName) {
-    const matches = [];
-    for await (const key of client.paginateKeys({ pageSize: B2_LIST_KEYS_PAGE_SIZE_LIMIT })) {
-        if (key.keyName === keyName)
-            matches.push(keyMetadata(key));
-    }
-    return matches;
+async function findKeyByName(client, keyName, signal) {
+    let match = null;
+    await scanKeyPages(client, 'create-key uniqueness check', signal, (key) => {
+        if (key.keyName !== keyName)
+            return false;
+        match = key;
+        return true;
+    });
+    return match;
 }
-async function findKeyById(client, targetApplicationKeyId) {
+async function findKeyById(client, targetApplicationKeyId, signal) {
     try {
-        for await (const key of client.paginateKeys({ pageSize: B2_LIST_KEYS_PAGE_SIZE_LIMIT })) {
-            if (key.applicationKeyId === targetApplicationKeyId)
-                return keyMetadata(key);
-        }
-        return null;
+        let match = null;
+        await scanKeyPages(client, 'delete-key target lookup', signal, (key) => {
+            if (key.applicationKeyId !== targetApplicationKeyId)
+                return false;
+            match = key;
+            return true;
+        });
+        return match;
     }
     catch (err) {
+        if (err instanceof KeyScanLimitError || (signal?.aborted === true && err === signal.reason)) {
+            throw err;
+        }
         const detail = err instanceof Error ? ` ${err.message}` : '';
         throw new Error(`'delete-key' requires listKeys permission to validate the target key before deletion.${detail}`);
+    }
+}
+async function scanKeyPages(client, purpose, signal, visit) {
+    let startApplicationKeyId;
+    for (let pageCount = 0;; pageCount += 1) {
+        signal?.throwIfAborted();
+        const page = await client.listKeys({
+            pageSize: B2_LIST_KEYS_PAGE_SIZE_LIMIT,
+            ...(startApplicationKeyId !== undefined ? { startApplicationKeyId } : {}),
+        });
+        signal?.throwIfAborted();
+        for (const key of page.keys.map(keyMetadata)) {
+            if (visit(key))
+                return;
+        }
+        if (page.nextApplicationKeyId === null)
+            return;
+        if (pageCount + 1 >= B2_KEY_SCAN_PAGE_LIMIT) {
+            const message = `${purpose} scanned ${B2_KEY_SCAN_ITEM_LIMIT} application keys without reaching the end; refusing to continue because key-management safety scans are capped.`;
+            warning(message);
+            throw new KeyScanLimitError(message);
+        }
+        startApplicationKeyId = page.nextApplicationKeyId;
     }
 }
 function validateDeleteTarget(target, inputs) {
@@ -40546,21 +40568,38 @@ function validateDeleteTarget(target, inputs) {
         throw new Error(`Refusing to delete application key ${target.applicationKeyId}: key-name "${target.keyName}" does not start with "${inputs.targetKeyNamePrefix}"`);
     }
 }
-function missingDeleteResult(inputs) {
-    return {
-        keyName: inputs.keyName ?? '(already absent)',
-        applicationKeyId: inputs.targetApplicationKeyId ?? '',
-        capabilities: [],
-        expirationTimestamp: null,
-        bucketIds: null,
-        namePrefix: null,
-        options: [],
-        deleted: false,
-    };
+async function deleteKeyWithoutMetadataValidation(client, inputs, targetApplicationKeyId, signal) {
+    if (inputs.dryRun) {
+        info(`  dry-run: would delete ${targetApplicationKeyId}; existence and metadata were not validated because allow-unsafe-key-delete is set`);
+        return placeholderDeleteResult(inputs, '(not fetched)', { metadataVerified: false });
+    }
+    const deleted = await deleteKeyIfPresent(client, targetApplicationKeyId, signal);
+    if (deleted === null)
+        return alreadyAbsentDeleteResult(inputs, targetApplicationKeyId);
+    return { ...deleted, deleted: true };
 }
-function unverifiedDeleteResult(inputs) {
+async function deleteKeyIfPresent(client, targetApplicationKeyId, signal) {
+    signal?.throwIfAborted();
+    try {
+        const result = await client.deleteKey(applicationKeyId(targetApplicationKeyId));
+        info(`  deleted ${result.applicationKeyId}`);
+        return keyMetadata(result);
+    }
+    catch (err) {
+        if (!isMissingKeyError(err))
+            throw err;
+        return null;
+    }
+}
+function alreadyAbsentDeleteResult(inputs, targetApplicationKeyId, target) {
+    info(`  application key ${targetApplicationKeyId} is already absent; no-op`);
+    return target !== undefined
+        ? { ...target, deleted: false }
+        : placeholderDeleteResult(inputs, '(already absent)');
+}
+function placeholderDeleteResult(inputs, keyNameFallback, options = {}) {
     return {
-        keyName: inputs.keyName ?? '(not fetched)',
+        keyName: inputs.keyName ?? keyNameFallback,
         applicationKeyId: inputs.targetApplicationKeyId ?? '',
         capabilities: [],
         expirationTimestamp: null,
@@ -40568,7 +40607,7 @@ function unverifiedDeleteResult(inputs) {
         namePrefix: null,
         options: [],
         deleted: false,
-        metadataVerified: false,
+        ...(options.metadataVerified === false ? { metadataVerified: false } : {}),
     };
 }
 function isMissingKeyError(err) {
@@ -40576,15 +40615,21 @@ function isMissingKeyError(err) {
         (err.code === 'not_found' || (err.code === 'bad_request' && /key not found/i.test(err.message))));
 }
 function keyMetadata(key) {
+    const bucketIds = normalizeBucketIds(key);
     return {
         keyName: key.keyName,
         applicationKeyId: key.applicationKeyId,
         capabilities: [...key.capabilities],
         expirationTimestamp: key.expirationTimestamp,
-        bucketIds: key.bucketIds === null ? null : [...key.bucketIds],
+        bucketIds,
         namePrefix: key.namePrefix,
         options: [...key.options],
     };
+}
+function normalizeBucketIds(key) {
+    if (key.bucketIds !== undefined)
+        return key.bucketIds === null ? null : [...key.bucketIds];
+    return key.bucketId === null || key.bucketId === undefined ? null : [key.bucketId];
 }
 
 ;// CONCATENATED MODULE: ./src/commands/list.ts
@@ -50192,11 +50237,11 @@ async function run() {
                 return;
             }
             case 'create-key': {
-                const result = await createKeyCommand(authorized.client, inputs);
-                registerSecretValue(secretValues, result.applicationKey);
+                const result = await createKeyCommand(authorized.client, inputs, signal);
                 setOutput('application-key-id', result.applicationKeyId);
-                setOutput('application-key', result.applicationKey);
                 setOutput('key-name', result.keyName);
+                registerSecretValue(secretValues, result.applicationKey);
+                setOutput('application-key', result.applicationKey);
                 await writeStepSummary({
                     title: 'Backblaze B2: create-key',
                     rows: [applicationKeySummaryRow(result)],
@@ -50205,7 +50250,7 @@ async function run() {
                 return;
             }
             case 'list-keys': {
-                const result = await listKeysCommand(authorized.client, inputs);
+                const result = await listKeysCommand(authorized.client, inputs, signal);
                 setOutput('keys-listed', String(result.keys.length));
                 if (result.truncated) {
                     const reason = inputs.maxResults > B2_LIST_KEYS_PAGE_SIZE_LIMIT
@@ -50221,7 +50266,7 @@ async function run() {
                 return;
             }
             case 'delete-key': {
-                const result = await deleteKeyCommand(authorized.client, inputs);
+                const result = await deleteKeyCommand(authorized.client, inputs, signal);
                 setOutput('application-key-id', result.applicationKeyId);
                 setOutput('key-name', result.keyName);
                 setOutput('key-deleted', String(result.deleted));

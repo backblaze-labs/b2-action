@@ -240,6 +240,24 @@ describe('main dispatcher', () => {
     )
   })
 
+  it.each([
+    'create-key',
+    'list-keys',
+    'delete-key',
+  ] satisfies ActionName[])('threads cancellation signals to %s command calls', async (action) => {
+    const ctx = await loadMain()
+    setupSuccessfulAction(ctx, action)
+
+    await ctx.run()
+
+    const command = {
+      'create-key': ctx.commands.createKeyCommand,
+      'list-keys': ctx.commands.listKeysCommand,
+      'delete-key': ctx.commands.deleteKeyCommand,
+    }[action]
+    expect(command.mock.calls[0]?.[2]).toBeInstanceOf(AbortSignal)
+  })
+
   it('reports a SIGTERM-triggered command abort through setFailed', async () => {
     const ctx = await loadMain()
     ctx.parseInputs.mockReturnValue(inputs('upload'))
@@ -616,6 +634,9 @@ describe('main dispatcher', () => {
     expect(ctx.core.setSecret).toHaveBeenCalledWith('created-secret-value')
     expect(out['application-key']).toBe('created-secret-value')
     expect(out['application-key-id']).toBe(result.applicationKeyId)
+    expect(outputCallIndex(ctx, 'application-key-id')).toBeLessThan(
+      outputCallIndex(ctx, 'application-key'),
+    )
     expect(out['summary-json']).not.toContain('created-secret-value')
     expect(JSON.stringify(firstSummary(ctx))).not.toContain('created-secret-value')
     expect(firstSummary(ctx)?.rows).toEqual([
@@ -1618,6 +1639,10 @@ function outputs(ctx: LoadedMain): Record<string, string> {
   return Object.fromEntries(
     ctx.core.setOutput.mock.calls.map(([key, value]) => [String(key), String(value)]),
   )
+}
+
+function outputCallIndex(ctx: LoadedMain, name: string): number {
+  return ctx.core.setOutput.mock.calls.findIndex(([key]) => key === name)
 }
 
 function completeSummaryOutput(outputs: Record<string, string>): Record<string, string> {
