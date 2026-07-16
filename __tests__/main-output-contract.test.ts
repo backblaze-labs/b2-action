@@ -71,6 +71,21 @@ const EXPECTED_OUTPUT_KEYS = {
     'summary-json-truncated',
   ],
   purge: ['file-count', 'files-deleted', 'summary-json', 'summary-json-truncated'],
+  'create-key': [
+    'application-key',
+    'application-key-id',
+    'key-name',
+    'summary-json',
+    'summary-json-truncated',
+  ],
+  'list-keys': ['keys-listed', 'summary-json', 'summary-json-truncated'],
+  'delete-key': [
+    'application-key-id',
+    'key-deleted',
+    'key-name',
+    'summary-json',
+    'summary-json-truncated',
+  ],
 } as const satisfies Record<ActionName, readonly string[]>
 
 afterEach(() => {
@@ -163,6 +178,12 @@ function mockDispatcherPath(action: ActionName) {
   }))
   vi.doMock('../src/commands/head.ts', () => ({ headCommand: commands.headCommand }))
   vi.doMock('../src/commands/purge.ts', () => ({ purgeCommand: commands.purgeCommand }))
+  vi.doMock('../src/commands/keys.ts', () => ({
+    B2_LIST_KEYS_PAGE_SIZE_LIMIT: 1000,
+    createKeyCommand: commands.createKeyCommand,
+    listKeysCommand: commands.listKeysCommand,
+    deleteKeyCommand: commands.deleteKeyCommand,
+  }))
 
   return { core, buildClient, writeStepSummary }
 }
@@ -183,6 +204,9 @@ function commandMocks() {
     retentionCommand: vi.fn(),
     headCommand: vi.fn(),
     purgeCommand: vi.fn(),
+    createKeyCommand: vi.fn(),
+    listKeysCommand: vi.fn(),
+    deleteKeyCommand: vi.fn(),
   }
 }
 
@@ -269,6 +293,18 @@ function applyCommandResult(commands: ReturnType<typeof commandMocks>, action: A
         errors: 0,
       })
       return
+    case 'create-key':
+      commands.createKeyCommand.mockResolvedValue(keyResult(action, true))
+      return
+    case 'list-keys':
+      commands.listKeysCommand.mockResolvedValue({
+        keys: [keyResult(action, false)],
+        truncated: false,
+      })
+      return
+    case 'delete-key':
+      commands.deleteKeyCommand.mockResolvedValue({ ...keyResult(action, false), deleted: true })
+      return
   }
 }
 
@@ -279,6 +315,19 @@ function fileResult(action: ActionName) {
     size: 12,
     contentSha1: `sha1-${action}`,
     contentType: 'text/plain',
+  }
+}
+
+function keyResult(action: ActionName, includeSecret: boolean) {
+  return {
+    keyName: `${action}-name`,
+    applicationKeyId: `id-${action}`,
+    ...(includeSecret ? { applicationKey: `secret-${action}` } : {}),
+    capabilities: ['listFiles'],
+    expirationTimestamp: null,
+    bucketIds: null,
+    namePrefix: null,
+    options: [],
   }
 }
 

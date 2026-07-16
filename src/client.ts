@@ -17,8 +17,8 @@ import { VERSION } from './version.ts'
 export interface AuthorizedClient {
   /** The authorized SDK client. `client.accountInfo` is populated. */
   client: B2Client
-  /** The destination bucket name as provided to the action's `bucket` input. */
-  bucketName: string
+  /** Undefined only for key-management actions; file actions validate this at input parse time. */
+  bucketName: string | undefined
 }
 
 /** Inputs to {@link buildClient}. */
@@ -27,8 +27,8 @@ export interface BuildClientOptions {
   applicationKeyId: string
   /** B2 application key (the secret). Masked via `core.setSecret` by the dispatcher. */
   applicationKey: string
-  /** Target bucket name (stored on the result for later `getBucket` resolution). */
-  bucket: string
+  /** Target bucket name. Intentionally optional because key-management actions are not bucket-scoped. */
+  bucket?: string | undefined
   /** Override the default B2 realm endpoint. Only set for staging / custom realms. */
   endpoint?: string | undefined
   /** Inject a custom transport (used by tests with the SDK's `B2Simulator`). */
@@ -92,10 +92,14 @@ export async function buildClient(options: BuildClientOptions): Promise<Authoriz
 }
 
 /**
- * Resolve a bucket by name. Throws a clear error rather than the SDK's
- * `undefined` return so the workflow log surfaces the misconfiguration.
+ * Resolve a bucket by name. File actions validate that `bucket` is present
+ * before dispatch; this guard preserves a clear runtime error if a future
+ * call path reaches bucket resolution without that invariant.
  */
 export async function getBucket(authorized: AuthorizedClient) {
+  if (authorized.bucketName === undefined || authorized.bucketName === '') {
+    throw new Error("'bucket' input is required for this action")
+  }
   const bucket = await authorized.client.getBucket(authorized.bucketName)
   if (!bucket) {
     throw new Error(

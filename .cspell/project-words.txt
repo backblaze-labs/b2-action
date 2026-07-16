@@ -85,6 +85,8 @@ unwritable
 unparseable
 globber
 unmask
+applicationkey
+secretkey
 backoff
 retryable
 idempotency

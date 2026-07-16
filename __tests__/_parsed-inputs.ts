@@ -41,6 +41,17 @@ export function makeParsedInputs(
     retentionUntil: undefined,
     legalHold: undefined,
     bypassGovernance: false,
+    capabilities: [],
+    keyName: undefined,
+    scopeBucket: undefined,
+    namePrefix: undefined,
+    validDurationInSeconds: undefined,
+    targetApplicationKeyId: undefined,
+    targetKeyNamePrefix: undefined,
+    allowAccountLevelKey: false,
+    allowNonExpiringKey: false,
+    allowPrivilegedCapabilities: false,
+    allowUnsafeKeyDelete: false,
     ...override,
   }
 }

@@ -8,6 +8,14 @@ import { deleteCommand } from './commands/delete.ts'
 import { downloadCommand } from './commands/download.ts'
 import { headCommand } from './commands/head.ts'
 import { hideCommand } from './commands/hide.ts'
+import {
+  B2_LIST_KEYS_PAGE_SIZE_LIMIT,
+  createKeyCommand,
+  type DeleteKeyResult,
+  deleteKeyCommand,
+  type KeyMetadata,
+  listKeysCommand,
+} from './commands/keys.ts'
 import { listCommand } from './commands/list.ts'
 import { type PresignedFile, presignCommand } from './commands/presign.ts'
 import { purgeCommand } from './commands/purge.ts'
@@ -70,10 +78,15 @@ export async function run(): Promise<void> {
     })
     const authToken = authorized.client.accountInfo.getAuthToken()
     if (authToken) registerSecretValue(secretValues, authToken)
-    const bucket = await getBucket(authorized)
+    let resolvedBucket: Awaited<ReturnType<typeof getBucket>> | undefined
+    const getActionBucket = async () => {
+      resolvedBucket ??= await getBucket(authorized)
+      return resolvedBucket
+    }
 
     switch (inputs.action) {
       case 'upload': {
+        const bucket = await getActionBucket()
         const result = await uploadCommand(bucket, inputs, signal)
         const first = result.files[0]
         if (first !== undefined) {
@@ -100,6 +113,7 @@ export async function run(): Promise<void> {
         return
       }
       case 'download': {
+        const bucket = await getActionBucket()
         const result = await downloadCommand(bucket, inputs, signal)
         const first = result.files[0]
         if (first !== undefined) {
@@ -124,6 +138,7 @@ export async function run(): Promise<void> {
         return
       }
       case 'sync': {
+        const bucket = await getActionBucket()
         const result = await syncCommand(bucket, inputs, signal)
         core.setOutput('files-uploaded', String(result.uploaded))
         core.setOutput('files-downloaded', String(result.downloaded))
@@ -162,6 +177,7 @@ export async function run(): Promise<void> {
         return
       }
       case 'copy': {
+        const bucket = await getActionBucket()
         const result = await copyCommand(authorized.client, bucket, inputs, signal)
         core.setOutput('file-id', result.fileId)
         core.setOutput('file-name', result.destinationFileName)
@@ -182,11 +198,13 @@ export async function run(): Promise<void> {
         return
       }
       case 'delete': {
+        const bucket = await getActionBucket()
         const result = await deleteCommand(bucket, inputs, signal)
         await emitDeletionSummary('delete', result, inputs)
         return
       }
       case 'presign': {
+        const bucket = await getActionBucket()
         const result = await presignCommand(authorized.client, bucket, inputs)
         const first = result.files[0]
         if (first !== undefined) {
@@ -206,6 +224,7 @@ export async function run(): Promise<void> {
         return
       }
       case 'list': {
+        const bucket = await getActionBucket()
         const result = await listCommand(bucket, inputs)
         core.setOutput('files-listed', String(result.files.length))
         setFileCountOutput(result.files.length)
@@ -232,6 +251,7 @@ export async function run(): Promise<void> {
         return
       }
       case 'hide': {
+        const bucket = await getActionBucket()
         const result = await hideCommand(bucket, inputs)
         core.setOutput('file-id', result.fileId)
         core.setOutput('file-name', result.fileName)
@@ -244,6 +264,7 @@ export async function run(): Promise<void> {
         return
       }
       case 'unhide': {
+        const bucket = await getActionBucket()
         const result = await unhideCommand(bucket, inputs)
         core.setOutput('file-name', result.fileName)
         if (result.removedMarkerFileId !== null) {
@@ -264,6 +285,7 @@ export async function run(): Promise<void> {
         return
       }
       case 'verify': {
+        const bucket = await getActionBucket()
         const result = await verifyCommand(bucket, inputs)
         core.setOutput('verified', String(result.verified))
         core.setOutput('file-name', result.fileName)
@@ -288,6 +310,7 @@ export async function run(): Promise<void> {
         return
       }
       case 'retention': {
+        const bucket = await getActionBucket()
         const result = await retentionCommand(bucket, inputs)
         core.setOutput('file-id', result.fileId)
         core.setOutput('file-name', result.fileName)
@@ -306,6 +329,7 @@ export async function run(): Promise<void> {
         return
       }
       case 'head': {
+        const bucket = await getActionBucket()
         const result = await headCommand(bucket, inputs)
         core.setOutput('file-id', result.fileId)
         core.setOutput('file-name', result.fileName)
@@ -328,8 +352,51 @@ export async function run(): Promise<void> {
         return
       }
       case 'purge': {
+        const bucket = await getActionBucket()
         const result = await purgeCommand(bucket, inputs, signal)
         await emitDeletionSummary('purge', result, inputs)
+        return
+      }
+      case 'create-key': {
+        const result = await createKeyCommand(authorized.client, inputs, signal)
+        core.setOutput('application-key-id', result.applicationKeyId)
+        core.setOutput('key-name', result.keyName)
+        registerSecretValue(secretValues, result.applicationKey)
+        core.setOutput('application-key', result.applicationKey)
+        await writeStepSummary({
+          title: 'Backblaze B2: create-key',
+          rows: [applicationKeySummaryRow(result)],
+        })
+        setSummaryJsonOutput([result], { item: applicationKeySummaryItem })
+        return
+      }
+      case 'list-keys': {
+        const result = await listKeysCommand(authorized.client, inputs, signal)
+        core.setOutput('keys-listed', String(result.keys.length))
+        if (result.truncated) {
+          const reason =
+            inputs.maxResults >= B2_LIST_KEYS_PAGE_SIZE_LIMIT
+              ? `B2 page-size limit=${B2_LIST_KEYS_PAGE_SIZE_LIMIT}; max-results values above ${B2_LIST_KEYS_PAGE_SIZE_LIMIT} have no effect`
+              : `max-results=${inputs.maxResults}; raise it to see more`
+          core.warning(`list-keys result truncated at ${reason}`)
+        }
+        await writeStepSummary({
+          title: `Backblaze B2: list-keys (${result.keys.length}${result.truncated ? '+' : ''})`,
+          ...stepSummaryRows(result.keys, applicationKeySummaryRow),
+        })
+        setSummaryJsonOutput(result.keys, { item: applicationKeySummaryItem })
+        return
+      }
+      case 'delete-key': {
+        const result = await deleteKeyCommand(authorized.client, inputs, signal)
+        core.setOutput('application-key-id', result.applicationKeyId)
+        core.setOutput('key-name', result.keyName)
+        core.setOutput('key-deleted', String(result.deleted))
+        await writeStepSummary({
+          title: inputs.dryRun ? 'Backblaze B2: delete-key (dry-run)' : 'Backblaze B2: delete-key',
+          rows: [applicationKeySummaryRow(result)],
+        })
+        setSummaryJsonOutput([result], { item: applicationKeySummaryItem })
         return
       }
     }
@@ -414,6 +481,51 @@ function stepSummaryRows<T>(
 
 function presignSummaryItem(file: PresignedFile): Pick<PresignedFile, 'fileName' | 'expiresAt'> {
   return { fileName: file.fileName, expiresAt: file.expiresAt }
+}
+
+function applicationKeySummaryItem(key: KeyMetadata | DeleteKeyResult) {
+  const item = {
+    keyName: key.keyName,
+    applicationKeyId: key.applicationKeyId,
+    capabilities: key.capabilities,
+    expirationTimestamp: key.expirationTimestamp,
+    bucketIds: key.bucketIds,
+    namePrefix: key.namePrefix,
+    options: key.options,
+  }
+  return 'deleted' in key
+    ? {
+        ...item,
+        deleted: key.deleted,
+        ...(key.metadataVerified === false ? { metadataVerified: false } : {}),
+      }
+    : item
+}
+
+function applicationKeySummaryRow(key: KeyMetadata | DeleteKeyResult): SummaryRow {
+  return {
+    fileName: `keyName=${key.keyName}`,
+    fileId: `applicationKeyId=${key.applicationKeyId}`,
+    status: applicationKeyStatusLine(key),
+  }
+}
+
+function applicationKeyStatusLine(key: KeyMetadata | DeleteKeyResult): string {
+  if ('deleted' in key && key.metadataVerified === false) {
+    return `metadata=not-fetched ${key.deleted ? 'deleted=true' : 'deleted=false'}`
+  }
+  const parts = [
+    `capabilities=${key.capabilities.join(',') || '-'}`,
+    `buckets=${key.bucketIds === null ? 'all' : key.bucketIds.join(',')}`,
+  ]
+  if (key.namePrefix !== null) parts.push(`prefix=${key.namePrefix}`)
+  parts.push(
+    `expires=${
+      key.expirationTimestamp === null ? 'never' : new Date(key.expirationTimestamp).toISOString()
+    }`,
+  )
+  if ('deleted' in key) parts.push(key.deleted ? 'deleted=true' : 'deleted=false')
+  return parts.join(' ')
 }
 
 function setFileCountOutput(count: number): void {
