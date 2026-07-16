@@ -251,7 +251,9 @@ describe('application key commands', () => {
           validDurationInSeconds: 3600,
         }),
       ),
-    ).rejects.toThrow(/create-key uniqueness check scanned 10000 application keys/)
+    ).rejects.toThrow(
+      /create-key uniqueness check reached the safety scan cap after 10 pages, covering up to 10000 application keys/,
+    )
     expect(client.listKeys).toHaveBeenCalledTimes(10)
     expect(client.createKey).not.toHaveBeenCalled()
   })
@@ -405,7 +407,9 @@ describe('application key commands', () => {
           keyName: 'missing-key',
         }),
       ),
-    ).rejects.toThrow(/delete-key target lookup scanned 10000 application keys/)
+    ).rejects.toThrow(
+      /delete-key target lookup reached the safety scan cap after 10 pages, covering up to 10000 application keys/,
+    )
     expect(client.listKeys).toHaveBeenCalledTimes(10)
     expect(client.deleteKey).not.toHaveBeenCalled()
   })

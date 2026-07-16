@@ -40552,7 +40552,8 @@ async function scanKeyPages(client, purpose, signal, visit) {
         if (page.nextApplicationKeyId === null)
             return;
         if (pageCount + 1 >= B2_KEY_SCAN_PAGE_LIMIT) {
-            const message = `${purpose} scanned ${B2_KEY_SCAN_ITEM_LIMIT} application keys without reaching the end; refusing to continue because key-management safety scans are capped.`;
+            const scannedPages = pageCount + 1;
+            const message = `${purpose} reached the safety scan cap after ${scannedPages} pages, covering up to ${B2_KEY_SCAN_ITEM_LIMIT} application keys; refusing to continue because key-management safety scans are capped.`;
             warning(message);
             throw new KeyScanLimitError(message);
         }
