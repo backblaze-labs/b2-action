@@ -1,9 +1,5 @@
 import * as core from '@actions/core'
-import {
-  Capability,
-  type EncryptionSetting,
-  type Capability as KeyCapability,
-} from '@backblaze-labs/b2-sdk'
+import { Capability, type EncryptionSetting } from '@backblaze-labs/b2-sdk'
 import { parseSse } from './sse.ts'
 
 /**
@@ -76,7 +72,7 @@ export const ACTION_EFFECTS = {
   purge: { kind: 'write', honorsDryRun: true },
   'create-key': { kind: 'write', honorsDryRun: false },
   'list-keys': { kind: 'read', honorsDryRun: false },
-  'delete-key': { kind: 'write', honorsDryRun: false },
+  'delete-key': { kind: 'write', honorsDryRun: true },
 } as const satisfies Record<ActionName, ActionEffect>
 
 /** How `sync` decides whether two files match. Drives the SDK's `synchronize()`. */
@@ -95,7 +91,7 @@ const VALID_KEEP: readonly KeepMode[] = ['no-delete', 'delete', 'keep-days']
 const VALID_DIRECTION: readonly SyncDirection[] = ['auto', 'up', 'down']
 const VALID_RETENTION_MODE: readonly RetentionMode[] = ['compliance', 'governance', 'none']
 const VALID_LEGAL_HOLD: readonly LegalHold[] = ['on', 'off']
-const VALID_CAPABILITIES = Object.values(Capability) as readonly KeyCapability[]
+const VALID_CAPABILITIES = Object.values(Capability) as readonly Capability[]
 const APPLICATION_KEY_ID_ENV = 'B2_APPLICATION_KEY_ID'
 const APPLICATION_KEY_ENV = 'B2_APPLICATION_KEY'
 const FILE_INFO_KEY_PATTERN = /^[a-zA-Z0-9_.`~!#$%^&*'|+-]+$/
@@ -191,7 +187,7 @@ export interface ParsedInputs {
   /** Allow shortening a governance-mode retention (requires key capability). */
   bypassGovernance: boolean
   /** Capabilities granted to a key created by `create-key`. */
-  capabilities: KeyCapability[]
+  capabilities: Capability[]
   /** Human-readable B2 application key name for `create-key`. */
   keyName: string | undefined
   /** Optional bucket name used to scope a newly-created application key. */
@@ -202,6 +198,16 @@ export interface ParsedInputs {
   validDurationInSeconds: number | undefined
   /** Application key ID operated on by `delete-key`. */
   targetApplicationKeyId: string | undefined
+  /** Application key name prefix allowed for `delete-key` target validation. */
+  targetKeyNamePrefix: string | undefined
+  /** Permit `create-key` to mint an account-level key without a bucket scope. */
+  allowAccountLevelKey: boolean
+  /** Permit `create-key` to mint a non-expiring key. */
+  allowNonExpiringKey: boolean
+  /** Permit `create-key` to grant key-management or account-administration capabilities. */
+  allowPrivilegedCapabilities: boolean
+  /** Permit `delete-key` without validating the target key name or prefix. */
+  allowUnsafeKeyDelete: boolean
 }
 
 /**
@@ -297,6 +303,23 @@ export function parseInputs(): ParsedInputs {
       ? parsePositiveInt('valid-duration', validDurationInput)
       : undefined
   const targetApplicationKeyId = optional('target-application-key-id')
+  const targetKeyNamePrefix = optional('target-key-name-prefix')
+  const allowAccountLevelKey = parseBool(
+    'allow-account-level-key',
+    core.getInput('allow-account-level-key') || 'false',
+  )
+  const allowNonExpiringKey = parseBool(
+    'allow-non-expiring-key',
+    core.getInput('allow-non-expiring-key') || 'false',
+  )
+  const allowPrivilegedCapabilities = parseBool(
+    'allow-privileged-capabilities',
+    core.getInput('allow-privileged-capabilities') || 'false',
+  )
+  const allowUnsafeKeyDelete = parseBool(
+    'allow-unsafe-key-delete',
+    core.getInput('allow-unsafe-key-delete') || 'false',
+  )
 
   const compareMode = parseEnum(
     'compare-mode',
@@ -362,6 +385,11 @@ export function parseInputs(): ParsedInputs {
     namePrefix,
     validDurationInSeconds,
     targetApplicationKeyId,
+    targetKeyNamePrefix,
+    allowAccountLevelKey,
+    allowNonExpiringKey,
+    allowPrivilegedCapabilities,
+    allowUnsafeKeyDelete,
   }
 }
 
@@ -478,7 +506,7 @@ export function splitCsv(value: string | undefined): string[] {
     .filter((s) => s.length > 0)
 }
 
-function parseCapabilities(value: string | undefined): KeyCapability[] {
+function parseCapabilities(value: string | undefined): Capability[] {
   return splitCsv(value).map((raw) => parseEnum('capabilities', raw, VALID_CAPABILITIES))
 }
 

@@ -102,7 +102,7 @@ inputs:
     required: false
     default: 'auto'
   max-results:
-    description: 'Maximum number of files returned by `list`. Must be a positive decimal integer. Default 1000.'
+    description: 'Maximum number of files returned by `list`, or application keys returned by `list-keys`. Must be a positive decimal integer. Default 1000.'
     required: false
     default: '1000'
   expected-sha1:
@@ -122,23 +122,42 @@ inputs:
     required: false
     default: 'false'
   capabilities:
-    description: 'Comma-separated B2 capabilities to grant for `create-key`, for example `listFiles,readFiles,writeFiles`.'
+    description: 'Comma-separated B2 capabilities to grant for `create-key`, for example `listFiles,readFiles,writeFiles`. Key-management and account-administration capabilities require `allow-privileged-capabilities: true`.'
     required: false
   key-name:
     description: 'Human-readable application key name for `create-key`.'
     required: false
   scope-bucket:
-    description: 'Optional bucket name to scope a `create-key` application key to. Omit for an account-level key.'
+    description: 'Bucket name to scope a `create-key` application key to. Omit only with `allow-account-level-key: true`.'
     required: false
   name-prefix:
     description: 'Optional file-name prefix restriction for `create-key`. Requires `scope-bucket`.'
     required: false
   valid-duration:
-    description: 'Optional validity duration in seconds for `create-key`. Omit for a key that does not expire.'
+    description: 'Validity duration in seconds for `create-key`. Omit only with `allow-non-expiring-key: true`.'
     required: false
   target-application-key-id:
     description: 'Application key ID to delete for `delete-key`.'
     required: false
+  target-key-name-prefix:
+    description: 'Application key name prefix allowed for `delete-key` target validation. Use this or `key-name` unless `allow-unsafe-key-delete: true` is set.'
+    required: false
+  allow-account-level-key:
+    description: 'Permit `create-key` to mint an account-level key without `scope-bucket`. Review carefully before enabling.'
+    required: false
+    default: 'false'
+  allow-non-expiring-key:
+    description: 'Permit `create-key` to mint a key without `valid-duration`. Review carefully before enabling.'
+    required: false
+    default: 'false'
+  allow-privileged-capabilities:
+    description: 'Permit `create-key` to grant key-management or account-administration capabilities such as listKeys, writeKeys, deleteKeys, bucket administration, or bypassGovernance.'
+    required: false
+    default: 'false'
+  allow-unsafe-key-delete:
+    description: 'Permit `delete-key` without validating the target key name or prefix. Review carefully before enabling.'
+    required: false
+    default: 'false'
 
 outputs:
   application-key-id:
@@ -149,6 +168,8 @@ outputs:
     description: 'Application key name returned by `create-key` or `delete-key`.'
   keys-listed:
     description: 'Number of application keys returned by `list-keys`.'
+  key-deleted:
+    description: '`true` when `delete-key` deleted a key; `false` for dry-run or already-absent no-ops.'
   file-id:
     description: 'B2 file ID of a single-file op (upload, copy, hide, retention, head). For `unhide`, set only when a hide marker is removed and identifies that removed marker.'
   file-name:
@@ -158,7 +179,7 @@ outputs:
   bytes-transferred:
     description: 'Total bytes uploaded/downloaded/copied/synced. Head emits 0.'
   file-count:
-    description: 'Aggregate count of files matched or processed, including skipped sync entries and dry-run delete/purge matches. Prefer verb-specific count outputs when available.'
+    description: 'Aggregate count of files matched or processed by file/object commands, including skipped sync entries and dry-run delete/purge matches. Not emitted by key-management actions.'
   files-uploaded:
     description: 'Number of files uploaded (upload glob / sync up).'
   files-downloaded:
@@ -176,7 +197,7 @@ outputs:
   local-sha1:
     description: 'Local file SHA-1 computed by `verify`.'
   summary-json:
-    description: 'Complete JSON array with per-file details when the manifest fits within 256 KiB of UTF-8 JSON text. When exceeded, emits [] instead of changing shape or emitting a partial array. Credential-like fields are omitted by name for every command. For upload entries, fileInfo is SDK-returned metadata when available, otherwise canonical submitted metadata. For presign, entries omit live presigned URLs.'
+    description: 'Complete JSON array with per-file or per-key details when the manifest fits within 256 KiB of UTF-8 JSON text. When exceeded, emits [] instead of changing shape or emitting a partial array. Credential-like fields are omitted by name for every command. For upload entries, fileInfo is SDK-returned metadata when available, otherwise canonical submitted metadata. For presign, entries omit live presigned URLs. For key actions, entries omit application-key secrets, accountId, and deprecated bucketId.'
   summary-json-truncated:
     description: 'Always-emitted true/false branch key; true when the full manifest exceeded the supported summary-json size cap. When true, file-count and verb-specific count outputs remain the authoritative totals.'
   summary-json-notice:

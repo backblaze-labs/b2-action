@@ -605,15 +605,14 @@ describe('main dispatcher', () => {
     expect(out['application-key']).toBe('created-secret-value')
     expect(out['application-key-id']).toBe(result.applicationKeyId)
     expect(out['summary-json']).not.toContain('created-secret-value')
+    expect(JSON.stringify(firstSummary(ctx))).not.toContain('created-secret-value')
     expect(JSON.parse(out['summary-json'] ?? '[]')).toEqual([
       {
         keyName: result.keyName,
         applicationKeyId: result.applicationKeyId,
         capabilities: result.capabilities,
-        accountId: result.accountId,
         expirationTimestamp: result.expirationTimestamp,
         bucketIds: result.bucketIds,
-        bucketId: result.bucketId,
         namePrefix: result.namePrefix,
         options: result.options,
       },
@@ -1572,11 +1571,12 @@ function setupSuccessfulAction(ctx: LoadedMain, action: ActionName): Record<stri
       })
     }
     case 'delete-key': {
-      const result = keyResult('deleted-key')
+      const result = keyResult('deleted-key', { deleted: true })
       ctx.commands.deleteKeyCommand.mockResolvedValue(result)
       return completeSummaryOutput({
         'application-key-id': result.applicationKeyId,
         'key-name': result.keyName,
+        'key-deleted': 'true',
         'summary-json': JSON.stringify([keySummary(result)]),
       })
     }
@@ -1648,15 +1648,13 @@ function listedFile(override: {
   }
 }
 
-function keyResult(keyName: string, override: { applicationKey?: string } = {}) {
+function keyResult(keyName: string, override: { applicationKey?: string; deleted?: boolean } = {}) {
   return {
     keyName,
     applicationKeyId: `id-${keyName}`,
     capabilities: ['listFiles', 'readFiles'],
-    accountId: 'account-id',
     expirationTimestamp: null,
     bucketIds: null,
-    bucketId: null,
     namePrefix: null,
     options: [],
     ...override,
@@ -1668,11 +1666,10 @@ function keySummary(key: ReturnType<typeof keyResult>) {
     keyName: key.keyName,
     applicationKeyId: key.applicationKeyId,
     capabilities: key.capabilities,
-    accountId: key.accountId,
     expirationTimestamp: key.expirationTimestamp,
     bucketIds: key.bucketIds,
-    bucketId: key.bucketId,
     namePrefix: key.namePrefix,
     options: key.options,
+    ...('deleted' in key ? { deleted: key.deleted } : {}),
   }
 }

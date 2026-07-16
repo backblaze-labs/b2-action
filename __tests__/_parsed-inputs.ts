@@ -47,6 +47,11 @@ export function makeParsedInputs(
     namePrefix: undefined,
     validDurationInSeconds: undefined,
     targetApplicationKeyId: undefined,
+    targetKeyNamePrefix: undefined,
+    allowAccountLevelKey: false,
+    allowNonExpiringKey: false,
+    allowPrivilegedCapabilities: false,
+    allowUnsafeKeyDelete: false,
     ...override,
   }
 }

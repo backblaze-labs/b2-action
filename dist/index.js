@@ -39259,7 +39259,7 @@ const ACTION_EFFECTS = {
     purge: { kind: 'write', honorsDryRun: true },
     'create-key': { kind: 'write', honorsDryRun: false },
     'list-keys': { kind: 'read', honorsDryRun: false },
-    'delete-key': { kind: 'write', honorsDryRun: false },
+    'delete-key': { kind: 'write', honorsDryRun: true },
 };
 const VALID_COMPARE = ['modtime', 'size', 'none'];
 const VALID_KEEP = ['no-delete', 'delete', 'keep-days'];
@@ -39357,6 +39357,11 @@ function parseInputs() {
         ? parsePositiveInt('valid-duration', validDurationInput)
         : undefined;
     const targetApplicationKeyId = optional('target-application-key-id');
+    const targetKeyNamePrefix = optional('target-key-name-prefix');
+    const allowAccountLevelKey = parseBool('allow-account-level-key', getInput('allow-account-level-key') || 'false');
+    const allowNonExpiringKey = parseBool('allow-non-expiring-key', getInput('allow-non-expiring-key') || 'false');
+    const allowPrivilegedCapabilities = parseBool('allow-privileged-capabilities', getInput('allow-privileged-capabilities') || 'false');
+    const allowUnsafeKeyDelete = parseBool('allow-unsafe-key-delete', getInput('allow-unsafe-key-delete') || 'false');
     const compareMode = parseEnum('compare-mode', (getInput('compare-mode') || 'modtime').toLowerCase(), VALID_COMPARE);
     const keepMode = parseEnum('keep-mode', (getInput('keep-mode') || 'no-delete').toLowerCase(), VALID_KEEP);
     const syncDirection = parseEnum('direction', (getInput('direction') || 'auto').toLowerCase(), VALID_DIRECTION);
@@ -39400,6 +39405,11 @@ function parseInputs() {
         namePrefix,
         validDurationInSeconds,
         targetApplicationKeyId,
+        targetKeyNamePrefix,
+        allowAccountLevelKey,
+        allowNonExpiringKey,
+        allowPrivilegedCapabilities,
+        allowUnsafeKeyDelete,
     };
 }
 /**
@@ -40341,6 +40351,18 @@ async function hideCommand(bucket, inputs) {
 ;// CONCATENATED MODULE: ./src/commands/keys.ts
 
 
+
+const SAFE_CREATE_KEY_CAPABILITIES = new Set([
+    Capability.ListFiles,
+    Capability.ReadFiles,
+    Capability.ShareFiles,
+    Capability.WriteFiles,
+    Capability.DeleteFiles,
+    Capability.ReadFileLegalHolds,
+    Capability.WriteFileLegalHolds,
+    Capability.ReadFileRetentions,
+    Capability.WriteFileRetentions,
+]);
 /**
  * Create a scoped B2 application key.
  *
@@ -40358,6 +40380,7 @@ async function createKeyCommand(client, inputs) {
     if (inputs.namePrefix !== undefined && inputs.scopeBucket === undefined) {
         throw new Error("'name-prefix' requires 'scope-bucket' for 'create-key' action");
     }
+    validateCreateKeySafety(inputs);
     startGroup(`create application key ${inputs.keyName}`);
     try {
         const scopedBucket = inputs.scopeBucket !== undefined ? await client.getBucket(inputs.scopeBucket) : null;
@@ -40373,9 +40396,11 @@ async function createKeyCommand(client, inputs) {
                 ? { validDurationInSeconds: inputs.validDurationInSeconds }
                 : {}),
         };
+        await assertNoExistingKeyWithName(client, inputs.keyName);
         const result = await client.createKey(options);
-        info(`  created ${result.applicationKeyId}`);
-        return result;
+        info(`  created application key id ${result.applicationKeyId}`);
+        info('  B2 returns the application-key secret only once; if output writing or cleanup fails, revoke the logged application-key-id.');
+        return { ...keyMetadata(result), applicationKey: result.applicationKey };
     }
     finally {
         endGroup();
@@ -40393,7 +40418,7 @@ async function listKeysCommand(client, inputs) {
         const page = await client.listKeys({ pageSize: inputs.maxResults });
         info(`  ${page.keys.length} key(s) listed`);
         return {
-            keys: [...page.keys],
+            keys: page.keys.map(keyMetadata),
             truncated: page.nextApplicationKeyId !== null,
         };
     }
@@ -40407,15 +40432,144 @@ async function deleteKeyCommand(client, inputs) {
         throw new Error("'target-application-key-id' input is required for 'delete-key' action");
     }
     const targetApplicationKeyId = inputs.targetApplicationKeyId;
+    if (targetApplicationKeyId === inputs.applicationKeyId) {
+        throw new Error('Refusing to delete the currently authorized application key');
+    }
+    if (!inputs.allowUnsafeKeyDelete &&
+        inputs.keyName === undefined &&
+        inputs.targetKeyNamePrefix === undefined) {
+        throw new Error("'delete-key' requires 'key-name' or 'target-key-name-prefix' to validate intent; set 'allow-unsafe-key-delete: true' only for reviewed workflows");
+    }
     startGroup(`delete application key ${targetApplicationKeyId}`);
     try {
-        const result = await client.deleteKey(applicationKeyId(targetApplicationKeyId));
-        info(`  deleted ${result.applicationKeyId}`);
-        return result;
+        const target = inputs.allowUnsafeKeyDelete
+            ? null
+            : await findKeyById(client, targetApplicationKeyId);
+        if (target === null) {
+            if (inputs.allowUnsafeKeyDelete && !inputs.dryRun) {
+                try {
+                    const result = await client.deleteKey(applicationKeyId(targetApplicationKeyId));
+                    info(`  deleted ${result.applicationKeyId}`);
+                    return { ...keyMetadata(result), deleted: true };
+                }
+                catch (err) {
+                    if (!isMissingKeyError(err))
+                        throw err;
+                }
+            }
+            if (inputs.allowUnsafeKeyDelete && inputs.dryRun) {
+                info(`  dry-run: would delete ${targetApplicationKeyId}`);
+                return missingDeleteResult(inputs);
+            }
+            info(`  application key ${targetApplicationKeyId} is already absent; no-op`);
+            return missingDeleteResult(inputs);
+        }
+        validateDeleteTarget(target, inputs);
+        if (inputs.dryRun) {
+            info(`  dry-run: would delete ${target.applicationKeyId}`);
+            return { ...target, deleted: false };
+        }
+        try {
+            const result = await client.deleteKey(applicationKeyId(targetApplicationKeyId));
+            info(`  deleted ${result.applicationKeyId}`);
+            return { ...keyMetadata(result), deleted: true };
+        }
+        catch (err) {
+            if (!isMissingKeyError(err))
+                throw err;
+            info(`  application key ${targetApplicationKeyId} is already absent; no-op`);
+            return { ...target, deleted: false };
+        }
     }
     finally {
         endGroup();
     }
+}
+function validateCreateKeySafety(inputs) {
+    if (inputs.scopeBucket === undefined && !inputs.allowAccountLevelKey) {
+        throw new Error("'scope-bucket' is required for 'create-key' unless 'allow-account-level-key: true' is set");
+    }
+    if (inputs.validDurationInSeconds === undefined && !inputs.allowNonExpiringKey) {
+        throw new Error("'valid-duration' is required for 'create-key' unless 'allow-non-expiring-key: true' is set");
+    }
+    const privileged = inputs.capabilities.filter((capability) => {
+        return !SAFE_CREATE_KEY_CAPABILITIES.has(capability);
+    });
+    if (privileged.length > 0 && !inputs.allowPrivilegedCapabilities) {
+        throw new Error(`Refusing privileged key capabilities without 'allow-privileged-capabilities: true': ${privileged.join(', ')}`);
+    }
+}
+async function assertNoExistingKeyWithName(client, keyName) {
+    let existing;
+    try {
+        existing = await findKeysByName(client, keyName);
+    }
+    catch (err) {
+        const detail = err instanceof Error ? ` ${err.message}` : '';
+        throw new Error(`'create-key' requires listKeys permission to verify key-name uniqueness before minting a one-time secret.${detail}`);
+    }
+    if (existing.length === 0)
+        return;
+    const ids = existing.map((key) => key.applicationKeyId).join(', ');
+    throw new Error(`Application key name "${keyName}" already exists (${ids}); refusing to create a duplicate. ` +
+        'If a previous run crashed after B2 created the key, revoke the listed application-key-id because the one-time secret cannot be recovered.');
+}
+async function findKeysByName(client, keyName) {
+    const matches = [];
+    for await (const key of client.paginateKeys({ pageSize: 1000 })) {
+        if (key.keyName === keyName)
+            matches.push(keyMetadata(key));
+    }
+    return matches;
+}
+async function findKeyById(client, targetApplicationKeyId) {
+    try {
+        for await (const key of client.paginateKeys({ pageSize: 1000 })) {
+            if (key.applicationKeyId === targetApplicationKeyId)
+                return keyMetadata(key);
+        }
+        return null;
+    }
+    catch (err) {
+        const detail = err instanceof Error ? ` ${err.message}` : '';
+        throw new Error(`'delete-key' requires listKeys permission to validate the target key before deletion.${detail}`);
+    }
+}
+function validateDeleteTarget(target, inputs) {
+    if (inputs.keyName !== undefined && target.keyName !== inputs.keyName) {
+        throw new Error(`Refusing to delete application key ${target.applicationKeyId}: expected key-name "${inputs.keyName}" but found "${target.keyName}"`);
+    }
+    if (inputs.targetKeyNamePrefix !== undefined &&
+        !target.keyName.startsWith(inputs.targetKeyNamePrefix)) {
+        throw new Error(`Refusing to delete application key ${target.applicationKeyId}: key-name "${target.keyName}" does not start with "${inputs.targetKeyNamePrefix}"`);
+    }
+}
+function missingDeleteResult(inputs) {
+    return {
+        keyName: inputs.keyName ?? '(already absent)',
+        applicationKeyId: inputs.targetApplicationKeyId ?? '',
+        capabilities: [],
+        expirationTimestamp: null,
+        bucketIds: null,
+        namePrefix: null,
+        options: [],
+        deleted: false,
+    };
+}
+function isMissingKeyError(err) {
+    return (err instanceof B2Error &&
+        (err.code === 'not_found' || (err.code === 'bad_request' && /key not found/i.test(err.message))));
+}
+function keyMetadata(key) {
+    return {
+        keyName: key.keyName,
+        applicationKeyId: key.applicationKeyId,
+        capabilities: [...key.capabilities],
+        expirationTimestamp: key.expirationTimestamp,
+        bucketIds: key.bucketIds === null ? null : [...key.bucketIds],
+        namePrefix: key.namePrefix,
+        options: [...key.options],
+    };
 }
 
 ;// CONCATENATED MODULE: ./src/commands/list.ts
@@ -49477,9 +49631,11 @@ const SUMMARY_JSON_PREVIEW_OUTPUT_NAME = 'summary-json-preview';
  *
  * The serializer also omits credential-bearing field names for every command:
  * `url`, fields ending in `url`, and fields containing `authorization`,
- * `signature`, or `token` after case/underscore/hyphen normalization. Commands
- * that need to expose similarly named non-secret data should project it to an
- * explicit safe field name before calling this helper.
+ * `signature`, or `token` after case/underscore/hyphen normalization. Common
+ * credential field names such as `applicationKey`, `secret`, `secretKey`, and
+ * `accessKey` are omitted too. Commands that need to expose similarly named
+ * non-secret data should project it to an explicit safe field name before
+ * calling this helper.
  */
 function buildSummaryJsonPayload(items, options = {}) {
     const serialized = serializeJsonArrayPrefix(items, options, items.length);
@@ -49590,7 +49746,13 @@ function isSensitiveSummaryJsonField(key) {
         normalized.endsWith('url') ||
         normalized.includes('authorization') ||
         normalized.includes('signature') ||
-        normalized.includes('token'));
+        normalized.includes('token') ||
+        normalized === 'applicationkey' ||
+        normalized === 'secret' ||
+        normalized === 'secretkey' ||
+        normalized === 'accesskey' ||
+        normalized.endsWith('secret') ||
+        normalized.endsWith('secretkey'));
 }
 function utf8ByteLength(value) {
     return external_node_buffer_.Buffer.byteLength(value, 'utf8');
@@ -50045,8 +50207,9 @@ async function run() {
                 const result = await deleteKeyCommand(authorized.client, inputs);
                 setOutput('application-key-id', result.applicationKeyId);
                 setOutput('key-name', result.keyName);
+                setOutput('key-deleted', String(result.deleted));
                 await writeStepSummary({
-                    title: 'Backblaze B2: delete-key',
+                    title: inputs.dryRun ? 'Backblaze B2: delete-key (dry-run)' : 'Backblaze B2: delete-key',
                     rows: [applicationKeySummaryRow(result)],
                 });
                 setSummaryJsonOutput([result], { item: applicationKeySummaryItem });
@@ -50128,17 +50291,16 @@ function presignSummaryItem(file) {
     return { fileName: file.fileName, expiresAt: file.expiresAt };
 }
 function applicationKeySummaryItem(key) {
-    return {
+    const item = {
         keyName: key.keyName,
         applicationKeyId: key.applicationKeyId,
         capabilities: key.capabilities,
-        accountId: key.accountId,
         expirationTimestamp: key.expirationTimestamp,
         bucketIds: key.bucketIds,
-        bucketId: key.bucketId,
         namePrefix: key.namePrefix,
         options: key.options,
     };
+    return 'deleted' in key ? { ...item, deleted: key.deleted } : item;
 }
 function applicationKeySummaryRow(key) {
     return {
@@ -50155,6 +50317,8 @@ function applicationKeyStatusLine(key) {
     if (key.namePrefix !== null)
         parts.push(`prefix=${key.namePrefix}`);
     parts.push(`expires=${key.expirationTimestamp === null ? 'never' : new Date(key.expirationTimestamp).toISOString()}`);
+    if ('deleted' in key)
+        parts.push(key.deleted ? 'deleted=true' : 'deleted=false');
     return parts.join(' ');
 }
 function setFileCountOutput(count) {

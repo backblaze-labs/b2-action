@@ -374,9 +374,17 @@ Set `bypass-governance: true` to shorten governance-mode retention or to remove 
   with:
     action: delete-key
     target-application-key-id: ${{ steps.scoped-key.outputs.application-key-id }}
+    key-name: deploy-${{ github.run_id }}
 ```
 
 `create-key` masks the returned secret before writing the `application-key` output. B2 returns that secret only once; downstream steps should store it in an environment variable or pass it directly to tools that need it.
+For retry safety, `create-key` refuses to mint a second key when the requested `key-name` already exists. If a run stops after B2 creates a key but before outputs or cleanup complete, rerunning the same deterministic `key-name` fails before creating a duplicate and logs the existing application key ID to revoke. The one-time secret cannot be recovered from an existing key.
+
+By default, `create-key` requires `scope-bucket` and `valid-duration`, and only allows file-level capabilities. Use `allow-account-level-key: true`, `allow-non-expiring-key: true`, or `allow-privileged-capabilities: true` only in reviewed workflows that intentionally need those broader credentials. Accepted B2 capabilities are:
+
+`listFiles`, `readFiles`, `shareFiles`, `writeFiles`, `deleteFiles`, `readFileLegalHolds`, `writeFileLegalHolds`, `readFileRetentions`, `writeFileRetentions`, `listKeys`, `writeKeys`, `deleteKeys`, `listBuckets`, `listAllBucketNames`, `readBuckets`, `writeBuckets`, `deleteBuckets`, `readBucketRetentions`, `writeBucketRetentions`, `readBucketEncryption`, `writeBucketEncryption`, `readBucketReplications`, `writeBucketReplications`, `readBucketNotifications`, `writeBucketNotifications`, `readBucketLogging`, `writeBucketLogging`, `bypassGovernance`.
+
+`delete-key` refuses arbitrary IDs unless the target key matches `key-name`, matches `target-key-name-prefix`, or `allow-unsafe-key-delete: true` is set. It refuses to delete the currently authorized application key. It treats an already-absent key as a successful no-op and honors `dry-run: true` by validating/reporting the target without deleting it.
 
 ### Chain outputs
 
@@ -434,12 +442,17 @@ Set `bypass-governance: true` to shorten governance-mode retention or to remove 
 | `retention-until` | no | | `retention` ISO 8601 expiry (required when mode is compliance/governance). |
 | `legal-hold` | no | | `retention` legal-hold value: `on` \| `off`. |
 | `bypass-governance` | no | `false` | Allow governance-mode retention bypass for retention changes and `delete`/`purge` removals. Requires the B2 application key to include `bypassGovernance`. |
-| `capabilities` | create-key only | | CSV of B2 capabilities to grant, for example `listFiles,readFiles,writeFiles`. |
-| `key-name` | create-key only | | Human-readable application key name. |
-| `scope-bucket` | create-key only | | Optional bucket name to scope the new key to. Omit for account-level scope. |
+| `capabilities` | create-key only | | CSV of B2 capabilities to grant, for example `listFiles,readFiles,writeFiles`. Key-management and account-administration capabilities require `allow-privileged-capabilities: true`. |
+| `key-name` | create-key / delete-key | | Human-readable application key name. Required by `create-key`; for `delete-key`, validates the target unless `target-key-name-prefix` or `allow-unsafe-key-delete` is used. |
+| `scope-bucket` | create-key only | | Bucket name to scope the new key to. Omit only with `allow-account-level-key: true`. |
 | `name-prefix` | create-key only | | Optional file-name prefix restriction. Requires `scope-bucket`. |
-| `valid-duration` | create-key only | | Optional key lifetime in seconds. Must be a positive decimal integer. Omit for a non-expiring key. |
+| `valid-duration` | create-key only | | Key lifetime in seconds. Must be a positive decimal integer. Omit only with `allow-non-expiring-key: true`. |
 | `target-application-key-id` | delete-key only | | Application key ID to delete. |
+| `target-key-name-prefix` | delete-key only | | Application key name prefix allowed for target validation. Use this or `key-name` unless `allow-unsafe-key-delete: true` is set. |
+| `allow-account-level-key` | create-key only | `false` | Permit minting an account-level key without `scope-bucket`. |
+| `allow-non-expiring-key` | create-key only | `false` | Permit minting a key without `valid-duration`. |
+| `allow-privileged-capabilities` | create-key only | `false` | Permit key-management or account-administration capabilities such as `listKeys`, `writeKeys`, `deleteKeys`, bucket administration, or `bypassGovernance`. |
+| `allow-unsafe-key-delete` | delete-key only | `false` | Permit deletion without validating target key name or prefix. |
 
 \* Either set the input or one of the env-var fallbacks.
 
@@ -451,11 +464,12 @@ Set `bypass-governance: true` to shorten governance-mode retention or to remove 
 | `application-key` | create-key | Application key secret returned once by B2. Masked before the output is written. |
 | `key-name` | create-key / delete-key | Application key name. |
 | `keys-listed` | list-keys | Count returned (capped by `max-results`). |
+| `key-deleted` | delete-key | `true` when a key was deleted; `false` for dry-run or already-absent no-ops. |
 | `file-id` | upload / copy / hide / retention / head; unhide if a hide marker was removed | B2 file ID. For `unhide`, this identifies the removed hide marker, not the target object. |
 | `file-name` | single-file ops | B2 file name (path). |
 | `content-sha1` | upload / download / head when available | SHA-1 hex. Omitted when B2 does not expose a whole-file SHA-1, including multipart objects. |
 | `bytes-transferred` | upload / download / sync / copy / head | Total bytes moved. Head emits `0`. |
-| `file-count` | every command | Aggregate count of files matched or processed, including skipped sync entries and dry-run delete/purge matches. Prefer verb-specific count outputs when available. |
+| `file-count` | file/object commands | Aggregate count of files matched or processed, including skipped sync entries and dry-run delete/purge matches. Not emitted by key-management actions. Prefer verb-specific count outputs when available. |
 | `files-uploaded` | upload / sync up | Count. |
 | `files-downloaded` | download / sync down | Count. |
 | `files-deleted` | delete / purge / sync | Count. |
@@ -464,7 +478,7 @@ Set `bypass-governance: true` to shorten governance-mode retention or to remove 
 | `verified` | verify | `true` / `false`. |
 | `remote-sha1` | verify | Normalized comparable remote SHA-1, raw non-comparable B2 value such as `none` or `unverified:<sha1>`, or empty when B2 does not expose one. |
 | `local-sha1` | verify | Local file SHA-1 (when computed from `destination`). |
-| `summary-json` | every command | Complete JSON array with per-file or per-key details when the result fits within 256 KiB of UTF-8 JSON text. When the result exceeds the cap, this output is `[]` instead of changing shape or emitting a partial array. Credential-like fields are omitted by name for every command. For `presign`, entries omit live presigned URLs; for `create-key`, entries omit the one-time key secret. |
+| `summary-json` | every command | Complete JSON array with per-file or per-key details when the result fits within 256 KiB of UTF-8 JSON text. When the result exceeds the cap, this output is `[]` instead of changing shape or emitting a partial array. Credential-like fields are omitted by name for every command. For `presign`, entries omit live presigned URLs; for key actions, entries omit one-time key secrets, `accountId`, and deprecated `bucketId`. |
 | `summary-json-truncated` | every command | `true` / `false`. Always emitted. `true` means the full manifest exceeded the supported `summary-json` size cap. |
 | `summary-json-notice` | every command when truncated | Small JSON object describing why `summary-json` was truncated and where to find the bounded preview. |
 | `summary-json-preview` | every command when truncated | Bounded partial JSON array with the first 100 entries that fit the cap. Do not treat it as a complete manifest. Credential-like fields are omitted by name for every command. For `presign`, entries omit live presigned URLs. |
@@ -477,7 +491,7 @@ For upload entries, `fileInfo` contains SDK-returned metadata when B2 reports it
 
 When truncated, `summary-json-notice` contains `{ "truncated": true, "reason": string, "totalCount": number, "previewCount": number, "previewOutput": "summary-json-preview" }`.
 
-For every command, `summary-json` and `summary-json-preview` omit fields with credential-bearing names (`url`, fields ending in `url`, and fields containing `authorization`, `signature`, or `token`, ignoring case, underscores, and hyphens). If a future command needs to expose a similarly named non-secret value, it must project it to an explicit safe field name before emitting the summary.
+For every command, `summary-json` and `summary-json-preview` omit fields with credential-bearing names (`url`, fields ending in `url`, fields containing `authorization`, `signature`, or `token`, and common credential names such as `applicationKey`, `secret`, `secretKey`, and `accessKey`, ignoring case, underscores, and hyphens). If a future command needs to expose a similarly named non-secret value, it must project it to an explicit safe field name before emitting the summary.
 
 For `presign`, `summary-json` and `summary-json-preview` contain only non-secret manifest fields such as `fileName` and `expiresAt`; the dedicated `presigned-url` output is the only structured output that contains a bearer URL. In prefix mode, only the first generated URL is exposed through `presigned-url`; bulk URL fan-out through `summary-json` is intentionally unsupported because those URLs are credentials. Generate or handle additional URLs in a trusted step that treats them as secrets.
 

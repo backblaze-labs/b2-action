@@ -79,7 +79,13 @@ const EXPECTED_OUTPUT_KEYS = {
     'summary-json-truncated',
   ],
   'list-keys': ['keys-listed', 'summary-json', 'summary-json-truncated'],
-  'delete-key': ['application-key-id', 'key-name', 'summary-json', 'summary-json-truncated'],
+  'delete-key': [
+    'application-key-id',
+    'key-deleted',
+    'key-name',
+    'summary-json',
+    'summary-json-truncated',
+  ],
 } as const satisfies Record<ActionName, readonly string[]>
 
 afterEach(() => {
@@ -296,7 +302,7 @@ function applyCommandResult(commands: ReturnType<typeof commandMocks>, action: A
       })
       return
     case 'delete-key':
-      commands.deleteKeyCommand.mockResolvedValue(keyResult(action, false))
+      commands.deleteKeyCommand.mockResolvedValue({ ...keyResult(action, false), deleted: true })
       return
   }
 }
@@ -317,10 +323,8 @@ function keyResult(action: ActionName, includeSecret: boolean) {
     applicationKeyId: `id-${action}`,
     ...(includeSecret ? { applicationKey: `secret-${action}` } : {}),
     capabilities: ['listFiles'],
-    accountId: 'account-id',
     expirationTimestamp: null,
     bucketIds: null,
-    bucketId: null,
     namePrefix: null,
     options: [],
   }

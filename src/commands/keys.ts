@@ -1,26 +1,54 @@
 import * as core from '@actions/core'
 import {
-  type ApplicationKey,
   applicationKeyId,
   type B2Client,
+  Capability,
   type CreateKeyOptions,
-  type FullApplicationKey,
 } from '@backblaze-labs/b2-sdk'
+import { B2Error } from '@backblaze-labs/b2-sdk/errors'
 import type { ParsedInputs } from '../inputs.ts'
 
+const SAFE_CREATE_KEY_CAPABILITIES = new Set<Capability>([
+  Capability.ListFiles,
+  Capability.ReadFiles,
+  Capability.ShareFiles,
+  Capability.WriteFiles,
+  Capability.DeleteFiles,
+  Capability.ReadFileLegalHolds,
+  Capability.WriteFileLegalHolds,
+  Capability.ReadFileRetentions,
+  Capability.WriteFileRetentions,
+])
+
+/** Application key metadata intentionally exposed by this action. */
+export interface KeyMetadata {
+  keyName: string
+  applicationKeyId: string
+  capabilities: readonly Capability[]
+  expirationTimestamp: number | null
+  bucketIds: readonly string[] | null
+  namePrefix: string | null
+  options: readonly string[]
+}
+
 /** Result of {@link createKeyCommand}. Includes the secret returned once by B2. */
-export type CreateKeyResult = FullApplicationKey
+export interface CreateKeyResult extends KeyMetadata {
+  applicationKey: string
+}
 
 /** Result of {@link listKeysCommand}. */
 export interface ListKeysResult {
   /** Application keys matching the account, capped by `max-results`. Secrets are never included. */
-  keys: ApplicationKey[]
+  keys: KeyMetadata[]
   /** True when more keys exist beyond `max-results`. */
   truncated: boolean
 }
 
 /** Result of {@link deleteKeyCommand}. */
-export type DeleteKeyResult = ApplicationKey
+export interface DeleteKeyResult extends KeyMetadata {
+  /** True when the key was deleted; false for dry-run or already-absent no-ops. */
+  deleted: boolean
+}
 
 /**
  * Create a scoped B2 application key.
@@ -42,6 +70,7 @@ export async function createKeyCommand(
   if (inputs.namePrefix !== undefined && inputs.scopeBucket === undefined) {
     throw new Error("'name-prefix' requires 'scope-bucket' for 'create-key' action")
   }
+  validateCreateKeySafety(inputs)
 
   core.startGroup(`create application key ${inputs.keyName}`)
   try {
@@ -60,9 +89,13 @@ export async function createKeyCommand(
         ? { validDurationInSeconds: inputs.validDurationInSeconds }
         : {}),
     }
+    await assertNoExistingKeyWithName(client, inputs.keyName)
     const result = await client.createKey(options)
-    core.info(`  created ${result.applicationKeyId}`)
-    return result
+    core.info(`  created application key id ${result.applicationKeyId}`)
+    core.info(
+      '  B2 returns the application-key secret only once; if output writing or cleanup fails, revoke the logged application-key-id.',
+    )
+    return { ...keyMetadata(result), applicationKey: result.applicationKey }
   } finally {
     core.endGroup()
   }
@@ -83,7 +116,7 @@ export async function listKeysCommand(
     const page = await client.listKeys({ pageSize: inputs.maxResults })
     core.info(`  ${page.keys.length} key(s) listed`)
     return {
-      keys: [...page.keys],
+      keys: page.keys.map(keyMetadata),
       truncated: page.nextApplicationKeyId !== null,
     }
   } finally {
@@ -100,13 +133,179 @@ export async function deleteKeyCommand(
     throw new Error("'target-application-key-id' input is required for 'delete-key' action")
   }
   const targetApplicationKeyId = inputs.targetApplicationKeyId
+  if (targetApplicationKeyId === inputs.applicationKeyId) {
+    throw new Error('Refusing to delete the currently authorized application key')
+  }
+  if (
+    !inputs.allowUnsafeKeyDelete &&
+    inputs.keyName === undefined &&
+    inputs.targetKeyNamePrefix === undefined
+  ) {
+    throw new Error(
+      "'delete-key' requires 'key-name' or 'target-key-name-prefix' to validate intent; set 'allow-unsafe-key-delete: true' only for reviewed workflows",
+    )
+  }
 
   core.startGroup(`delete application key ${targetApplicationKeyId}`)
   try {
-    const result = await client.deleteKey(applicationKeyId(targetApplicationKeyId))
-    core.info(`  deleted ${result.applicationKeyId}`)
-    return result
+    const target = inputs.allowUnsafeKeyDelete
+      ? null
+      : await findKeyById(client, targetApplicationKeyId)
+    if (target === null) {
+      if (inputs.allowUnsafeKeyDelete && !inputs.dryRun) {
+        try {
+          const result = await client.deleteKey(applicationKeyId(targetApplicationKeyId))
+          core.info(`  deleted ${result.applicationKeyId}`)
+          return { ...keyMetadata(result), deleted: true }
+        } catch (err) {
+          if (!isMissingKeyError(err)) throw err
+        }
+      }
+      if (inputs.allowUnsafeKeyDelete && inputs.dryRun) {
+        core.info(`  dry-run: would delete ${targetApplicationKeyId}`)
+        return missingDeleteResult(inputs)
+      }
+      core.info(`  application key ${targetApplicationKeyId} is already absent; no-op`)
+      return missingDeleteResult(inputs)
+    }
+
+    validateDeleteTarget(target, inputs)
+    if (inputs.dryRun) {
+      core.info(`  dry-run: would delete ${target.applicationKeyId}`)
+      return { ...target, deleted: false }
+    }
+
+    try {
+      const result = await client.deleteKey(applicationKeyId(targetApplicationKeyId))
+      core.info(`  deleted ${result.applicationKeyId}`)
+      return { ...keyMetadata(result), deleted: true }
+    } catch (err) {
+      if (!isMissingKeyError(err)) throw err
+      core.info(`  application key ${targetApplicationKeyId} is already absent; no-op`)
+      return { ...target, deleted: false }
+    }
   } finally {
     core.endGroup()
+  }
+}
+
+function validateCreateKeySafety(inputs: ParsedInputs): void {
+  if (inputs.scopeBucket === undefined && !inputs.allowAccountLevelKey) {
+    throw new Error(
+      "'scope-bucket' is required for 'create-key' unless 'allow-account-level-key: true' is set",
+    )
+  }
+  if (inputs.validDurationInSeconds === undefined && !inputs.allowNonExpiringKey) {
+    throw new Error(
+      "'valid-duration' is required for 'create-key' unless 'allow-non-expiring-key: true' is set",
+    )
+  }
+  const privileged = inputs.capabilities.filter((capability) => {
+    return !SAFE_CREATE_KEY_CAPABILITIES.has(capability)
+  })
+  if (privileged.length > 0 && !inputs.allowPrivilegedCapabilities) {
+    throw new Error(
+      `Refusing privileged key capabilities without 'allow-privileged-capabilities: true': ${privileged.join(', ')}`,
+    )
+  }
+}
+
+async function assertNoExistingKeyWithName(client: B2Client, keyName: string): Promise<void> {
+  let existing: KeyMetadata[]
+  try {
+    existing = await findKeysByName(client, keyName)
+  } catch (err) {
+    const detail = err instanceof Error ? ` ${err.message}` : ''
+    throw new Error(
+      `'create-key' requires listKeys permission to verify key-name uniqueness before minting a one-time secret.${detail}`,
+    )
+  }
+  if (existing.length === 0) return
+
+  const ids = existing.map((key) => key.applicationKeyId).join(', ')
+  throw new Error(
+    `Application key name "${keyName}" already exists (${ids}); refusing to create a duplicate. ` +
+      'If a previous run crashed after B2 created the key, revoke the listed application-key-id because the one-time secret cannot be recovered.',
+  )
+}
+
+async function findKeysByName(client: B2Client, keyName: string): Promise<KeyMetadata[]> {
+  const matches: KeyMetadata[] = []
+  for await (const key of client.paginateKeys({ pageSize: 1000 })) {
+    if (key.keyName === keyName) matches.push(keyMetadata(key))
+  }
+  return matches
+}
+
+async function findKeyById(
+  client: B2Client,
+  targetApplicationKeyId: string,
+): Promise<KeyMetadata | null> {
+  try {
+    for await (const key of client.paginateKeys({ pageSize: 1000 })) {
+      if (key.applicationKeyId === targetApplicationKeyId) return keyMetadata(key)
+    }
+    return null
+  } catch (err) {
+    const detail = err instanceof Error ? ` ${err.message}` : ''
+    throw new Error(
+      `'delete-key' requires listKeys permission to validate the target key before deletion.${detail}`,
+    )
+  }
+}
+
+function validateDeleteTarget(target: KeyMetadata, inputs: ParsedInputs): void {
+  if (inputs.keyName !== undefined && target.keyName !== inputs.keyName) {
+    throw new Error(
+      `Refusing to delete application key ${target.applicationKeyId}: expected key-name "${inputs.keyName}" but found "${target.keyName}"`,
+    )
+  }
+  if (
+    inputs.targetKeyNamePrefix !== undefined &&
+    !target.keyName.startsWith(inputs.targetKeyNamePrefix)
+  ) {
+    throw new Error(
+      `Refusing to delete application key ${target.applicationKeyId}: key-name "${target.keyName}" does not start with "${inputs.targetKeyNamePrefix}"`,
+    )
+  }
+}
+
+function missingDeleteResult(inputs: ParsedInputs): DeleteKeyResult {
+  return {
+    keyName: inputs.keyName ?? '(already absent)',
+    applicationKeyId: inputs.targetApplicationKeyId ?? '',
+    capabilities: [],
+    expirationTimestamp: null,
+    bucketIds: null,
+    namePrefix: null,
+    options: [],
+    deleted: false,
+  }
+}
+
+function isMissingKeyError(err: unknown): boolean {
+  return (
+    err instanceof B2Error &&
+    (err.code === 'not_found' || (err.code === 'bad_request' && /key not found/i.test(err.message)))
+  )
+}
+
+function keyMetadata(key: {
+  keyName: string
+  applicationKeyId: string
+  capabilities: readonly Capability[]
+  expirationTimestamp: number | null
+  bucketIds: readonly string[] | null
+  namePrefix: string | null
+  options: readonly string[]
+}): KeyMetadata {
+  return {
+    keyName: key.keyName,
+    applicationKeyId: key.applicationKeyId,
+    capabilities: [...key.capabilities],
+    expirationTimestamp: key.expirationTimestamp,
+    bucketIds: key.bucketIds === null ? null : [...key.bucketIds],
+    namePrefix: key.namePrefix,
+    options: [...key.options],
   }
 }

@@ -244,6 +244,11 @@ describe('parseInputs', () => {
     setInput('scope-bucket', 'deploy-bucket')
     setInput('name-prefix', 'releases/')
     setInput('valid-duration', '3600')
+    setInput('target-key-name-prefix', 'deploy-')
+    setInput('allow-account-level-key', 'true')
+    setInput('allow-non-expiring-key', 'true')
+    setInput('allow-privileged-capabilities', 'true')
+    setInput('allow-unsafe-key-delete', 'true')
 
     const r = parseInputs()
     expect(r.keyName).toBe('ci-key')
@@ -251,6 +256,11 @@ describe('parseInputs', () => {
     expect(r.scopeBucket).toBe('deploy-bucket')
     expect(r.namePrefix).toBe('releases/')
     expect(r.validDurationInSeconds).toBe(3600)
+    expect(r.targetKeyNamePrefix).toBe('deploy-')
+    expect(r.allowAccountLevelKey).toBe(true)
+    expect(r.allowNonExpiringKey).toBe(true)
+    expect(r.allowPrivilegedCapabilities).toBe(true)
+    expect(r.allowUnsafeKeyDelete).toBe(true)
   })
 
   it('rejects unknown application-key capabilities', () => {

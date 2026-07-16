@@ -183,6 +183,38 @@ describe('summary-json output guard', () => {
     ])
   })
 
+  it('redacts application-key secrets without requiring a projection', () => {
+    const items = [
+      {
+        keyName: 'created-key',
+        applicationKeyId: 'id-created-key',
+        applicationKey: 'one-time-secret',
+        nested: {
+          secretKey: 'nested-secret',
+          access_key: 'access-secret',
+          safe: 'kept',
+        },
+      },
+    ]
+
+    const payload = buildSummaryJsonPayload(items)
+
+    expect(payload.truncated).toBe(false)
+    if (payload.truncated) throw new Error('expected complete payload')
+    expect(payload.json).not.toContain('one-time-secret')
+    expect(payload.json).not.toContain('nested-secret')
+    expect(payload.json).not.toContain('access-secret')
+    expect(JSON.parse(payload.json)).toEqual([
+      {
+        keyName: 'created-key',
+        applicationKeyId: 'id-created-key',
+        nested: {
+          safe: 'kept',
+        },
+      },
+    ])
+  })
+
   it('redacts sensitive fields without requiring a projection for bounded previews', () => {
     const items = Array.from({ length: 3 }, (_, i) => ({
       fileName: `secret-${i}.txt`,

@@ -2,14 +2,19 @@ import { realpathSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import * as core from '@actions/core'
-import type { ApplicationKey, FullApplicationKey } from '@backblaze-labs/b2-sdk'
 import { buildClient, getBucket } from './client.ts'
 import { copyCommand } from './commands/copy.ts'
 import { deleteCommand } from './commands/delete.ts'
 import { downloadCommand } from './commands/download.ts'
 import { headCommand } from './commands/head.ts'
 import { hideCommand } from './commands/hide.ts'
-import { createKeyCommand, deleteKeyCommand, listKeysCommand } from './commands/keys.ts'
+import {
+  createKeyCommand,
+  type DeleteKeyResult,
+  deleteKeyCommand,
+  type KeyMetadata,
+  listKeysCommand,
+} from './commands/keys.ts'
 import { listCommand } from './commands/list.ts'
 import { type PresignedFile, presignCommand } from './commands/presign.ts'
 import { purgeCommand } from './commands/purge.ts'
@@ -383,8 +388,9 @@ export async function run(): Promise<void> {
         const result = await deleteKeyCommand(authorized.client, inputs)
         core.setOutput('application-key-id', result.applicationKeyId)
         core.setOutput('key-name', result.keyName)
+        core.setOutput('key-deleted', String(result.deleted))
         await writeStepSummary({
-          title: 'Backblaze B2: delete-key',
+          title: inputs.dryRun ? 'Backblaze B2: delete-key (dry-run)' : 'Backblaze B2: delete-key',
           rows: [applicationKeySummaryRow(result)],
         })
         setSummaryJsonOutput([result], { item: applicationKeySummaryItem })
@@ -474,21 +480,20 @@ function presignSummaryItem(file: PresignedFile): Pick<PresignedFile, 'fileName'
   return { fileName: file.fileName, expiresAt: file.expiresAt }
 }
 
-function applicationKeySummaryItem(key: ApplicationKey | FullApplicationKey) {
-  return {
+function applicationKeySummaryItem(key: KeyMetadata | DeleteKeyResult) {
+  const item = {
     keyName: key.keyName,
     applicationKeyId: key.applicationKeyId,
     capabilities: key.capabilities,
-    accountId: key.accountId,
     expirationTimestamp: key.expirationTimestamp,
     bucketIds: key.bucketIds,
-    bucketId: key.bucketId,
     namePrefix: key.namePrefix,
     options: key.options,
   }
+  return 'deleted' in key ? { ...item, deleted: key.deleted } : item
 }
 
-function applicationKeySummaryRow(key: ApplicationKey | FullApplicationKey): SummaryRow {
+function applicationKeySummaryRow(key: KeyMetadata | DeleteKeyResult): SummaryRow {
   return {
     fileName: key.keyName,
     fileId: key.applicationKeyId,
@@ -496,7 +501,7 @@ function applicationKeySummaryRow(key: ApplicationKey | FullApplicationKey): Sum
   }
 }
 
-function applicationKeyStatusLine(key: ApplicationKey | FullApplicationKey): string {
+function applicationKeyStatusLine(key: KeyMetadata | DeleteKeyResult): string {
   const parts = [
     `capabilities=${key.capabilities.join(',') || '-'}`,
     `buckets=${key.bucketIds === null ? 'all' : key.bucketIds.join(',')}`,
@@ -507,6 +512,7 @@ function applicationKeyStatusLine(key: ApplicationKey | FullApplicationKey): str
       key.expirationTimestamp === null ? 'never' : new Date(key.expirationTimestamp).toISOString()
     }`,
   )
+  if ('deleted' in key) parts.push(key.deleted ? 'deleted=true' : 'deleted=false')
   return parts.join(' ')
 }
 
