@@ -490,7 +490,13 @@ function applicationKeySummaryItem(key: KeyMetadata | DeleteKeyResult) {
     namePrefix: key.namePrefix,
     options: key.options,
   }
-  return 'deleted' in key ? { ...item, deleted: key.deleted } : item
+  return 'deleted' in key
+    ? {
+        ...item,
+        deleted: key.deleted,
+        ...(key.metadataVerified === false ? { metadataVerified: false } : {}),
+      }
+    : item
 }
 
 function applicationKeySummaryRow(key: KeyMetadata | DeleteKeyResult): SummaryRow {
@@ -502,6 +508,9 @@ function applicationKeySummaryRow(key: KeyMetadata | DeleteKeyResult): SummaryRo
 }
 
 function applicationKeyStatusLine(key: KeyMetadata | DeleteKeyResult): string {
+  if ('deleted' in key && key.metadataVerified === false) {
+    return `metadata=not-fetched ${key.deleted ? 'deleted=true' : 'deleted=false'}`
+  }
   const parts = [
     `capabilities=${key.capabilities.join(',') || '-'}`,
     `buckets=${key.bucketIds === null ? 'all' : key.bucketIds.join(',')}`,

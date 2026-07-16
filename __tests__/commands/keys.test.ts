@@ -157,6 +157,19 @@ describe('application key commands', () => {
     expect(result.truncated).toBe(true)
   })
 
+  it('clamps list-keys page size to the B2 API maximum', async () => {
+    const pageSizes: number[] = []
+    const client = Object.create(fx.client) as B2Client
+    client.listKeys = async (options) => {
+      pageSizes.push(options?.pageSize ?? -1)
+      return fx.client.listKeys(options)
+    }
+
+    await listKeysCommand(client, makeInputs('list-keys', { maxResults: 2500 }))
+
+    expect(pageSizes).toEqual([1000])
+  })
+
   it('deletes an application key by id', async () => {
     const created = await fx.client.createKey({
       keyName: 'delete-me',
@@ -262,6 +275,31 @@ describe('application key commands', () => {
     const after = await listKeysCommand(fx.client, makeInputs('list-keys', { maxResults: 100 }))
 
     expect(result.deleted).toBe(false)
+    expect(after.keys.some((key) => key.applicationKeyId === created.applicationKeyId)).toBe(true)
+  })
+
+  it('does not report unsafe dry-run delete as already absent without lookup', async () => {
+    const created = await fx.client.createKey({
+      keyName: 'unsafe-dry-run-delete',
+      capabilities: [Capability.ListFiles],
+    })
+
+    const result = await deleteKeyCommand(
+      fx.client,
+      makeInputs('delete-key', {
+        targetApplicationKeyId: created.applicationKeyId,
+        allowUnsafeKeyDelete: true,
+        dryRun: true,
+      }),
+    )
+    const after = await listKeysCommand(fx.client, makeInputs('list-keys', { maxResults: 100 }))
+
+    expect(result).toMatchObject({
+      applicationKeyId: created.applicationKeyId,
+      keyName: '(not fetched)',
+      deleted: false,
+      metadataVerified: false,
+    })
     expect(after.keys.some((key) => key.applicationKeyId === created.applicationKeyId)).toBe(true)
   })
 })

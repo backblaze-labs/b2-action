@@ -40363,6 +40363,7 @@ const SAFE_CREATE_KEY_CAPABILITIES = new Set([
     Capability.ReadFileRetentions,
     Capability.WriteFileRetentions,
 ]);
+const B2_LIST_KEYS_PAGE_SIZE_LIMIT = 1000;
 /**
  * Create a scoped B2 application key.
  *
@@ -40413,9 +40414,10 @@ async function createKeyCommand(client, inputs) {
  * only the requested page mirrors the existing `list` verb's bounded behavior.
  */
 async function listKeysCommand(client, inputs) {
-    startGroup(`list application keys (max ${inputs.maxResults})`);
+    const maxResults = Math.min(inputs.maxResults, B2_LIST_KEYS_PAGE_SIZE_LIMIT);
+    startGroup(`list application keys (max ${maxResults})`);
     try {
-        const page = await client.listKeys({ pageSize: inputs.maxResults });
+        const page = await client.listKeys({ pageSize: maxResults });
         info(`  ${page.keys.length} key(s) listed`);
         return {
             keys: page.keys.map(keyMetadata),
@@ -40458,8 +40460,8 @@ async function deleteKeyCommand(client, inputs) {
                 }
             }
             if (inputs.allowUnsafeKeyDelete && inputs.dryRun) {
-                info(`  dry-run: would delete ${targetApplicationKeyId}`);
-                return missingDeleteResult(inputs);
+                info(`  dry-run: would delete ${targetApplicationKeyId}; existence and metadata were not validated because allow-unsafe-key-delete is set`);
+                return unverifiedDeleteResult(inputs);
             }
             info(`  application key ${targetApplicationKeyId} is already absent; no-op`);
             return missingDeleteResult(inputs);
@@ -40554,6 +40556,19 @@ function missingDeleteResult(inputs) {
         namePrefix: null,
         options: [],
         deleted: false,
+    };
+}
+function unverifiedDeleteResult(inputs) {
+    return {
+        keyName: inputs.keyName ?? '(not fetched)',
+        applicationKeyId: inputs.targetApplicationKeyId ?? '',
+        capabilities: [],
+        expirationTimestamp: null,
+        bucketIds: null,
+        namePrefix: null,
+        options: [],
+        deleted: false,
+        metadataVerified: false,
     };
 }
 function isMissingKeyError(err) {
@@ -50299,7 +50314,13 @@ function applicationKeySummaryItem(key) {
         namePrefix: key.namePrefix,
         options: key.options,
     };
-    return 'deleted' in key ? { ...item, deleted: key.deleted } : item;
+    return 'deleted' in key
+        ? {
+            ...item,
+            deleted: key.deleted,
+            ...(key.metadataVerified === false ? { metadataVerified: false } : {}),
+        }
+        : item;
 }
 function applicationKeySummaryRow(key) {
     return {
@@ -50309,6 +50330,9 @@ function applicationKeySummaryRow(key) {
     };
 }
 function applicationKeyStatusLine(key) {
+    if ('deleted' in key && key.metadataVerified === false) {
+        return `metadata=not-fetched ${key.deleted ? 'deleted=true' : 'deleted=false'}`;
+    }
     const parts = [
         `capabilities=${key.capabilities.join(',') || '-'}`,
         `buckets=${key.bucketIds === null ? 'all' : key.bucketIds.join(',')}`,

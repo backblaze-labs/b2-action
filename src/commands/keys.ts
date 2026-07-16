@@ -19,6 +19,7 @@ const SAFE_CREATE_KEY_CAPABILITIES = new Set<Capability>([
   Capability.ReadFileRetentions,
   Capability.WriteFileRetentions,
 ])
+const B2_LIST_KEYS_PAGE_SIZE_LIMIT = 1000
 
 /** Application key metadata intentionally exposed by this action. */
 export interface KeyMetadata {
@@ -48,6 +49,8 @@ export interface ListKeysResult {
 export interface DeleteKeyResult extends KeyMetadata {
   /** True when the key was deleted; false for dry-run or already-absent no-ops. */
   deleted: boolean
+  /** False when unsafe dry-run mode intentionally skipped key metadata lookup. */
+  metadataVerified?: boolean
 }
 
 /**
@@ -113,9 +116,10 @@ export async function listKeysCommand(
   client: B2Client,
   inputs: ParsedInputs,
 ): Promise<ListKeysResult> {
-  core.startGroup(`list application keys (max ${inputs.maxResults})`)
+  const maxResults = Math.min(inputs.maxResults, B2_LIST_KEYS_PAGE_SIZE_LIMIT)
+  core.startGroup(`list application keys (max ${maxResults})`)
   try {
-    const page = await client.listKeys({ pageSize: inputs.maxResults })
+    const page = await client.listKeys({ pageSize: maxResults })
     core.info(`  ${page.keys.length} key(s) listed`)
     return {
       keys: page.keys.map(keyMetadata),
@@ -164,8 +168,10 @@ export async function deleteKeyCommand(
         }
       }
       if (inputs.allowUnsafeKeyDelete && inputs.dryRun) {
-        core.info(`  dry-run: would delete ${targetApplicationKeyId}`)
-        return missingDeleteResult(inputs)
+        core.info(
+          `  dry-run: would delete ${targetApplicationKeyId}; existence and metadata were not validated because allow-unsafe-key-delete is set`,
+        )
+        return unverifiedDeleteResult(inputs)
       }
       core.info(`  application key ${targetApplicationKeyId} is already absent; no-op`)
       return missingDeleteResult(inputs)
@@ -282,6 +288,20 @@ function missingDeleteResult(inputs: ParsedInputs): DeleteKeyResult {
     namePrefix: null,
     options: [],
     deleted: false,
+  }
+}
+
+function unverifiedDeleteResult(inputs: ParsedInputs): DeleteKeyResult {
+  return {
+    keyName: inputs.keyName ?? '(not fetched)',
+    applicationKeyId: inputs.targetApplicationKeyId ?? '',
+    capabilities: [],
+    expirationTimestamp: null,
+    bucketIds: null,
+    namePrefix: null,
+    options: [],
+    deleted: false,
+    metadataVerified: false,
   }
 }
 
