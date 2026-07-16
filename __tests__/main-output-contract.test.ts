@@ -179,6 +179,7 @@ function mockDispatcherPath(action: ActionName) {
   vi.doMock('../src/commands/head.ts', () => ({ headCommand: commands.headCommand }))
   vi.doMock('../src/commands/purge.ts', () => ({ purgeCommand: commands.purgeCommand }))
   vi.doMock('../src/commands/keys.ts', () => ({
+    B2_LIST_KEYS_PAGE_SIZE_LIMIT: 1000,
     createKeyCommand: commands.createKeyCommand,
     listKeysCommand: commands.listKeysCommand,
     deleteKeyCommand: commands.deleteKeyCommand,
