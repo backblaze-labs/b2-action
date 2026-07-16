@@ -43,6 +43,20 @@ describe('application key commands', () => {
     expect(result.expirationTimestamp).toBeGreaterThanOrEqual(before + 3600 * 1000)
   })
 
+  it('reports that scope-bucket lookup can fail from permissions', async () => {
+    await expect(
+      createKeyCommand(
+        fx.client,
+        makeInputs('create-key', {
+          keyName: 'missing-scope-bucket',
+          capabilities: [Capability.ListFiles],
+          scopeBucket: 'missing-bucket',
+          validDurationInSeconds: 3600,
+        }),
+      ),
+    ).rejects.toThrow(/listBuckets capability/)
+  })
+
   it('requires a bucket scope when name-prefix is provided', async () => {
     await expect(
       createKeyCommand(

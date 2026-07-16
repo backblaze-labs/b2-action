@@ -77,7 +77,9 @@ export async function createKeyCommand(
     const scopedBucket =
       inputs.scopeBucket !== undefined ? await client.getBucket(inputs.scopeBucket) : null
     if (inputs.scopeBucket !== undefined && scopedBucket === null) {
-      throw new Error(`Bucket "${inputs.scopeBucket}" not found for 'scope-bucket'`)
+      throw new Error(
+        `Bucket "${inputs.scopeBucket}" not found for 'scope-bucket', or the application key lacks listBuckets capability for it.`,
+      )
     }
 
     const options: CreateKeyOptions = {

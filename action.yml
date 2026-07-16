@@ -125,7 +125,7 @@ inputs:
     description: 'Comma-separated B2 capabilities to grant for `create-key`, for example `listFiles,readFiles,writeFiles`. Key-management and account-administration capabilities require `allow-privileged-capabilities: true`.'
     required: false
   key-name:
-    description: 'Human-readable application key name for `create-key`.'
+    description: 'Human-readable application key name for `create-key`; for `delete-key`, validates the target unless `target-key-name-prefix` or `allow-unsafe-key-delete` is set.'
     required: false
   scope-bucket:
     description: 'Bucket name to scope a `create-key` application key to. Omit only with `allow-account-level-key: true`.'
