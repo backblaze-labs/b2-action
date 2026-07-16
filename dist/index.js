@@ -50254,7 +50254,7 @@ async function run() {
                 const result = await listKeysCommand(authorized.client, inputs, signal);
                 setOutput('keys-listed', String(result.keys.length));
                 if (result.truncated) {
-                    const reason = inputs.maxResults > B2_LIST_KEYS_PAGE_SIZE_LIMIT
+                    const reason = inputs.maxResults >= B2_LIST_KEYS_PAGE_SIZE_LIMIT
                         ? `B2 page-size limit=${B2_LIST_KEYS_PAGE_SIZE_LIMIT}; max-results values above ${B2_LIST_KEYS_PAGE_SIZE_LIMIT} have no effect`
                         : `max-results=${inputs.maxResults}; raise it to see more`;
                     warning(`list-keys result truncated at ${reason}`);

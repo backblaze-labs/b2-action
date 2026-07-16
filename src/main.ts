@@ -375,7 +375,7 @@ export async function run(): Promise<void> {
         core.setOutput('keys-listed', String(result.keys.length))
         if (result.truncated) {
           const reason =
-            inputs.maxResults > B2_LIST_KEYS_PAGE_SIZE_LIMIT
+            inputs.maxResults >= B2_LIST_KEYS_PAGE_SIZE_LIMIT
               ? `B2 page-size limit=${B2_LIST_KEYS_PAGE_SIZE_LIMIT}; max-results values above ${B2_LIST_KEYS_PAGE_SIZE_LIMIT} have no effect`
               : `max-results=${inputs.maxResults}; raise it to see more`
           core.warning(`list-keys result truncated at ${reason}`)

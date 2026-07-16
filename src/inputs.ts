@@ -188,7 +188,7 @@ export interface ParsedInputs {
   bypassGovernance: boolean
   /** Capabilities granted to a key created by `create-key`. */
   capabilities: Capability[]
-  /** Human-readable B2 application key name for `create-key`. */
+  /** Human-readable B2 application key name for `create-key` and `delete-key` validation. */
   keyName: string | undefined
   /** Optional bucket name used to scope a newly-created application key. */
   scopeBucket: string | undefined

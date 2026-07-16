@@ -179,9 +179,9 @@ describe('main dispatcher', () => {
     expect(ctx.getBucket).not.toHaveBeenCalled()
   })
 
-  it('warns that list-keys truncation is capped by the B2 page-size limit', async () => {
+  it('warns that list-keys truncation is capped at the B2 page-size limit', async () => {
     const ctx = await loadMain()
-    ctx.parseInputs.mockReturnValue(inputs('list-keys', { maxResults: 2500 }))
+    ctx.parseInputs.mockReturnValue(inputs('list-keys', { maxResults: 1000 }))
     ctx.commands.listKeysCommand.mockResolvedValue({ keys: [], truncated: true })
 
     await ctx.run()
