@@ -2,10 +2,10 @@
 
 [![CI](https://github.com/backblaze-labs/b2-action/actions/workflows/ci.yml/badge.svg)](https://github.com/backblaze-labs/b2-action/actions/workflows/ci.yml) [![Release](https://github.com/backblaze-labs/b2-action/actions/workflows/release.yml/badge.svg)](https://github.com/backblaze-labs/b2-action/actions/workflows/release.yml) [![Marketplace](https://img.shields.io/github/v/release/backblaze-labs/b2-action?label=marketplace&color=red&logo=githubactions&logoColor=white)](https://github.com/marketplace/actions/backblaze-b2-cloud-storage-action) [![Latest release](https://img.shields.io/github/v/release/backblaze-labs/b2-action?display_name=tag&sort=semver&color=blue)](https://github.com/backblaze-labs/b2-action/releases/latest) [![License: MIT](https://img.shields.io/badge/license-MIT-yellow.svg)](./LICENSE) [![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen.svg)](./vitest.config.ts) [![Docs](https://img.shields.io/github/deployments/backblaze-labs/b2-action/github-pages?label=docs&logo=readthedocs&logoColor=white)](https://backblaze-labs.github.io/b2-action/)
 
-A Backblaze-maintained B2 GitHub Action. TypeScript-native, built on [@backblaze-labs/b2-sdk](https://github.com/backblaze-labs/b2-sdk-typescript). Thirteen verbs covering every B2 operation a CI workflow needs. Currently incubating in [Backblaze Labs](https://github.com/backblaze-labs).
+A Backblaze-maintained B2 GitHub Action. TypeScript-native, built on [@backblaze-labs/b2-sdk](https://github.com/backblaze-labs/b2-sdk-typescript). Sixteen verbs covering every B2 operation a CI workflow needs. Currently incubating in [Backblaze Labs](https://github.com/backblaze-labs).
 
 - **Node 24 action.** No Docker. Sub-second cold start.
-- **Thirteen verbs.** `upload`, `download`, `sync`, `copy`, `delete`, `list`, `hide`, `unhide`, `verify`, `presign`, `retention`, `head`, `purge`: pick via the `action` input.
+- **Sixteen verbs.** `upload`, `download`, `sync`, `copy`, `delete`, `list`, `hide`, `unhide`, `verify`, `presign`, `retention`, `head`, `purge`, `create-bucket`, `delete-bucket`, `list-buckets`: pick via the `action` input.
 - **Resumable multipart uploads** for any file size; streaming I/O so multi-GB payloads don't buffer in RAM.
 - **Server-side everything.** `copy` (same-bucket or cross-bucket) and `delete` operations stay server-side; bytes never traverse the runner.
 - **Server-side encryption.** SSE-B2 (managed) and SSE-C (customer key, base64).
@@ -32,6 +32,7 @@ A Backblaze-maintained B2 GitHub Action. TypeScript-native, built on [@backblaze
     - [Server-side copy (same-bucket or cross-bucket)](#server-side-copy-same-bucket-or-cross-bucket)
     - [List, dry-run-delete, delete](#list-dry-run-delete-delete)
     - [Hide / unhide](#hide--unhide)
+    - [Bucket administration](#bucket-administration)
     - [Verify SHA-1 without downloading](#verify-sha-1-without-downloading)
     - [Presign a download URL](#presign-a-download-url)
     - [Server-side encryption](#server-side-encryption)
@@ -101,6 +102,9 @@ Exact-version releases publish an attested `dist/index.js` asset for provenance 
 | `retention` | Apply Object Lock retention + legal hold to a file. | `source`, `bucket`, plus `retention-mode` and/or `legal-hold` |
 | `head` | Fetch object metadata (size, sha1, contentType, fileInfo) via HEAD. No body transfer. | `source`, `bucket` |
 | `purge` | Permanently delete every file version under a prefix, including hide markers and history. Whole-bucket purge requires `allow-bucket-purge: true`. Supports `dry-run` and `bypass-governance` for governance-retained versions. | `source` or `allow-bucket-purge`, `bucket` |
+| `create-bucket` | Create a bucket with type `allPublic` or `allPrivate`, with optional bucketInfo metadata. | `bucket`, `bucket-type` |
+| `delete-bucket` | Delete an empty bucket by name. | `bucket` |
+| `list-buckets` | List account buckets, optionally filtered by exact `bucket` name. | none |
 
 Exact-name `copy`, single-file `delete`, and `retention` operate only when the latest exact-name version is an upload. If that latest version is a hide marker, these commands do not search older upload history under the same name; they fail with the same `File not found` diagnostic used for absent names so default workflow logs do not reveal hidden-object existence. Run `unhide` first to restore the prior upload, or use `purge` when you need to remove hide markers and historical versions.
 
@@ -256,6 +260,29 @@ Exact-name `copy`, single-file `delete`, and `retention` operate only when the l
     source: legacy/old.tar.gz
 ```
 
+### Bucket administration
+
+```yaml
+- uses: backblaze-labs/b2-action@v1
+  with:
+    action: create-bucket
+    bucket: ci-ephemeral-${{ github.run_id }}
+    bucket-type: allPrivate
+    bucket-info: |
+      purpose=ci
+      owner=actions
+
+- id: buckets
+  uses: backblaze-labs/b2-action@v1
+  with:
+    action: list-buckets
+
+- uses: backblaze-labs/b2-action@v1
+  with:
+    action: delete-bucket
+    bucket: ci-ephemeral-${{ github.run_id }}
+```
+
 ### Verify SHA-1 without downloading
 
 ```yaml
@@ -369,10 +396,12 @@ Set `bypass-governance: true` to shorten governance-mode retention or to remove 
 
 | Input | Required | Default | Description |
 | --- | --- | --- | --- |
-| `action` | yes | | One of 13: `upload`, `download`, `sync`, `copy`, `delete`, `presign`, `list`, `hide`, `unhide`, `verify`, `retention`, `head`, `purge` |
+| `action` | yes | | One of 16: `upload`, `download`, `sync`, `copy`, `delete`, `presign`, `list`, `hide`, `unhide`, `verify`, `retention`, `head`, `purge`, `create-bucket`, `delete-bucket`, `list-buckets` |
 | `application-key-id` | no\* | | B2 application key ID. Falls back to `$B2_APPLICATION_KEY_ID`. |
 | `application-key` | no\* | | B2 application key. Falls back to `$B2_APPLICATION_KEY`. |
-| `bucket` | yes | | Destination bucket name. |
+| `bucket` | command-dependent | | Target bucket name. Required for every action except `list-buckets`; `create-bucket` and `delete-bucket` use it as the bucket to create or delete. `list-buckets` treats it as an optional exact-name filter. |
+| `bucket-type` | create-bucket only | | Bucket type for `create-bucket`: `allPublic` \| `allPrivate`. |
+| `bucket-info` | no | | Bucket metadata for `create-bucket` as newline- or simple comma-separated `key=value` pairs. Keys may contain letters, digits, underscores, and hyphens; values must fit B2 bucketInfo limits. |
 | `source-bucket` | copy only | `bucket` | Source bucket for cross-bucket copy. |
 | `source` | command-dependent | | Local path/glob (upload/sync up); B2 file name or prefix (everything else). Prefix downloads reject keys with empty, `.`, `..`, or control-character path segments. For whole-bucket purge, omit `source` or set `/` and set `allow-bucket-purge: true`. |
 | `destination` | command-dependent | | B2 file/prefix (upload/sync up/copy); local path (download/sync down/verify). Upload destinations are not normalized by the action; SDK/B2 key validation errors are surfaced rather than silently rewriting `/` characters. |
@@ -419,18 +448,23 @@ Set `bypass-governance: true` to shorten governance-mode retention or to remove 
 | `files-downloaded` | download / sync down | Count. |
 | `files-deleted` | delete / purge / sync | Count. |
 | `files-listed` | list / prefix presign | Count returned (capped by `max-results`). |
+| `bucket-id` | create-bucket / delete-bucket | B2 bucket ID. |
+| `bucket-name` | create-bucket / delete-bucket | B2 bucket name. |
+| `bucket-type` | create-bucket / delete-bucket | B2 bucket type. |
+| `bucket-count` | bucket administration actions | Number of buckets created, deleted, or listed. |
+| `buckets-listed` | list-buckets | Count returned. |
 | `presigned-url` | presign | Time-limited download URL. Masked as a secret. This is the only structured output that carries the live presigned URL. |
 | `verified` | verify | `true` / `false`. |
 | `remote-sha1` | verify | Normalized comparable remote SHA-1, raw non-comparable B2 value such as `none` or `unverified:<sha1>`, or empty when B2 does not expose one. |
 | `local-sha1` | verify | Local file SHA-1 (when computed from `destination`). |
-| `summary-json` | every command | Complete JSON array with per-file details when the result fits within 256 KiB of UTF-8 JSON text. When the result exceeds the cap, this output is `[]` instead of changing shape or emitting a partial array. Credential-like fields are omitted by name for every command. For `presign`, entries omit live presigned URLs. |
+| `summary-json` | every command | Complete JSON array with per-file or per-bucket details when the result fits within 256 KiB of UTF-8 JSON text. When the result exceeds the cap, this output is `[]` instead of changing shape or emitting a partial array. Credential-like fields are omitted by name for every command. For `presign`, entries omit live presigned URLs. |
 | `summary-json-truncated` | every command | `true` / `false`. Always emitted. `true` means the full manifest exceeded the supported `summary-json` size cap. |
 | `summary-json-notice` | every command when truncated | Small JSON object describing why `summary-json` was truncated and where to find the bounded preview. |
 | `summary-json-preview` | every command when truncated | Bounded partial JSON array with the first 100 entries that fit the cap. Do not treat it as a complete manifest. Credential-like fields are omitted by name for every command. For `presign`, entries omit live presigned URLs. |
 | `retryable` | classified SDK failures | `true` only when the failed action is safe to re-run automatically. Mutating actions with ambiguous transient failures emit `false` so callers inspect B2 state first. |
 | `retry-after` | classified SDK failures | Retry delay in seconds, clamped to 3600. Emitted only with `retryable=true`; network failures use a default backoff. |
 
-`summary-json` is complete-or-empty-on-truncation: it never changes shape and never carries a silently partial array. Consumers that parse `summary-json` as an array must first branch on `summary-json-truncated`; when it is `true`, the scalar count outputs (`file-count`, `files-listed`, `files-uploaded`, and the other verb-specific counts) remain the authoritative totals and may exceed the number of entries in `summary-json-preview`. Do not use `summary-json-preview` as an authoritative manifest for security-sensitive checks; fail or fetch a complete manifest another way.
+`summary-json` is complete-or-empty-on-truncation: it never changes shape and never carries a silently partial array. Consumers that parse `summary-json` as an array must first branch on `summary-json-truncated`; when it is `true`, the scalar count outputs (`file-count`, `bucket-count`, `files-listed`, `files-uploaded`, and the other verb-specific counts) remain the authoritative totals and may exceed the number of entries in `summary-json-preview`. Do not use `summary-json-preview` as an authoritative manifest for security-sensitive checks; fail or fetch a complete manifest another way.
 
 For upload entries, `fileInfo` contains SDK-returned metadata when B2 reports it; if the SDK response omits metadata, the action falls back to the canonical fileInfo submitted with the upload request.
 

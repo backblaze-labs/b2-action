@@ -39078,6 +39078,73 @@ async function findFileByName(bucket, fileName, bucketDisplayName) {
     throw new Error(`File not found in bucket "${display}": ${fileName}`);
 }
 
+;// CONCATENATED MODULE: ./src/commands/buckets.ts
+
+async function createBucketCommand(client, inputs) {
+    const bucketName = requireBucketName(inputs.bucket, 'create-bucket');
+    const bucketType = inputs.bucketType;
+    if (bucketType === undefined) {
+        throw new Error(`'bucket-type' input is required for 'create-bucket' action`);
+    }
+    startGroup(`create bucket b2://${bucketName} (${bucketType})`);
+    try {
+        const bucket = await client.createBucket({
+            bucketName,
+            bucketType,
+            ...(Object.keys(inputs.bucketInfo).length > 0 ? { bucketInfo: inputs.bucketInfo } : {}),
+        });
+        info(`  created bucket ${bucket.name} (${bucket.id})`);
+        return bucketResult(bucket.info);
+    }
+    finally {
+        endGroup();
+    }
+}
+async function deleteBucketCommand(client, inputs) {
+    const bucketName = requireBucketName(inputs.bucket, 'delete-bucket');
+    startGroup(`delete bucket b2://${bucketName}`);
+    try {
+        const bucket = await client.getBucket(bucketName);
+        if (bucket === null) {
+            throw new Error(`Bucket "${bucketName}" not found, or the application key lacks listBuckets capability for it.`);
+        }
+        const deleted = await client.deleteBucket(bucket.id);
+        info(`  deleted bucket ${bucketName} (${deleted.bucketId})`);
+        return bucketResult(deleted);
+    }
+    finally {
+        endGroup();
+    }
+}
+async function listBucketsCommand(client, inputs) {
+    const bucketName = inputs.bucket === '' ? undefined : inputs.bucket;
+    const label = bucketName === undefined ? 'list buckets' : `list buckets matching ${bucketName}`;
+    startGroup(label);
+    try {
+        const buckets = await client.listBuckets(bucketName === undefined ? undefined : { bucketName });
+        info(`  ${buckets.length} bucket(s) listed`);
+        return { buckets: buckets.map((bucket) => bucketResult(bucket.info)) };
+    }
+    finally {
+        endGroup();
+    }
+}
+function requireBucketName(bucket, action) {
+    if (bucket === '') {
+        throw new Error(`'bucket' input is required for '${action}' action`);
+    }
+    return bucket;
+}
+function bucketResult(info) {
+    return {
+        bucketId: info.bucketId,
+        bucketName: info.bucketName,
+        bucketType: info.bucketType,
+        bucketInfo: info.bucketInfo,
+        revision: info.revision,
+    };
+}
+
 // EXTERNAL MODULE: external "node:buffer"
 var external_node_buffer_ = __nccwpck_require__(4573);
 // EXTERNAL MODULE: external "node:crypto"
@@ -39151,6 +39218,9 @@ const VALID_ACTIONS = [
     'retention',
     'head',
     'purge',
+    'create-bucket',
+    'delete-bucket',
+    'list-buckets',
 ];
 /**
  * Runtime side-effect policy for each action verb.
@@ -39171,12 +39241,19 @@ const ACTION_EFFECTS = {
     retention: { kind: 'write', honorsDryRun: false },
     head: { kind: 'read', honorsDryRun: false },
     purge: { kind: 'write', honorsDryRun: true },
+    'create-bucket': { kind: 'write', honorsDryRun: false },
+    'delete-bucket': { kind: 'write', honorsDryRun: false },
+    'list-buckets': { kind: 'read', honorsDryRun: false },
 };
 const VALID_COMPARE = ['modtime', 'size', 'none'];
 const VALID_KEEP = ['no-delete', 'delete', 'keep-days'];
 const VALID_DIRECTION = ['auto', 'up', 'down'];
 const VALID_RETENTION_MODE = ['compliance', 'governance', 'none'];
 const VALID_LEGAL_HOLD = ['on', 'off'];
+const VALID_CREATE_BUCKET_TYPES = [
+    'allPublic',
+    'allPrivate',
+];
 const APPLICATION_KEY_ID_ENV = 'B2_APPLICATION_KEY_ID';
 const APPLICATION_KEY_ENV = 'B2_APPLICATION_KEY';
 const FILE_INFO_KEY_PATTERN = /^[a-zA-Z0-9_.`~!#$%^&*'|+-]+$/;
@@ -39184,6 +39261,9 @@ const FILE_INFO_KEY_MAX_BYTES = 50;
 const FILE_INFO_MAX_ENTRIES = 10;
 const FILE_INFO_TOTAL_MAX_BYTES = 7000;
 const FILE_INFO_TOTAL_MAX_BYTES_WITH_ENCRYPTION = 2048;
+const BUCKET_INFO_KEY_PATTERN = /^[a-zA-Z0-9_-]+$/;
+const BUCKET_INFO_MAX_ENTRIES = 10;
+const BUCKET_INFO_VALUE_MAX_BYTES = 2048;
 const CONTENT_HEADER_FILE_INFO_KEYS = [
     ['cache-control', 'b2-cache-control'],
     ['content-disposition', 'b2-content-disposition'],
@@ -39227,7 +39307,7 @@ function parseInputs() {
     // already knows which key they passed.
     core_setSecret(applicationKeyId);
     core_setSecret(applicationKey);
-    const bucket = required('bucket');
+    const bucket = bucketInput(action);
     const sourceBucket = optional('source-bucket');
     const allowBucketPurge = parseBool('allow-bucket-purge', getInput('allow-bucket-purge') || 'false');
     const source = optionalSource(action, allowBucketPurge);
@@ -39258,6 +39338,8 @@ function parseInputs() {
     }
     const expectedSha1 = optional('expected-sha1');
     const retentionUntil = optional('retention-until');
+    const bucketType = parseCreateBucketType(optional('bucket-type'), action);
+    const bucketInfo = parseBucketInfo(optional('bucket-info'));
     const compareMode = parseEnum('compare-mode', (getInput('compare-mode') || 'modtime').toLowerCase(), VALID_COMPARE);
     const keepMode = parseEnum('keep-mode', (getInput('keep-mode') || 'no-delete').toLowerCase(), VALID_KEEP);
     const syncDirection = parseEnum('direction', (getInput('direction') || 'auto').toLowerCase(), VALID_DIRECTION);
@@ -39295,6 +39377,8 @@ function parseInputs() {
         retentionUntil,
         legalHold,
         bypassGovernance,
+        bucketType,
+        bucketInfo,
     };
 }
 /**
@@ -39344,11 +39428,33 @@ function optional(name) {
     const v = getInput(name);
     return v === '' ? undefined : v;
 }
+function bucketInput(action) {
+    const v = optional('bucket');
+    if (v !== undefined)
+        return v;
+    if (action === 'list-buckets')
+        return '';
+    throw new Error(`'bucket' input is required for '${action}' action`);
+}
 function optionalSource(action, allowBucketPurge) {
     const v = getInput('source');
     if (v !== '')
         return v;
     return action === 'purge' && allowBucketPurge ? '' : undefined;
+}
+function parseCreateBucketType(raw, action) {
+    if (raw === undefined) {
+        if (action === 'create-bucket') {
+            throw new Error(`'bucket-type' input is required for 'create-bucket' action`);
+        }
+        return undefined;
+    }
+    const normalized = raw.trim().toLowerCase();
+    if (normalized === VALID_CREATE_BUCKET_TYPES[0].toLowerCase())
+        return VALID_CREATE_BUCKET_TYPES[0];
+    if (normalized === VALID_CREATE_BUCKET_TYPES[1].toLowerCase())
+        return VALID_CREATE_BUCKET_TYPES[1];
+    throw new Error(`Invalid 'bucket-type' input: "${raw}". Must be one of: ${VALID_CREATE_BUCKET_TYPES.join(', ')}`);
 }
 function addSecretValue(secretValues, value) {
     if (value === undefined || value === '')
@@ -39419,6 +39525,54 @@ function parseFileInfo(value) {
         addFileInfo(fileInfo, key, parsedValue, 'file-info', { allowReserved: false });
     }
     return fileInfo;
+}
+/**
+ * Parse bucketInfo metadata from newline-delimited or simple comma-separated
+ * `key=value` entries. BucketInfo keys preserve caller casing because B2
+ * treats them as ordinary user metadata keys.
+ *
+ * @internal
+ */
+function parseBucketInfo(value) {
+    if (value === undefined || value.trim() === '')
+        return {};
+    const pairs = /[\r\n]/.test(value) ? value.split(/\r?\n|\r/) : value.split(',');
+    const bucketInfo = {};
+    for (const rawPair of pairs) {
+        const pair = rawPair.trim();
+        if (pair === '')
+            continue;
+        const equalsIndex = pair.indexOf('=');
+        if (equalsIndex <= 0) {
+            throw new Error(`Invalid 'bucket-info' entry "${pair}". Expected key=value.`);
+        }
+        const key = pair.slice(0, equalsIndex).trim();
+        const parsedValue = pair.slice(equalsIndex + 1).trim();
+        addBucketInfo(bucketInfo, key, parsedValue);
+    }
+    validateBucketInfo(bucketInfo);
+    return bucketInfo;
+}
+function addBucketInfo(bucketInfo, key, value) {
+    if (Object.hasOwn(bucketInfo, key)) {
+        throw new Error(`Duplicate bucketInfo key "${key}" from 'bucket-info' input`);
+    }
+    bucketInfo[key] = value;
+}
+function validateBucketInfo(bucketInfo) {
+    const entries = Object.entries(bucketInfo);
+    if (entries.length > BUCKET_INFO_MAX_ENTRIES) {
+        throw new Error(`Invalid bucketInfo: ${entries.length} entries exceeds ${BUCKET_INFO_MAX_ENTRIES}`);
+    }
+    for (const [key, value] of entries) {
+        if (!BUCKET_INFO_KEY_PATTERN.test(key)) {
+            throw new Error(`Invalid bucketInfo key "${key}" from 'bucket-info'. Keys must match ${BUCKET_INFO_KEY_PATTERN.source}`);
+        }
+        const valueBytes = inputs_utf8Encoder.encode(value).byteLength;
+        if (valueBytes > BUCKET_INFO_VALUE_MAX_BYTES) {
+            throw new Error(`Invalid bucketInfo value for "${key}": ${valueBytes} bytes exceeds ${BUCKET_INFO_VALUE_MAX_BYTES}`);
+        }
+    }
 }
 function addFileInfo(fileInfo, key, value, inputName, options) {
     if (value === undefined)
@@ -49494,6 +49648,7 @@ function escapeHtml(value) {
 
 
 
+
 /**
  * Action entrypoint. Parses inputs, builds an authorized B2Client, dispatches
  * to the requested subcommand, and writes structured outputs back via
@@ -49542,6 +49697,33 @@ async function run() {
         const authToken = authorized.client.accountInfo.getAuthToken();
         if (authToken)
             registerSecretValue(secretValues, authToken);
+        switch (inputs.action) {
+            case 'create-bucket': {
+                const result = await createBucketCommand(authorized.client, inputs);
+                await emitBucketSummary('create-bucket', result);
+                return;
+            }
+            case 'delete-bucket': {
+                const result = await deleteBucketCommand(authorized.client, inputs);
+                await emitBucketSummary('delete-bucket', result);
+                return;
+            }
+            case 'list-buckets': {
+                const result = await listBucketsCommand(authorized.client, inputs);
+                setOutput('buckets-listed', String(result.buckets.length));
+                setBucketCountOutput(result.buckets.length);
+                await writeStepSummary({
+                    title: `Backblaze B2: list-buckets (${result.buckets.length})`,
+                    ...stepSummaryRows(result.buckets, (bucket) => ({
+                        fileName: bucket.bucketName,
+                        fileId: bucket.bucketId,
+                        status: bucket.bucketType,
+                    })),
+                });
+                setSummaryJsonOutput(result.buckets);
+                return;
+            }
+        }
         const bucket = await getBucket(authorized);
         switch (inputs.action) {
             case 'upload': {
@@ -49872,6 +50054,23 @@ async function emitDeletionSummary(verb, result, inputs) {
         })),
     });
 }
+async function emitBucketSummary(verb, result) {
+    setOutput('bucket-id', result.bucketId);
+    setOutput('bucket-name', result.bucketName);
+    setOutput('bucket-type', result.bucketType);
+    setBucketCountOutput(1);
+    await writeStepSummary({
+        title: `Backblaze B2: ${verb}`,
+        rows: [
+            {
+                fileName: result.bucketName,
+                fileId: result.bucketId,
+                status: result.bucketType,
+            },
+        ],
+    });
+    setSummaryJsonOutput([result]);
+}
 function stepSummaryRows(items, row) {
     // Pre-slice here to avoid mapping very large result sets; writeStepSummary
     // keeps its own defensive cap for direct callers.
@@ -49883,6 +50082,9 @@ function presignSummaryItem(file) {
 }
 function setFileCountOutput(count) {
     setOutput('file-count', String(count));
+}
+function setBucketCountOutput(count) {
+    setOutput('bucket-count', String(count));
 }
 function registerSecretValue(secretValues, value) {
     const trimmed = value.trim();

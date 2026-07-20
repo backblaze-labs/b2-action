@@ -23,6 +23,9 @@ export type ActionName =
   | 'retention'
   | 'head'
   | 'purge'
+  | 'create-bucket'
+  | 'delete-bucket'
+  | 'list-buckets'
 
 const VALID_ACTIONS: readonly ActionName[] = [
   'upload',
@@ -38,6 +41,9 @@ const VALID_ACTIONS: readonly ActionName[] = [
   'retention',
   'head',
   'purge',
+  'create-bucket',
+  'delete-bucket',
+  'list-buckets',
 ]
 
 type ActionEffect = {
@@ -64,6 +70,9 @@ export const ACTION_EFFECTS = {
   retention: { kind: 'write', honorsDryRun: false },
   head: { kind: 'read', honorsDryRun: false },
   purge: { kind: 'write', honorsDryRun: true },
+  'create-bucket': { kind: 'write', honorsDryRun: false },
+  'delete-bucket': { kind: 'write', honorsDryRun: false },
+  'list-buckets': { kind: 'read', honorsDryRun: false },
 } as const satisfies Record<ActionName, ActionEffect>
 
 /** How `sync` decides whether two files match. Drives the SDK's `synchronize()`. */
@@ -76,12 +85,18 @@ export type SyncDirection = 'auto' | 'up' | 'down'
 export type RetentionMode = 'compliance' | 'governance' | 'none'
 /** B2 Object Lock legal-hold state. */
 export type LegalHold = 'on' | 'off'
+/** Bucket access levels exposed by `create-bucket`. */
+export type CreateBucketType = 'allPublic' | 'allPrivate'
 
 const VALID_COMPARE: readonly CompareMode[] = ['modtime', 'size', 'none']
 const VALID_KEEP: readonly KeepMode[] = ['no-delete', 'delete', 'keep-days']
 const VALID_DIRECTION: readonly SyncDirection[] = ['auto', 'up', 'down']
 const VALID_RETENTION_MODE: readonly RetentionMode[] = ['compliance', 'governance', 'none']
 const VALID_LEGAL_HOLD: readonly LegalHold[] = ['on', 'off']
+const VALID_CREATE_BUCKET_TYPES = [
+  'allPublic',
+  'allPrivate',
+] as const satisfies readonly CreateBucketType[]
 const APPLICATION_KEY_ID_ENV = 'B2_APPLICATION_KEY_ID'
 const APPLICATION_KEY_ENV = 'B2_APPLICATION_KEY'
 const FILE_INFO_KEY_PATTERN = /^[a-zA-Z0-9_.`~!#$%^&*'|+-]+$/
@@ -89,6 +104,9 @@ const FILE_INFO_KEY_MAX_BYTES = 50
 const FILE_INFO_MAX_ENTRIES = 10
 const FILE_INFO_TOTAL_MAX_BYTES = 7000
 const FILE_INFO_TOTAL_MAX_BYTES_WITH_ENCRYPTION = 2048
+const BUCKET_INFO_KEY_PATTERN = /^[a-zA-Z0-9_-]+$/
+const BUCKET_INFO_MAX_ENTRIES = 10
+const BUCKET_INFO_VALUE_MAX_BYTES = 2048
 const CONTENT_HEADER_FILE_INFO_KEYS = [
   ['cache-control', 'b2-cache-control'],
   ['content-disposition', 'b2-content-disposition'],
@@ -176,6 +194,10 @@ export interface ParsedInputs {
   legalHold: LegalHold | undefined
   /** Allow shortening a governance-mode retention (requires key capability). */
   bypassGovernance: boolean
+  /** Bucket access level for `create-bucket`. */
+  bucketType: CreateBucketType | undefined
+  /** Custom B2 bucketInfo metadata to set on `create-bucket`. */
+  bucketInfo: Record<string, string>
 }
 
 /**
@@ -217,7 +239,7 @@ export function parseInputs(): ParsedInputs {
   core.setSecret(applicationKeyId)
   core.setSecret(applicationKey)
 
-  const bucket = required('bucket')
+  const bucket = bucketInput(action)
   const sourceBucket = optional('source-bucket')
   const allowBucketPurge = parseBool(
     'allow-bucket-purge',
@@ -261,6 +283,8 @@ export function parseInputs(): ParsedInputs {
   }
   const expectedSha1 = optional('expected-sha1')
   const retentionUntil = optional('retention-until')
+  const bucketType = parseCreateBucketType(optional('bucket-type'), action)
+  const bucketInfo = parseBucketInfo(optional('bucket-info'))
 
   const compareMode = parseEnum(
     'compare-mode',
@@ -320,6 +344,8 @@ export function parseInputs(): ParsedInputs {
     retentionUntil,
     legalHold,
     bypassGovernance,
+    bucketType,
+    bucketInfo,
   }
 }
 
@@ -382,10 +408,38 @@ function optional(name: string): string | undefined {
   return v === '' ? undefined : v
 }
 
+function bucketInput(action: ActionName): string {
+  const v = optional('bucket')
+  if (v !== undefined) return v
+  if (action === 'list-buckets') return ''
+  throw new Error(`'bucket' input is required for '${action}' action`)
+}
+
 function optionalSource(action: ActionName, allowBucketPurge: boolean): string | undefined {
   const v = core.getInput('source')
   if (v !== '') return v
   return action === 'purge' && allowBucketPurge ? '' : undefined
+}
+
+function parseCreateBucketType(
+  raw: string | undefined,
+  action: ActionName,
+): CreateBucketType | undefined {
+  if (raw === undefined) {
+    if (action === 'create-bucket') {
+      throw new Error(`'bucket-type' input is required for 'create-bucket' action`)
+    }
+    return undefined
+  }
+
+  const normalized = raw.trim().toLowerCase()
+  if (normalized === VALID_CREATE_BUCKET_TYPES[0].toLowerCase()) return VALID_CREATE_BUCKET_TYPES[0]
+  if (normalized === VALID_CREATE_BUCKET_TYPES[1].toLowerCase()) return VALID_CREATE_BUCKET_TYPES[1]
+  throw new Error(
+    `Invalid 'bucket-type' input: "${raw}". Must be one of: ${VALID_CREATE_BUCKET_TYPES.join(
+      ', ',
+    )}`,
+  )
 }
 
 function addSecretValue(secretValues: Set<string>, value: string | undefined): void {
@@ -457,6 +511,65 @@ export function parseFileInfo(value: string | undefined): Record<string, string>
   }
 
   return fileInfo
+}
+
+/**
+ * Parse bucketInfo metadata from newline-delimited or simple comma-separated
+ * `key=value` entries. BucketInfo keys preserve caller casing because B2
+ * treats them as ordinary user metadata keys.
+ *
+ * @internal
+ */
+export function parseBucketInfo(value: string | undefined): Record<string, string> {
+  if (value === undefined || value.trim() === '') return {}
+  const pairs = /[\r\n]/.test(value) ? value.split(/\r?\n|\r/) : value.split(',')
+  const bucketInfo: Record<string, string> = {}
+
+  for (const rawPair of pairs) {
+    const pair = rawPair.trim()
+    if (pair === '') continue
+    const equalsIndex = pair.indexOf('=')
+    if (equalsIndex <= 0) {
+      throw new Error(`Invalid 'bucket-info' entry "${pair}". Expected key=value.`)
+    }
+    const key = pair.slice(0, equalsIndex).trim()
+    const parsedValue = pair.slice(equalsIndex + 1).trim()
+    addBucketInfo(bucketInfo, key, parsedValue)
+  }
+
+  validateBucketInfo(bucketInfo)
+  return bucketInfo
+}
+
+function addBucketInfo(bucketInfo: Record<string, string>, key: string, value: string): void {
+  if (Object.hasOwn(bucketInfo, key)) {
+    throw new Error(`Duplicate bucketInfo key "${key}" from 'bucket-info' input`)
+  }
+  bucketInfo[key] = value
+}
+
+function validateBucketInfo(bucketInfo: Record<string, string>): void {
+  const entries = Object.entries(bucketInfo)
+  if (entries.length > BUCKET_INFO_MAX_ENTRIES) {
+    throw new Error(
+      `Invalid bucketInfo: ${entries.length} entries exceeds ${BUCKET_INFO_MAX_ENTRIES}`,
+    )
+  }
+
+  for (const [key, value] of entries) {
+    if (!BUCKET_INFO_KEY_PATTERN.test(key)) {
+      throw new Error(
+        `Invalid bucketInfo key "${key}" from 'bucket-info'. Keys must match ${BUCKET_INFO_KEY_PATTERN.source}`,
+      )
+    }
+
+    const valueBytes = utf8Encoder.encode(value).byteLength
+    if (valueBytes > BUCKET_INFO_VALUE_MAX_BYTES) {
+      throw new Error(
+        `Invalid bucketInfo value for "${key}": ${valueBytes} bytes exceeds ${BUCKET_INFO_VALUE_MAX_BYTES}`,
+      )
+    }
+  }
 }
 
 interface AddFileInfoOptions {

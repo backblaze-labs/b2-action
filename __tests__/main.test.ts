@@ -11,6 +11,7 @@ import {
   ServiceUnavailableError,
 } from '@backblaze-labs/b2-sdk/errors'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { BucketCommandResult } from '../src/commands/buckets.ts'
 import type { DownloadedFile } from '../src/commands/download.ts'
 import type { ListedFile } from '../src/commands/list.ts'
 import type { UploadedFile } from '../src/commands/upload.ts'
@@ -82,6 +83,9 @@ describe('main dispatcher', () => {
     'retention',
     'head',
     'purge',
+    'create-bucket',
+    'delete-bucket',
+    'list-buckets',
   ] satisfies ActionName[])('dispatches %s and emits its outputs', async (action) => {
     const ctx = await loadMain()
     const expectedOutputs = setupSuccessfulAction(ctx, action)
@@ -1214,6 +1218,9 @@ async function loadMain() {
   const getBucket = vi.fn<() => Promise<typeof bucket>>().mockResolvedValue(bucket)
   const writeStepSummary = vi.fn<typeof Summary.writeStepSummary>().mockResolvedValue(undefined)
   const commands = {
+    createBucketCommand: vi.fn(),
+    deleteBucketCommand: vi.fn(),
+    listBucketsCommand: vi.fn(),
     uploadCommand: vi.fn(),
     downloadCommand: vi.fn(),
     syncCommand: vi.fn(),
@@ -1239,6 +1246,11 @@ async function loadMain() {
   vi.doMock('../src/summary.ts', () => ({
     STEP_SUMMARY_MAX_ROWS: TEST_STEP_SUMMARY_MAX_ROWS,
     writeStepSummary,
+  }))
+  vi.doMock('../src/commands/buckets.ts', () => ({
+    createBucketCommand: commands.createBucketCommand,
+    deleteBucketCommand: commands.deleteBucketCommand,
+    listBucketsCommand: commands.listBucketsCommand,
   }))
   vi.doMock('../src/commands/upload.ts', () => ({ uploadCommand: commands.uploadCommand }))
   vi.doMock('../src/commands/download.ts', () => ({ downloadCommand: commands.downloadCommand }))
@@ -1493,6 +1505,40 @@ function setupSuccessfulAction(ctx: LoadedMain, action: ActionName): Record<stri
         'summary-json': JSON.stringify(files),
       })
     }
+    case 'create-bucket': {
+      const result = bucketResult('created-bucket', 'id-create-bucket', 'allPrivate')
+      ctx.commands.createBucketCommand.mockResolvedValue(result)
+      return completeSummaryOutput({
+        'bucket-id': 'id-create-bucket',
+        'bucket-name': 'created-bucket',
+        'bucket-type': 'allPrivate',
+        'bucket-count': '1',
+        'summary-json': JSON.stringify([result]),
+      })
+    }
+    case 'delete-bucket': {
+      const result = bucketResult('deleted-bucket', 'id-delete-bucket', 'allPublic')
+      ctx.commands.deleteBucketCommand.mockResolvedValue(result)
+      return completeSummaryOutput({
+        'bucket-id': 'id-delete-bucket',
+        'bucket-name': 'deleted-bucket',
+        'bucket-type': 'allPublic',
+        'bucket-count': '1',
+        'summary-json': JSON.stringify([result]),
+      })
+    }
+    case 'list-buckets': {
+      const buckets = [
+        bucketResult('bucket-a', 'id-bucket-a', 'allPrivate'),
+        bucketResult('bucket-b', 'id-bucket-b', 'allPublic'),
+      ]
+      ctx.commands.listBucketsCommand.mockResolvedValue({ buckets })
+      return completeSummaryOutput({
+        'buckets-listed': '2',
+        'bucket-count': '2',
+        'summary-json': JSON.stringify(buckets),
+      })
+    }
   }
   const exhaustive: never = action
   throw new Error(`unhandled action: ${exhaustive}`)
@@ -1558,5 +1604,19 @@ function listedFile(override: {
     uploadTimestamp: FIXTURE_UPLOAD_TS,
     contentType: override.contentType ?? 'application/octet-stream',
     fileInfo: {},
+  }
+}
+
+function bucketResult(
+  bucketName: string,
+  bucketId: string,
+  bucketType: 'allPrivate' | 'allPublic',
+): BucketCommandResult {
+  return {
+    bucketId,
+    bucketName,
+    bucketType,
+    bucketInfo: {},
+    revision: 1,
   }
 }
