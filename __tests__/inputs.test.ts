@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { collectInputSecretsForScrubbing, parseInputs } from '../src/inputs.ts'
+import { collectInputSecretsForScrubbing, parseBucketInfo, parseInputs } from '../src/inputs.ts'
 import { captureStdout, resetInputEnv, setInput } from './_helpers.ts'
 
 describe('parseInputs', () => {
@@ -57,6 +57,24 @@ describe('parseInputs', () => {
     expect(() => parseInputs()).toThrow(/Invalid 'action' input/)
   })
 
+  it('allows list-buckets without a bucket filter', () => {
+    setInput('action', 'list-buckets')
+    setInput('application-key-id', 'k')
+    setInput('application-key', 's')
+
+    const r = parseInputs()
+    expect(r.bucket).toBe('')
+    expect(r.action).toBe('list-buckets')
+  })
+
+  it('requires bucket except for list-buckets', () => {
+    setInput('action', 'upload')
+    setInput('application-key-id', 'k')
+    setInput('application-key', 's')
+
+    expect(() => parseInputs()).toThrow(/'bucket' input is required for 'upload' action/)
+  })
+
   it('throws when credentials are missing entirely', () => {
     setInput('action', 'upload')
     setInput('bucket', 'b')
@@ -104,6 +122,31 @@ describe('parseInputs', () => {
     expect(r.preserveMtime).toBe(true)
   })
 
+  it('parses create-bucket type and bucketInfo metadata', () => {
+    setInput('action', 'create-bucket')
+    setInput('application-key-id', 'k')
+    setInput('application-key', 's')
+    setInput('bucket', 'new-bucket')
+    setInput('bucket-type', 'allPrivate')
+    setInput('bucket-info', 'Project=ci\nowner=actions')
+
+    const r = parseInputs()
+    expect(r.bucketType).toBe('allPrivate')
+    expect(r.bucketInfo).toEqual({ Project: 'ci', owner: 'actions' })
+  })
+
+  it('requires a valid bucket-type for create-bucket', () => {
+    setInput('action', 'create-bucket')
+    setInput('application-key-id', 'k')
+    setInput('application-key', 's')
+    setInput('bucket', 'new-bucket')
+
+    expect(() => parseInputs()).toThrow(/'bucket-type' input is required/)
+
+    setInput('bucket-type', 'snapshot')
+    expect(() => parseInputs()).toThrow(/Invalid 'bucket-type' input/)
+  })
+
   it('parses and canonicalizes fileInfo as comma-separated pairs when no newline is present', () => {
     setInput('action', 'upload')
     setInput('application-key-id', 'k')
@@ -117,6 +160,18 @@ describe('parseInputs', () => {
       'ci+owner': 'release',
       'ci!role': "o'clock",
     })
+  })
+
+  it('validates bucketInfo entries before calling the SDK', () => {
+    expect(parseBucketInfo('Owner=ci,team=release')).toEqual({ Owner: 'ci', team: 'release' })
+    expect(() => parseBucketInfo('bad key=value')).toThrow(/Invalid bucketInfo key/)
+    expect(() => parseBucketInfo('owner=a\nowner=b')).toThrow(/Duplicate bucketInfo key/)
+    expect(() =>
+      parseBucketInfo(Array.from({ length: 11 }, (_, i) => `k${i}=v`).join('\n')),
+    ).toThrow(/Invalid bucketInfo: 11 entries exceeds 10/)
+    expect(() => parseBucketInfo(`k=${'x'.repeat(2049)}`)).toThrow(
+      /Invalid bucketInfo value for "k": 2049 bytes exceeds 2048/,
+    )
   })
 
   it('rejects invalid, reserved, or duplicate fileInfo keys', () => {

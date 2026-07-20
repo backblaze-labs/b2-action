@@ -41,6 +41,8 @@ export function makeParsedInputs(
     retentionUntil: undefined,
     legalHold: undefined,
     bypassGovernance: false,
+    bucketType: undefined,
+    bucketInfo: {},
     ...override,
   }
 }

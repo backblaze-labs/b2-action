@@ -7,7 +7,7 @@ branding:
 
 inputs:
   action:
-    description: 'One of: upload | download | sync | copy | delete | presign | list | hide | unhide | verify | retention | head | purge'
+    description: 'One of: upload | download | sync | copy | delete | presign | list | hide | unhide | verify | retention | head | purge | create-bucket | delete-bucket | list-buckets'
     required: true
   application-key-id:
     description: 'B2 application key ID. If unset, falls back to the $B2_APPLICATION_KEY_ID env var.'
@@ -16,8 +16,14 @@ inputs:
     description: 'B2 application key. If unset, falls back to the $B2_APPLICATION_KEY env var.'
     required: false
   bucket:
-    description: 'Target bucket name (the destination bucket for copy).'
-    required: true
+    description: 'Target bucket name. Required except list-buckets; create-bucket and delete-bucket use this as the bucket to create or delete. list-buckets treats it as an optional exact-name filter.'
+    required: false
+  bucket-type:
+    description: 'Bucket type for create-bucket: allPublic or allPrivate.'
+    required: false
+  bucket-info:
+    description: 'Bucket metadata for create-bucket as newline- or simple comma-separated key=value pairs. Keys may contain letters, digits, underscores, and hyphens.'
+    required: false
   source-bucket:
     description: 'Source bucket for cross-bucket copy. Defaults to `bucket`.'
     required: false
@@ -127,6 +133,12 @@ outputs:
     description: 'B2 file ID of a single-file op (upload, copy, hide, retention, head). For `unhide`, set only when a hide marker is removed and identifies that removed marker.'
   file-name:
     description: 'B2 file name (path) of a single-file op.'
+  bucket-id:
+    description: 'B2 bucket ID for create-bucket and delete-bucket.'
+  bucket-name:
+    description: 'B2 bucket name for create-bucket and delete-bucket.'
+  bucket-type:
+    description: 'B2 bucket type for create-bucket and delete-bucket.'
   content-sha1:
     description: 'SHA-1 hex digest when B2 provides a whole-file digest; omitted when unavailable, including multipart objects.'
   bytes-transferred:
@@ -141,6 +153,10 @@ outputs:
     description: 'Number of files deleted (delete / purge / sync).'
   files-listed:
     description: 'Number of files returned by `list` or prefix `presign`.'
+  bucket-count:
+    description: 'Number of buckets created, deleted, or listed by bucket administration actions.'
+  buckets-listed:
+    description: 'Number of buckets returned by `list-buckets`.'
   presigned-url:
     description: 'Presigned download URL (presign action). This is the only structured output that carries the live presigned URL.'
   verified:

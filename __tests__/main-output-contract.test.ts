@@ -71,6 +71,23 @@ const EXPECTED_OUTPUT_KEYS = {
     'summary-json-truncated',
   ],
   purge: ['file-count', 'files-deleted', 'summary-json', 'summary-json-truncated'],
+  'create-bucket': [
+    'bucket-count',
+    'bucket-id',
+    'bucket-name',
+    'bucket-type',
+    'summary-json',
+    'summary-json-truncated',
+  ],
+  'delete-bucket': [
+    'bucket-count',
+    'bucket-id',
+    'bucket-name',
+    'bucket-type',
+    'summary-json',
+    'summary-json-truncated',
+  ],
+  'list-buckets': ['bucket-count', 'buckets-listed', 'summary-json', 'summary-json-truncated'],
 } as const satisfies Record<ActionName, readonly string[]>
 
 afterEach(() => {
@@ -145,6 +162,11 @@ function mockDispatcherPath(action: ActionName) {
   }))
   vi.doMock('../src/client.ts', () => ({ buildClient, getBucket }))
   vi.doMock('../src/summary.ts', () => ({ STEP_SUMMARY_MAX_ROWS: 100, writeStepSummary }))
+  vi.doMock('../src/commands/buckets.ts', () => ({
+    createBucketCommand: commands.createBucketCommand,
+    deleteBucketCommand: commands.deleteBucketCommand,
+    listBucketsCommand: commands.listBucketsCommand,
+  }))
   vi.doMock('../src/commands/upload.ts', () => ({ uploadCommand: commands.uploadCommand }))
   vi.doMock('../src/commands/download.ts', () => ({ downloadCommand: commands.downloadCommand }))
   vi.doMock('../src/commands/sync.ts', () => ({
@@ -169,6 +191,9 @@ function mockDispatcherPath(action: ActionName) {
 
 function commandMocks() {
   return {
+    createBucketCommand: vi.fn(),
+    deleteBucketCommand: vi.fn(),
+    listBucketsCommand: vi.fn(),
     uploadCommand: vi.fn(),
     downloadCommand: vi.fn(),
     syncCommand: vi.fn(),
@@ -269,6 +294,15 @@ function applyCommandResult(commands: ReturnType<typeof commandMocks>, action: A
         errors: 0,
       })
       return
+    case 'create-bucket':
+      commands.createBucketCommand.mockResolvedValue(bucketResult(action))
+      return
+    case 'delete-bucket':
+      commands.deleteBucketCommand.mockResolvedValue(bucketResult(action))
+      return
+    case 'list-buckets':
+      commands.listBucketsCommand.mockResolvedValue({ buckets: [bucketResult(action)] })
+      return
   }
 }
 
@@ -279,6 +313,16 @@ function fileResult(action: ActionName) {
     size: 12,
     contentSha1: `sha1-${action}`,
     contentType: 'text/plain',
+  }
+}
+
+function bucketResult(action: ActionName) {
+  return {
+    bucketId: `id-${action}`,
+    bucketName: `${action}-bucket`,
+    bucketType: 'allPrivate',
+    bucketInfo: {},
+    revision: 1,
   }
 }
 

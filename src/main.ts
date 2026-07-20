@@ -3,6 +3,12 @@ import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import * as core from '@actions/core'
 import { buildClient, getBucket } from './client.ts'
+import {
+  type BucketCommandResult,
+  createBucketCommand,
+  deleteBucketCommand,
+  listBucketsCommand,
+} from './commands/buckets.ts'
 import { copyCommand } from './commands/copy.ts'
 import { deleteCommand } from './commands/delete.ts'
 import { downloadCommand } from './commands/download.ts'
@@ -70,6 +76,35 @@ export async function run(): Promise<void> {
     })
     const authToken = authorized.client.accountInfo.getAuthToken()
     if (authToken) registerSecretValue(secretValues, authToken)
+
+    switch (inputs.action) {
+      case 'create-bucket': {
+        const result = await createBucketCommand(authorized.client, inputs)
+        await emitBucketSummary('create-bucket', result)
+        return
+      }
+      case 'delete-bucket': {
+        const result = await deleteBucketCommand(authorized.client, inputs)
+        await emitBucketSummary('delete-bucket', result)
+        return
+      }
+      case 'list-buckets': {
+        const result = await listBucketsCommand(authorized.client, inputs)
+        core.setOutput('buckets-listed', String(result.buckets.length))
+        setBucketCountOutput(result.buckets.length)
+        await writeStepSummary({
+          title: `Backblaze B2: list-buckets (${result.buckets.length})`,
+          ...stepSummaryRows(result.buckets, (bucket) => ({
+            fileName: bucket.bucketName,
+            fileId: bucket.bucketId,
+            status: bucket.bucketType,
+          })),
+        })
+        setSummaryJsonOutput(result.buckets)
+        return
+      }
+    }
+
     const bucket = await getBucket(authorized)
 
     switch (inputs.action) {
@@ -402,6 +437,27 @@ async function emitDeletionSummary(
   })
 }
 
+async function emitBucketSummary(
+  verb: 'create-bucket' | 'delete-bucket',
+  result: BucketCommandResult,
+): Promise<void> {
+  core.setOutput('bucket-id', result.bucketId)
+  core.setOutput('bucket-name', result.bucketName)
+  core.setOutput('bucket-type', result.bucketType)
+  setBucketCountOutput(1)
+  await writeStepSummary({
+    title: `Backblaze B2: ${verb}`,
+    rows: [
+      {
+        fileName: result.bucketName,
+        fileId: result.bucketId,
+        status: result.bucketType,
+      },
+    ],
+  })
+  setSummaryJsonOutput([result])
+}
+
 function stepSummaryRows<T>(
   items: readonly T[],
   row: (item: T) => SummaryRow,
@@ -418,6 +474,10 @@ function presignSummaryItem(file: PresignedFile): Pick<PresignedFile, 'fileName'
 
 function setFileCountOutput(count: number): void {
   core.setOutput('file-count', String(count))
+}
+
+function setBucketCountOutput(count: number): void {
+  core.setOutput('bucket-count', String(count))
 }
 
 function registerSecretValue(secretValues: string[], value: string): void {
