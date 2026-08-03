@@ -3,6 +3,7 @@ import { stat } from 'node:fs/promises'
 import * as core from '@actions/core'
 import type { Bucket } from '@backblaze-labs/b2-sdk'
 import { IncrementalSha1 } from '@backblaze-labs/b2-sdk/streams'
+import { expandTilde } from '../fs.ts'
 import { type ParsedInputs, requireSource } from '../inputs.ts'
 
 /** Result of {@link verifyCommand}. */
@@ -57,8 +58,10 @@ export async function verifyCommand(bucket: Bucket, inputs: ParsedInputs): Promi
     let expected: string | null =
       inputs.expectedSha1 !== undefined ? normalizeSha1(inputs.expectedSha1, 'expected-sha1') : null
 
-    if (expected === null && inputs.destination !== undefined && inputs.destination !== '') {
-      localSha1 = await sha1OfFile(inputs.destination)
+    // `destination` is the local file to hash, so expand a leading `~`.
+    const localFile = expandTilde(inputs.destination)
+    if (expected === null && localFile !== undefined && localFile !== '') {
+      localSha1 = await sha1OfFile(localFile)
       expected = normalizeSha1(localSha1, 'destination')
     }
 
