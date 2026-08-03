@@ -39260,6 +39260,16 @@ function parseInputs() {
     const retentionUntil = optional('retention-until');
     const compareMode = parseEnum('compare-mode', (getInput('compare-mode') || 'modtime').toLowerCase(), VALID_COMPARE);
     const keepMode = parseEnum('keep-mode', (getInput('keep-mode') || 'no-delete').toLowerCase(), VALID_KEEP);
+    const keepDaysInput = optional('keep-days');
+    const keepDays = keepDaysInput !== undefined ? parsePositiveInt('keep-days', keepDaysInput) : undefined;
+    if (keepMode === 'keep-days' && keepDays === undefined) {
+        // The SDK defaults `keepDays` to 0, which deletes every orphan immediately
+        // and makes `keep-days` behave exactly like `delete`. Fail loudly instead.
+        throw new Error("'keep-days' is required when 'keep-mode' is 'keep-days'");
+    }
+    if (keepDays !== undefined && keepMode !== 'keep-days') {
+        warning(`'keep-days' is ignored because 'keep-mode' is '${keepMode}'; set 'keep-mode: keep-days' to apply it.`);
+    }
     const syncDirection = parseEnum('direction', (getInput('direction') || 'auto').toLowerCase(), VALID_DIRECTION);
     const retentionMode = parseOptionalEnum('retention-mode', optional('retention-mode')?.toLowerCase(), VALID_RETENTION_MODE);
     const legalHold = parseOptionalEnum('legal-hold', optional('legal-hold')?.toLowerCase(), VALID_LEGAL_HOLD);
@@ -39288,6 +39298,7 @@ function parseInputs() {
         encryption,
         compareMode,
         keepMode,
+        keepDays,
         syncDirection,
         maxResults,
         expectedSha1,
@@ -39719,8 +39730,25 @@ var promises_ = __nccwpck_require__(1455);
 var external_node_stream_ = __nccwpck_require__(7075);
 ;// CONCATENATED MODULE: external "node:stream/promises"
 const external_node_stream_promises_namespaceObject = __WEBPACK_EXTERNAL_createRequire(import.meta.url)("node:stream/promises");
+;// CONCATENATED MODULE: external "node:os"
+const external_node_os_namespaceObject = __WEBPACK_EXTERNAL_createRequire(import.meta.url)("node:os");
 ;// CONCATENATED MODULE: ./src/fs.ts
 
+
+
+
+function expandTilde(path) {
+    if (path === undefined || !path.startsWith('~'))
+        return path;
+    if (path === '~')
+        return (0,external_node_os_namespaceObject.homedir)();
+    const separatorIndex = path.search(/[/\\]/);
+    if (separatorIndex === 1)
+        return (0,external_node_path_.join)((0,external_node_os_namespaceObject.homedir)(), path.slice(2));
+    warning(`Local path "${path}" is used as-is: this action expands a leading "~" or "~/" only, ` +
+        'not "~user" forms. Use an absolute path or a workspace-relative path instead.');
+    return path;
+}
 /**
  * `stat(path)` that returns `undefined` instead of throwing on ENOENT/EACCES
  * etc. Used at filesystem boundaries where the caller wants to distinguish
@@ -39809,10 +39837,13 @@ async function downloadCommand(bucket, inputs, signal) {
     const source = requireSource(inputs.source, 'download', 'a B2 file name or prefix');
     const isPrefix = source.endsWith('/');
     const sseDownload = sseFromInputs(inputs);
+    // `destination` is a local path here, so a leading `~` means the runner's
+    // home directory rather than a directory named `~` in the workspace.
+    const destination = expandTilde(inputs.destination);
     if (isPrefix) {
-        return downloadPrefix(bucket, source, inputs.destination ?? '.', sseDownload, signal);
+        return downloadPrefix(bucket, source, destination ?? '.', sseDownload, signal);
     }
-    const out = await downloadOne(bucket, source, inputs.destination, sseDownload, signal);
+    const out = await downloadOne(bucket, source, destination, sseDownload, signal);
     return { files: [out], bytesTransferred: out.size };
 }
 function sseFromInputs(inputs) {
@@ -45208,6 +45239,7 @@ function summarizeSyncErrors(events, limit = 3) {
 async function syncCommand(bucket, inputs, signal) {
     const source = requireSource(inputs.source, 'sync', 'a local directory (up) or B2 prefix (down)');
     const direction = await sync_resolveDirection(inputs.syncDirection, source);
+    warnOnImplicitDownload(inputs.syncDirection, direction, source);
     const compareMode = inputs.compareMode;
     const keepMode = inputs.keepMode;
     const dryRun = inputs.dryRun;
@@ -45251,8 +45283,28 @@ async function sync_resolveDirection(requested, source) {
         return 'local-to-b2';
     if (requested === 'down')
         return 'b2-to-local';
-    const localStat = await tryStat(source);
+    // Auto-detection stats the local candidate, so expand `~` first: otherwise a
+    // real home-directory source is never recognized and silently flips the sync
+    // into a download.
+    const localStat = await tryStat(expandTilde(source));
     return localStat?.isDirectory() ? 'local-to-b2' : 'b2-to-local';
+}
+/**
+ * `direction: auto` infers `down` for anything that is not an existing local
+ * directory, so a mistyped or not-yet-created local path silently becomes a
+ * B2-to-local sync instead of failing. Warn when the source still looks like a
+ * local path so the mistake is visible in the log.
+ *
+ * @internal
+ */
+function warnOnImplicitDownload(requested, resolved, source) {
+    if (requested !== 'auto' || resolved !== 'b2-to-local')
+        return;
+    if (!/^(?:~|\.{1,2}[/\\]|[/\\]|[A-Za-z]:[/\\])/.test(source))
+        return;
+    warning(`'source' ("${source}") looks like a local path but is not an existing directory, so ` +
+        "'direction: auto' resolved this sync to B2 → local. Set 'direction: up' (or 'down') " +
+        'explicitly to remove the ambiguity.');
 }
 async function buildConfig(bucket, source, inputs, direction, signal) {
     const compareMode = inputs.compareMode;
@@ -45264,24 +45316,29 @@ async function buildConfig(bucket, source, inputs, direction, signal) {
         keepMode,
         concurrency,
         dryRun,
+        ...(inputs.keepDays !== undefined ? { keepDays: inputs.keepDays } : {}),
         ...(signal !== undefined ? { signal } : {}),
     };
     if (direction === 'local-to-b2') {
-        const stats = await tryStat(source);
+        // Up: `source` is the local directory, `destination` is the B2 prefix.
+        const localSource = expandTilde(source);
+        const stats = await tryStat(localSource);
         if (!stats?.isDirectory()) {
-            throw new Error(`'sync' up requires 'source' to be an existing local directory: ${source}`);
+            throw new Error(`'sync' up requires 'source' to be an existing local directory: ${localSource}`);
         }
         const prefix = (inputs.destination ?? '').replace(/^\/+|\/+$/g, '');
         return {
-            source: new LocalFolder((0,external_node_path_.resolve)(source)),
+            source: new LocalFolder((0,external_node_path_.resolve)(localSource)),
             dest: new B2Folder(bucket, prefix === '' ? '' : `${prefix}/`),
             bucket,
             prefix: prefix === '' ? '' : `${prefix}/`,
             options,
         };
     }
+    // Down: `source` is the B2 prefix (opaque, never tilde-expanded),
+    // `destination` is the local directory.
     const remotePrefix = source.replace(/^\/+|\/+$/g, '');
-    const localDest = inputs.destination ?? '.';
+    const localDest = expandTilde(inputs.destination) ?? '.';
     const localRoot = await prepareLocalDestinationRoot(localDest);
     return {
         source: new B2Folder(bucket, remotePrefix === '' ? '' : `${remotePrefix}/`),
@@ -48816,7 +48873,12 @@ async function mapWithConcurrency(items, concurrency, mapper) {
         throw firstError;
     return results;
 }
-async function resolveFiles(source, include, exclude) {
+async function resolveFiles(rawSource, rawInclude, rawExclude) {
+    // `source`, `include` and `exclude` are all local paths or globs, so a
+    // leading `~` is the user's home directory, not a directory named `~`.
+    const source = expandTilde(rawSource);
+    const include = rawInclude.map((pattern) => expandTilde(pattern));
+    const exclude = rawExclude.map((pattern) => expandTilde(pattern));
     const explicitFile = await tryStat(source);
     const looksLikeGlob = /[*?[\]]/.test(source);
     if (explicitFile?.isFile() && !looksLikeGlob && include.length === 0) {
@@ -48848,7 +48910,14 @@ async function resolveFiles(source, include, exclude) {
         matchDirectories: false,
     });
     const matches = await globber.glob();
-    const root = explicitFile?.isDirectory() ? (0,external_node_path_.resolve)(source) : process.cwd();
+    // `process.cwd()` stays first so in-workspace globs keep their historical
+    // keys. A match outside every root used to produce `relative()` output full
+    // of `..` segments, yielding B2 keys such as
+    // `artifacts/../../../tmp/x/a.bin` that this action's own prefix download
+    // then refuses to map back onto disk.
+    const roots = explicitFile?.isDirectory()
+        ? [(0,external_node_path_.resolve)(source)]
+        : [process.cwd(), ...globber.getSearchPaths()];
     const out = [];
     for (const m of matches) {
         const s = await tryStat(m);
@@ -48856,11 +48925,28 @@ async function resolveFiles(source, include, exclude) {
         // symlinks, races where a file is unlinked between glob and stat, etc.).
         if (!s?.isFile())
             continue;
-        const rel = (0,external_node_path_.relative)(root, m).split(external_node_path_.sep).join(external_node_path_.posix.sep);
+        const rel = relativeUploadKey(roots, m);
         out.push({ localPath: m, fileName: rel, size: s.size, mtimeMs: s.mtimeMs });
     }
     out.sort(compareResolvedFiles);
     return { files: out, isSingleExplicitFile: false };
+}
+/**
+ * Project a matched local path onto its B2 key, relative to the first root
+ * that actually contains it. Falls back to the basename so a match outside
+ * every candidate root still produces a mappable key instead of one carrying
+ * `..` path segments.
+ *
+ * @internal
+ */
+function relativeUploadKey(roots, match) {
+    for (const root of roots) {
+        const rel = (0,external_node_path_.relative)(root, match);
+        if (rel === '' || (0,external_node_path_.isAbsolute)(rel) || rel === '..' || rel.startsWith(`..${external_node_path_.sep}`))
+            continue;
+        return rel.split(external_node_path_.sep).join(external_node_path_.posix.sep);
+    }
+    return (0,external_node_path_.basename)(match);
 }
 function compareResolvedFiles(a, b) {
     return compareStrings(a.fileName, b.fileName) || compareStrings(a.localPath, b.localPath);
@@ -48969,6 +49055,7 @@ function buildUploadFileInfo(inputFileInfo, lastModifiedMillis) {
 
 
 
+
 /**
  * Verify that a B2 object matches a local file (or an expected SHA-1) without
  * transferring the body.
@@ -48997,8 +49084,10 @@ async function verifyCommand(bucket, inputs) {
         const remoteSha1 = headers.contentSha1;
         let localSha1 = null;
         let expected = inputs.expectedSha1 !== undefined ? verify_normalizeSha1(inputs.expectedSha1, 'expected-sha1') : null;
-        if (expected === null && inputs.destination !== undefined && inputs.destination !== '') {
-            localSha1 = await sha1OfFile(inputs.destination);
+        // `destination` is the local file to hash, so expand a leading `~`.
+        const localFile = expandTilde(inputs.destination);
+        if (expected === null && localFile !== undefined && localFile !== '') {
+            localSha1 = await sha1OfFile(localFile);
             expected = verify_normalizeSha1(localSha1, 'destination');
         }
         if (expected === null) {

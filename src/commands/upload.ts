@@ -1,11 +1,11 @@
 import { createReadStream } from 'node:fs'
-import { basename, posix, relative, resolve, sep } from 'node:path'
+import { basename, isAbsolute, posix, relative, resolve, sep } from 'node:path'
 import { Readable } from 'node:stream'
 import * as core from '@actions/core'
 import * as glob from '@actions/glob'
 import type { Bucket } from '@backblaze-labs/b2-sdk'
 import { StreamSource } from '@backblaze-labs/b2-sdk/streams'
-import { tryStat } from '../fs.ts'
+import { expandTilde, tryStat } from '../fs.ts'
 import {
   type ParsedInputs,
   requireSource,
@@ -167,10 +167,15 @@ interface UploadPlan {
 }
 
 async function resolveFiles(
-  source: string,
-  include: string[],
-  exclude: string[],
+  rawSource: string,
+  rawInclude: string[],
+  rawExclude: string[],
 ): Promise<ResolvedFiles> {
+  // `source`, `include` and `exclude` are all local paths or globs, so a
+  // leading `~` is the user's home directory, not a directory named `~`.
+  const source = expandTilde(rawSource)
+  const include = rawInclude.map((pattern) => expandTilde(pattern))
+  const exclude = rawExclude.map((pattern) => expandTilde(pattern))
   const explicitFile = await tryStat(source)
   const looksLikeGlob = /[*?[\]]/.test(source)
 
@@ -202,7 +207,14 @@ async function resolveFiles(
     matchDirectories: false,
   })
   const matches = await globber.glob()
-  const root = explicitFile?.isDirectory() ? resolve(source) : process.cwd()
+  // `process.cwd()` stays first so in-workspace globs keep their historical
+  // keys. A match outside every root used to produce `relative()` output full
+  // of `..` segments, yielding B2 keys such as
+  // `artifacts/../../../tmp/x/a.bin` that this action's own prefix download
+  // then refuses to map back onto disk.
+  const roots = explicitFile?.isDirectory()
+    ? [resolve(source)]
+    : [process.cwd(), ...globber.getSearchPaths()]
 
   const out: ResolvedFile[] = []
   for (const m of matches) {
@@ -210,11 +222,28 @@ async function resolveFiles(
     // Filesystem boundary: skip entries that aren't readable files (broken
     // symlinks, races where a file is unlinked between glob and stat, etc.).
     if (!s?.isFile()) continue
-    const rel = relative(root, m).split(sep).join(posix.sep)
+    const rel = relativeUploadKey(roots, m)
     out.push({ localPath: m, fileName: rel, size: s.size, mtimeMs: s.mtimeMs })
   }
   out.sort(compareResolvedFiles)
   return { files: out, isSingleExplicitFile: false }
+}
+
+/**
+ * Project a matched local path onto its B2 key, relative to the first root
+ * that actually contains it. Falls back to the basename so a match outside
+ * every candidate root still produces a mappable key instead of one carrying
+ * `..` path segments.
+ *
+ * @internal
+ */
+export function relativeUploadKey(roots: readonly string[], match: string): string {
+  for (const root of roots) {
+    const rel = relative(root, match)
+    if (rel === '' || isAbsolute(rel) || rel === '..' || rel.startsWith(`..${sep}`)) continue
+    return rel.split(sep).join(posix.sep)
+  }
+  return basename(match)
 }
 
 function compareResolvedFiles(a: ResolvedFile, b: ResolvedFile): number {
