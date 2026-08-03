@@ -1,0 +1,115 @@
+name: 'Example: ML cache round-trip (sync down + sync up)'
+
+# Persist a model/dataset cache in B2 across runs: restore it at the start of
+# the job, then push back what changed at the end. This is the pattern for
+# Hugging Face caches and dataset shards that outgrow actions/cache.
+#
+# Two things this example is deliberate about:
+#
+#   1. `direction` is explicit on both steps. With `direction: auto` the action
+#      infers the direction from whether `source` is an existing local
+#      directory, so a path that does not exist yet silently resolves to a
+#      DOWNLOAD sync and the push-back step does nothing.
+#   2. The cache lives at an explicit path under the workspace, exported as
+#      HF_HOME. Action inputs accept `~`, which the action expands to the
+#      runner home directory, but an explicit workspace path is easier to
+#      reason about and works the same on every runner OS.
+#
+# The restore step stays at the default `keep-mode: no-delete`: on a down sync,
+# `keep-mode: delete` removes LOCAL files that are absent from B2, which on a
+# cold cache means deleting the directory contents.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cache-round-trip:
+    name: cache round-trip
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'push' || (github.event.pull_request.head.repo.fork == false && github.actor != 'dependabot[bot]')
+    runs-on: ubuntu-latest
+    env:
+      # `runner` is not allowed in job-level env, and this job always runs on
+      # ubuntu-latest, so the OS segment is hardcoded. Use ${{ runner.os }} at
+      # step level if you run a matrix.
+      CACHE_PREFIX: examples/ml-cache/${{ github.run_id }}/Linux/huggingface/
+      HF_HOME: ${{ github.workspace }}/.cache/huggingface
+    steps:
+      - uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
+        with:
+          persist-credentials: false
+
+      - name: Restore cache from B2 (a cold cache transfers 0 files and still succeeds)
+        uses: ./
+        with:
+          action: sync
+          application-key-id: ${{ secrets.B2_APPLICATION_KEY_ID }}
+          application-key: ${{ secrets.B2_APPLICATION_KEY }}
+          bucket: ${{ secrets.B2_TEST_BUCKET }}
+          source: ${{ env.CACHE_PREFIX }}
+          destination: ${{ env.HF_HOME }}
+          direction: down
+
+      - name: Populate the cache the way a training step would
+        run: |
+          mkdir -p "$HF_HOME/models--example-org--tiny-lm/blobs"
+          dd if=/dev/urandom of="$HF_HOME/models--example-org--tiny-lm/blobs/weights.bin" \
+            bs=1024 count=64
+          echo '{"model_type":"gpt2"}' > "$HF_HOME/models--example-org--tiny-lm/config.json"
+
+      - name: Save cache back to B2
+        id: save
+        uses: ./
+        with:
+          action: sync
+          application-key-id: ${{ secrets.B2_APPLICATION_KEY_ID }}
+          application-key: ${{ secrets.B2_APPLICATION_KEY }}
+          bucket: ${{ secrets.B2_TEST_BUCKET }}
+          source: ${{ env.HF_HOME }}
+          destination: ${{ env.CACHE_PREFIX }}
+          direction: up
+          keep-mode: delete
+          preserve-mtime: true
+
+      - name: Confirm the push-back actually uploaded
+        env:
+          UPLOADED: ${{ steps.save.outputs.files-uploaded }}
+        run: |
+          if [ "$UPLOADED" -lt 2 ]; then
+            echo "::error::expected the cache push-back to upload at least 2 files, got $UPLOADED"
+            exit 1
+          fi
+
+      - name: Restore into a clean directory to prove the round-trip
+        uses: ./
+        with:
+          action: sync
+          application-key-id: ${{ secrets.B2_APPLICATION_KEY_ID }}
+          application-key: ${{ secrets.B2_APPLICATION_KEY }}
+          bucket: ${{ secrets.B2_TEST_BUCKET }}
+          source: ${{ env.CACHE_PREFIX }}
+          destination: ${{ github.workspace }}/.cache/restored
+          direction: down
+
+      - name: Compare restored tree against the original
+        run: |
+          diff -r "$HF_HOME" "$GITHUB_WORKSPACE/.cache/restored"
+
+      - name: Cleanup
+        if: always()
+        uses: ./
+        with:
+          action: purge
+          application-key-id: ${{ secrets.B2_APPLICATION_KEY_ID }}
+          application-key: ${{ secrets.B2_APPLICATION_KEY }}
+          bucket: ${{ secrets.B2_TEST_BUCKET }}
+          source: examples/ml-cache/${{ github.run_id }}/

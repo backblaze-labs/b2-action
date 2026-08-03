@@ -67,3 +67,30 @@ jobs:
           retention-mode: governance
           retention-until: ${{ steps.payload.outputs.retain_until }}
         continue-on-error: true   # PR runs without a locked bucket simply skip
+
+      # Legal hold is independent of retention: it blocks deletion until it is
+      # explicitly turned off, no matter what the retention date says. Setting
+      # one without a matching "off" step is how buckets become undeletable, so
+      # this example clears it in the same run.
+      - name: Apply a legal hold
+        uses: ./
+        with:
+          action: retention
+          application-key-id: ${{ secrets.B2_APPLICATION_KEY_ID }}
+          application-key: ${{ secrets.B2_APPLICATION_KEY }}
+          bucket: ${{ secrets.B2_TEST_BUCKET_LOCKED }}
+          source: ${{ steps.payload.outputs.key }}
+          legal-hold: 'on'
+        continue-on-error: true
+
+      - name: Release the legal hold
+        if: always()
+        uses: ./
+        with:
+          action: retention
+          application-key-id: ${{ secrets.B2_APPLICATION_KEY_ID }}
+          application-key: ${{ secrets.B2_APPLICATION_KEY }}
+          bucket: ${{ secrets.B2_TEST_BUCKET_LOCKED }}
+          source: ${{ steps.payload.outputs.key }}
+          legal-hold: 'off'
+        continue-on-error: true
