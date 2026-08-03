@@ -23,6 +23,14 @@ function useFakeHome(dir: string): void {
   process.env.USERPROFILE = dir
 }
 
+function restoreEnv(name: 'HOME' | 'USERPROFILE', value: string | undefined): void {
+  if (value === undefined) {
+    delete process.env[name]
+    return
+  }
+  process.env[name] = value
+}
+
 describe('expandTilde', () => {
   let fakeHome: string
   const originalHome = process.env.HOME
@@ -33,8 +41,8 @@ describe('expandTilde', () => {
     useFakeHome(fakeHome)
   })
   afterEach(async () => {
-    process.env.HOME = originalHome
-    process.env.USERPROFILE = originalUserProfile
+    restoreEnv('HOME', originalHome)
+    restoreEnv('USERPROFILE', originalUserProfile)
     await rm(fakeHome, { recursive: true, force: true })
   })
 
@@ -85,8 +93,8 @@ describe('tilde-prefixed local paths reach the real home directory', () => {
   })
   afterEach(async () => {
     process.chdir(cwd)
-    process.env.HOME = originalHome
-    process.env.USERPROFILE = originalUserProfile
+    restoreEnv('HOME', originalHome)
+    restoreEnv('USERPROFILE', originalUserProfile)
     await rm(fx.workDir, { recursive: true, force: true })
     await rm(fakeHome, { recursive: true, force: true })
   })
