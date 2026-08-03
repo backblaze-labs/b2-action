@@ -205,15 +205,30 @@ async function resolveDirection(
   // Auto-detection stats the local candidate, so expand `~` first: otherwise a
   // real home-directory source is never recognized and silently flips the sync
   // into a download.
-  const localStat = await tryStat(expandTilde(source))
-  return localStat?.isDirectory() ? 'local-to-b2' : 'b2-to-local'
+  const expandedSource = expandTilde(source)
+  const localStat = await tryStat(expandedSource)
+  if (!localStat?.isDirectory()) return 'b2-to-local'
+  if (isExpandableTildePath(source)) {
+    throw new Error(
+      `'direction: auto' is ambiguous for tilde-prefixed sync source "${source}": ` +
+        `it could be the B2 prefix "${source}" or the local directory "${expandedSource}". ` +
+        "Set 'direction: up' for a local-to-B2 sync or 'direction: down' for a B2-to-local sync.",
+    )
+  }
+  return 'local-to-b2'
+}
+
+function isExpandableTildePath(path: string): boolean {
+  return path === '~' || /^~[/\\]/u.test(path)
 }
 
 /**
  * `direction: auto` infers `down` for anything that is not an existing local
  * directory, so a mistyped or not-yet-created local path silently becomes a
  * B2-to-local sync instead of failing. Warn when the source still looks like a
- * local path so the mistake is visible in the log.
+ * local path so the mistake is visible in the log. A leading slash is omitted
+ * deliberately because B2 prefixes may also be written that way, and the
+ * down-sync path normalizes those slashes.
  *
  * @internal
  */
@@ -223,7 +238,8 @@ export function warnOnImplicitDownload(
   source: string,
 ): void {
   if (requested !== 'auto' || resolved !== 'b2-to-local') return
-  if (!/^(?:~|\.{1,2}[/\\]|[/\\]|[A-Za-z]:[/\\])/.test(source)) return
+  // Leading `~`, `./` or `../`, or a Windows drive (`C:\`) reads like a local path.
+  if (!/^(?:~|\.{1,2}[/\\]|[A-Za-z]:[/\\])/.test(source)) return
   core.warning(
     `'source' ("${source}") looks like a local path but is not an existing directory, so ` +
       "'direction: auto' resolved this sync to B2 → local. Set 'direction: up' (or 'down') " +

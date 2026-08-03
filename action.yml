@@ -22,10 +22,10 @@ inputs:
     description: 'Source bucket for cross-bucket copy. Defaults to `bucket`.'
     required: false
   source:
-    description: 'Command-dependent. upload/sync (up): local path or glob. download/sync (down)/copy/delete/presign/list/hide/unhide/verify/retention/head/purge: B2 file name or prefix. Prefix downloads reject keys with empty, `.`, `..`, or control-character path segments. For whole-bucket purge, omit source or set `/` and set allow-bucket-purge: true. Local paths and globs expand a leading `~` or `~/` to the runner home directory; B2 keys never are.'
+    description: 'Command-dependent. upload/sync (up): local path or glob. download/sync (down)/copy/delete/presign/list/hide/unhide/verify/retention/head/purge: B2 file name or prefix. Prefix downloads reject keys with empty, `.`, `..`, or control-character path segments. For whole-bucket purge, omit source or set `/` and set allow-bucket-purge: true. Local paths and globs expand a leading `~` or `~/` to the runner home directory and reject `~/..` escapes; B2 keys never are.'
     required: false
   destination:
-    description: 'Command-dependent. upload/sync (up): B2 file name or prefix; SDK/B2 key validation errors are surfaced rather than silently rewriting `/` characters. download/sync (down): local path or directory. copy: destination B2 file name. verify: local file to compare against the remote SHA-1. Local destinations expand a leading `~` or `~/` to the runner home directory; B2 keys never are.'
+    description: 'Command-dependent. upload/sync (up): B2 file name or prefix; SDK/B2 key validation errors are surfaced rather than silently rewriting `/` characters. download/sync (down): local path or directory. copy: destination B2 file name. verify: local file to compare against the remote SHA-1. Local destinations expand a leading `~` or `~/` to the runner home directory and reject `~/..` escapes; B2 keys never are.'
     required: false
   include:
     description: 'Comma-separated globs to include (upload). Patterns are anchored to source.'
@@ -98,7 +98,7 @@ inputs:
     required: false
     default: 'no-delete'
   keep-days:
-    description: 'Retention window in days for `keep-mode: keep-days`. Destination-only files younger than this are kept. Required when keep-mode is keep-days; ignored otherwise.'
+    description: 'Retention window in days for `keep-mode: keep-days`. Destination-only files younger than this are kept. Recommended with keep-mode: keep-days; omitting it preserves the v1 legacy SDK default with a warning. Ignored otherwise.'
     required: false
   direction:
     description: 'Sync direction: auto | up (local→B2) | down (B2→local). Default auto.'

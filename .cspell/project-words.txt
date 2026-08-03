@@ -1,21 +1,5 @@
 # Add words here when cspell flags a domain term, library name, or identifier
-# B2 SDK / response shape
-# Backblaze / B2 product terminology
-# Build / tooling
-# Build/dev tooling
-# Codex / macOS dev env
-# Crypto / encoding
-# GitHub Actions ecosystem
-# GitHub usernames referenced in README "other actions" section
-# Hook / lifecycle script naming
-# Node / runtime / fs
 # Project-specific allowlist for cspell. One word per line, case-insensitive.
-# Security and concurrency jargon
-# Server-side encryption
-# Shell / git tag signing
-# Test helpers and bucket fixture names
-# Test-only path identifiers
-# that's deliberate and not a typo.
 actionlint
 aes256
 akia
@@ -105,7 +89,6 @@ sylwit
 syncdown
 toctou
 typedoc
-undici
 undici
 unhide
 unhides

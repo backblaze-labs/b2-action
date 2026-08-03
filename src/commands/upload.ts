@@ -84,6 +84,7 @@ export async function uploadCommand(
     signal?.throwIfAborted()
     return await prepareUploadPlan(f, inputs, isSingleExplicitFile)
   })
+  assertUniqueUploadFileNames(uploadPlans)
 
   const uploaded = await mapWithConcurrency(uploadPlans, fileConcurrency, async (plan) => {
     signal?.throwIfAborted()
@@ -166,6 +167,16 @@ interface UploadPlan {
   fileInfo: Record<string, string>
 }
 
+export interface UploadFileNameCollision {
+  fileName: string
+  localPaths: string[]
+}
+
+export interface UploadFileNameOwner {
+  localPath: string
+  fileName: string
+}
+
 async function resolveFiles(
   rawSource: string,
   rawInclude: string[],
@@ -244,6 +255,49 @@ export function relativeUploadKey(roots: readonly string[], match: string): stri
     return rel.split(sep).join(posix.sep)
   }
   return basename(match)
+}
+
+/**
+ * Find upload plans that would write multiple local files to the same B2 key.
+ *
+ * @internal
+ */
+export function findDuplicateUploadFileNames(
+  files: readonly UploadFileNameOwner[],
+): UploadFileNameCollision[] {
+  const byFileName = new Map<string, string[]>()
+  for (const file of files) {
+    const owners = byFileName.get(file.fileName)
+    if (owners === undefined) {
+      byFileName.set(file.fileName, [file.localPath])
+    } else {
+      owners.push(file.localPath)
+    }
+  }
+
+  return Array.from(byFileName.entries())
+    .filter(([, localPaths]) => localPaths.length > 1)
+    .map(([fileName, localPaths]) => ({
+      fileName,
+      localPaths: [...localPaths].sort(compareStrings),
+    }))
+    .sort((a, b) => compareStrings(a.fileName, b.fileName))
+}
+
+function assertUniqueUploadFileNames(files: readonly UploadFileNameOwner[]) {
+  const collisions = findDuplicateUploadFileNames(files)
+  if (collisions.length === 0) return
+
+  const details = collisions
+    .map(
+      (collision) =>
+        `"${collision.fileName}" <= ${collision.localPaths.map((p) => `"${p}"`).join(', ')}`,
+    )
+    .join('; ')
+  throw new Error(
+    `Upload would overwrite ${collisions.length} B2 file name(s) from multiple local files: ${details}. ` +
+      'Narrow the glob/include patterns or set a destination that preserves unique paths.',
+  )
 }
 
 function compareResolvedFiles(a: ResolvedFile, b: ResolvedFile): number {

@@ -39263,9 +39263,9 @@ function parseInputs() {
     const keepDaysInput = optional('keep-days');
     const keepDays = keepDaysInput !== undefined ? parsePositiveInt('keep-days', keepDaysInput) : undefined;
     if (keepMode === 'keep-days' && keepDays === undefined) {
-        // The SDK defaults `keepDays` to 0, which deletes every orphan immediately
-        // and makes `keep-days` behave exactly like `delete`. Fail loudly instead.
-        throw new Error("'keep-days' is required when 'keep-mode' is 'keep-days'");
+        warning("'keep-mode: keep-days' without 'keep-days' preserves the v1 legacy SDK default " +
+            'retention window, which can delete destination-only files immediately. Set ' +
+            "'keep-days' explicitly; a future major release will require it.");
     }
     if (keepDays !== undefined && keepMode !== 'keep-days') {
         warning(`'keep-days' is ignored because 'keep-mode' is '${keepMode}'; set 'keep-mode: keep-days' to apply it.`);
@@ -39740,14 +39740,25 @@ const external_node_os_namespaceObject = __WEBPACK_EXTERNAL_createRequire(import
 function expandTilde(path) {
     if (path === undefined || !path.startsWith('~'))
         return path;
+    const home = (0,external_node_path_.resolve)((0,external_node_os_namespaceObject.homedir)());
     if (path === '~')
-        return (0,external_node_os_namespaceObject.homedir)();
+        return home;
     const separatorIndex = path.search(/[/\\]/);
-    if (separatorIndex === 1)
-        return (0,external_node_path_.join)((0,external_node_os_namespaceObject.homedir)(), path.slice(2));
+    if (separatorIndex === 1) {
+        const expanded = (0,external_node_path_.resolve)(home, path.slice(2).replace(/^[/\\]+/u, ''));
+        if (!isInsideOrEqual(home, expanded)) {
+            throw new Error(`Tilde-expanded path "${path}" escapes the home directory (${home}). ` +
+                'Use an absolute path if this location is intentional.');
+        }
+        return expanded;
+    }
     warning(`Local path "${path}" is used as-is: this action expands a leading "~" or "~/" only, ` +
         'not "~user" forms. Use an absolute path or a workspace-relative path instead.');
     return path;
+}
+function isInsideOrEqual(root, candidate) {
+    const rel = (0,external_node_path_.relative)(root, candidate);
+    return rel === '' || (!rel.startsWith('..') && !(0,external_node_path_.isAbsolute)(rel));
 }
 /**
  * `stat(path)` that returns `undefined` instead of throwing on ENOENT/EACCES
@@ -45286,21 +45297,35 @@ async function sync_resolveDirection(requested, source) {
     // Auto-detection stats the local candidate, so expand `~` first: otherwise a
     // real home-directory source is never recognized and silently flips the sync
     // into a download.
-    const localStat = await tryStat(expandTilde(source));
-    return localStat?.isDirectory() ? 'local-to-b2' : 'b2-to-local';
+    const expandedSource = expandTilde(source);
+    const localStat = await tryStat(expandedSource);
+    if (!localStat?.isDirectory())
+        return 'b2-to-local';
+    if (isExpandableTildePath(source)) {
+        throw new Error(`'direction: auto' is ambiguous for tilde-prefixed sync source "${source}": ` +
+            `it could be the B2 prefix "${source}" or the local directory "${expandedSource}". ` +
+            "Set 'direction: up' for a local-to-B2 sync or 'direction: down' for a B2-to-local sync.");
+    }
+    return 'local-to-b2';
+}
+function isExpandableTildePath(path) {
+    return path === '~' || /^~[/\\]/u.test(path);
 }
 /**
  * `direction: auto` infers `down` for anything that is not an existing local
  * directory, so a mistyped or not-yet-created local path silently becomes a
  * B2-to-local sync instead of failing. Warn when the source still looks like a
- * local path so the mistake is visible in the log.
+ * local path so the mistake is visible in the log. A leading slash is omitted
+ * deliberately because B2 prefixes may also be written that way, and the
+ * down-sync path normalizes those slashes.
  *
  * @internal
  */
 function warnOnImplicitDownload(requested, resolved, source) {
     if (requested !== 'auto' || resolved !== 'b2-to-local')
         return;
-    if (!/^(?:~|\.{1,2}[/\\]|[/\\]|[A-Za-z]:[/\\])/.test(source))
+    // Leading `~`, `./` or `../`, or a Windows drive (`C:\`) reads like a local path.
+    if (!/^(?:~|\.{1,2}[/\\]|[A-Za-z]:[/\\])/.test(source))
         return;
     warning(`'source' ("${source}") looks like a local path but is not an existing directory, so ` +
         "'direction: auto' resolved this sync to B2 → local. Set 'direction: up' (or 'down') " +
@@ -48822,6 +48847,7 @@ async function uploadCommand(bucket, inputs, signal) {
         signal?.throwIfAborted();
         return await prepareUploadPlan(f, inputs, isSingleExplicitFile);
     });
+    assertUniqueUploadFileNames(uploadPlans);
     const uploaded = await mapWithConcurrency(uploadPlans, fileConcurrency, async (plan) => {
         signal?.throwIfAborted();
         const uploadLabel = `upload ${plan.localPath} → b2://${bucket.name}/${plan.fileName}`;
@@ -48947,6 +48973,40 @@ function relativeUploadKey(roots, match) {
         return rel.split(external_node_path_.sep).join(external_node_path_.posix.sep);
     }
     return (0,external_node_path_.basename)(match);
+}
+/**
+ * Find upload plans that would write multiple local files to the same B2 key.
+ *
+ * @internal
+ */
+function findDuplicateUploadFileNames(files) {
+    const byFileName = new Map();
+    for (const file of files) {
+        const owners = byFileName.get(file.fileName);
+        if (owners === undefined) {
+            byFileName.set(file.fileName, [file.localPath]);
+        }
+        else {
+            owners.push(file.localPath);
+        }
+    }
+    return Array.from(byFileName.entries())
+        .filter(([, localPaths]) => localPaths.length > 1)
+        .map(([fileName, localPaths]) => ({
+        fileName,
+        localPaths: [...localPaths].sort(compareStrings),
+    }))
+        .sort((a, b) => compareStrings(a.fileName, b.fileName));
+}
+function assertUniqueUploadFileNames(files) {
+    const collisions = findDuplicateUploadFileNames(files);
+    if (collisions.length === 0)
+        return;
+    const details = collisions
+        .map((collision) => `"${collision.fileName}" <= ${collision.localPaths.map((p) => `"${p}"`).join(', ')}`)
+        .join('; ');
+    throw new Error(`Upload would overwrite ${collisions.length} B2 file name(s) from multiple local files: ${details}. ` +
+        'Narrow the glob/include patterns or set a destination that preserves unique paths.');
 }
 function compareResolvedFiles(a, b) {
     return compareStrings(a.fileName, b.fileName) || compareStrings(a.localPath, b.localPath);

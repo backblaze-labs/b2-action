@@ -23,7 +23,6 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-  pull_request:
 
 permissions:
   contents: read
@@ -35,7 +34,7 @@ concurrency:
 jobs:
   cache-round-trip:
     name: cache round-trip
-    if: github.event_name == 'workflow_dispatch' || github.event_name == 'push' || (github.event.pull_request.head.repo.fork == false && github.actor != 'dependabot[bot]')
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'push'
     runs-on: ubuntu-latest
     env:
       # `runner` is not allowed in job-level env, and this job always runs on

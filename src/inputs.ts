@@ -278,9 +278,11 @@ export function parseInputs(): ParsedInputs {
   const keepDays =
     keepDaysInput !== undefined ? parsePositiveInt('keep-days', keepDaysInput) : undefined
   if (keepMode === 'keep-days' && keepDays === undefined) {
-    // The SDK defaults `keepDays` to 0, which deletes every orphan immediately
-    // and makes `keep-days` behave exactly like `delete`. Fail loudly instead.
-    throw new Error("'keep-days' is required when 'keep-mode' is 'keep-days'")
+    core.warning(
+      "'keep-mode: keep-days' without 'keep-days' preserves the v1 legacy SDK default " +
+        'retention window, which can delete destination-only files immediately. Set ' +
+        "'keep-days' explicitly; a future major release will require it.",
+    )
   }
   if (keepDays !== undefined && keepMode !== 'keep-days') {
     core.warning(

@@ -183,7 +183,8 @@ Exact-name `copy`, single-file `delete`, and `retention` operate only when the l
 ### Sync (both directions)
 
 ```yaml
-# Auto: local-dir source → upload sync. Remote prefix → download sync.
+# Auto: local-dir source -> upload sync. Remote prefix -> download sync.
+# Tilde-prefixed sources are ambiguous under auto; set direction explicitly.
 - uses: backblaze-labs/b2-action@v1
   with:
     action: sync
@@ -385,8 +386,8 @@ Set `bypass-governance: true` to shorten governance-mode retention or to remove 
 | `application-key` | no\* | | B2 application key. Falls back to `$B2_APPLICATION_KEY`. |
 | `bucket` | yes | | Destination bucket name. |
 | `source-bucket` | copy only | `bucket` | Source bucket for cross-bucket copy. The key must reach both buckets (read on the source, write on the destination), so a key restricted to a single bucket cannot do this. |
-| `source` | command-dependent | | Local path/glob (upload/sync up); B2 file name or prefix (everything else). Local paths and globs expand a leading `~` or `~/` to the runner home directory; B2 keys never are. Prefix downloads reject keys with empty, `.`, `..`, or control-character path segments. For whole-bucket purge, omit `source` or set `/` and set `allow-bucket-purge: true`. |
-| `destination` | command-dependent | | B2 file/prefix (upload/sync up/copy); local path (download/sync down/verify). Local destinations expand a leading `~` or `~/`; parent directories are created as needed. Upload destinations are not normalized by the action; SDK/B2 key validation errors are surfaced rather than silently rewriting `/` characters. |
+| `source` | command-dependent | | Local path/glob (upload/sync up); B2 file name or prefix (everything else). Local paths and globs expand a leading `~` or `~/` to the runner home directory and reject `~/..` escapes; B2 keys never are. With `sync` `direction: auto`, an expandable tilde source that exists locally is treated as ambiguous and must use explicit `direction`. Prefix downloads reject keys with empty, `.`, `..`, or control-character path segments. For whole-bucket purge, omit `source` or set `/` and set `allow-bucket-purge: true`. |
+| `destination` | command-dependent | | B2 file/prefix (upload/sync up/copy); local path (download/sync down/verify). Local destinations expand a leading `~` or `~/` and reject `~/..` escapes; parent directories are created as needed. Upload destinations are not normalized by the action; SDK/B2 key validation errors are surfaced rather than silently rewriting `/` characters. |
 | `include` | no | | CSV of glob patterns to include (upload). |
 | `exclude` | no | `.git/**` | CSV of glob patterns to exclude (upload). |
 | `concurrency` | no | `4` | Parallel parts/files. Must be a positive decimal integer. |
@@ -407,7 +408,7 @@ Set `bypass-governance: true` to shorten governance-mode retention or to remove 
 | `sse` | no | | Server-side encryption: `B2` (SSE-B2) or `C:<base64-32-byte-key>` (SSE-C). SSE-C keys must use canonical base64 and decode to exactly 32 bytes. |
 | `compare-mode` | no | `modtime` | Sync comparison: `modtime` \| `size` \| `none`. |
 | `keep-mode` | no | `no-delete` | Sync deletion of destination-only files: `no-delete` \| `delete` \| `keep-days`. Deletion applies to whichever side is the destination, so a `down` sync with `delete` removes **local** files. |
-| `keep-days` | with `keep-mode: keep-days` | | Retention window in days. Destination-only files younger than this are kept. Required when `keep-mode` is `keep-days`; warns and is ignored otherwise. |
+| `keep-days` | no | | Retention window in days. Destination-only files younger than this are kept. Recommended when `keep-mode` is `keep-days`; omitting it preserves the v1 legacy SDK default with a warning. Warns and is ignored with other `keep-mode` values. |
 | `direction` | no | `auto` | Sync direction: `auto` \| `up` (local→B2) \| `down` (B2→local). |
 | `max-results` | no | `1000` | `list` upper bound. Must be a positive decimal integer. Truncation is reported in the step summary. |
 | `expected-sha1` | no | | `verify` literal 40-character hexadecimal SHA-1 to compare against; malformed values fail the action before comparison. Non-comparable remote SHA-1 headers such as `none` or `unverified:<sha1>` publish `verified=false` outputs before failing the step. |

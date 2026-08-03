@@ -249,7 +249,7 @@ describe('parseInputs', () => {
     expect(confirmed.allowBucketPurge).toBe(true)
   })
 
-  it("requires 'keep-days' when 'keep-mode' is 'keep-days'", () => {
+  it("warns when 'keep-mode: keep-days' omits the retention window", async () => {
     setInput('action', 'sync')
     setInput('application-key-id', 'k')
     setInput('application-key', 's')
@@ -257,9 +257,13 @@ describe('parseInputs', () => {
     setInput('source', './public')
     setInput('keep-mode', 'keep-days')
 
-    // Without a window the SDK would default to 0 days, which deletes every
-    // orphan immediately and silently makes `keep-days` behave like `delete`.
-    expect(() => parseInputs()).toThrow(/'keep-days' is required/)
+    let parsed: ReturnType<typeof parseInputs> | undefined
+    const stdout = await captureStdout(() => {
+      parsed = parseInputs()
+    })
+    expect(parsed?.keepDays).toBeUndefined()
+    expect(stdout).toContain('::warning::')
+    expect(stdout).toContain('future major release')
 
     setInput('keep-days', '30')
     expect(parseInputs().keepDays).toBe(30)

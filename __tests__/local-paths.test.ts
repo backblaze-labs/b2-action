@@ -4,7 +4,11 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { downloadCommand } from '../src/commands/download.ts'
 import { syncCommand, warnOnImplicitDownload } from '../src/commands/sync.ts'
-import { relativeUploadKey, uploadCommand } from '../src/commands/upload.ts'
+import {
+  findDuplicateUploadFileNames,
+  relativeUploadKey,
+  uploadCommand,
+} from '../src/commands/upload.ts'
 import { verifyCommand } from '../src/commands/verify.ts'
 import { expandTilde } from '../src/fs.ts'
 import { captureStdout, makeFixture, makeInputs, seedFile, type TestFixture } from './_helpers.ts'
@@ -58,6 +62,10 @@ describe('expandTilde', () => {
     expect(expanded).toBe('~someone/data')
     expect(stdout).toContain('::warning::')
     expect(stdout).toContain('~user')
+  })
+
+  it('rejects traversal that would escape the home directory after expansion', () => {
+    expect(() => expandTilde('~/../../escape')).toThrow(/escapes the home directory/)
   })
 })
 
@@ -129,14 +137,26 @@ describe('tilde-prefixed local paths reach the real home directory', () => {
     expect(r.uploaded).toBe(1)
   })
 
-  it('sync auto: a tilde source resolves to an up sync', async () => {
+  it('sync auto: a tilde source that exists locally fails closed as ambiguous', async () => {
     await mkdir(join(fakeHome, 'hf'), { recursive: true })
     await writeFile(join(fakeHome, 'hf', 'blob'), 'x')
-    const r = await syncCommand(
-      fx.bucket,
-      makeInputs('sync', fx, { source: '~/hf', destination: 'caches/hf/' }),
-    )
-    expect(r.direction).toBe('local-to-b2')
+    await expect(
+      syncCommand(fx.bucket, makeInputs('sync', fx, { source: '~/hf', destination: 'caches/hf/' })),
+    ).rejects.toThrow(/ambiguous/)
+  })
+
+  it('sync auto: a tilde-prefixed B2 source does not flip to upload when home exists', async () => {
+    await mkdir(join(fakeHome, '.cache', 'huggingface'), { recursive: true })
+    await seedFile(fx, '~/.cache/huggingface/blob', 'x')
+    await expect(
+      syncCommand(
+        fx.bucket,
+        makeInputs('sync', fx, {
+          source: '~/.cache/huggingface/',
+          destination: join(fx.workDir, 'restored'),
+        }),
+      ),
+    ).rejects.toThrow(/ambiguous/)
   })
 
   it('verify: a tilde destination hashes the home-directory file', async () => {
@@ -151,6 +171,48 @@ describe('tilde-prefixed local paths reach the real home directory', () => {
       makeInputs('verify', fx, { source: 'weights.pt', destination: '~/weights.pt' }),
     )
     expect(r.verified).toBe(true)
+  })
+
+  it('rejects traversal-after-tilde on download and sync-down destinations', async () => {
+    await seedFile(fx, 'weights.pt', 'w')
+
+    await expect(
+      downloadCommand(
+        fx.bucket,
+        makeInputs('download', fx, {
+          source: 'weights.pt',
+          destination: '~/../../escape/weights.pt',
+        }),
+      ),
+    ).rejects.toThrow(/escapes the home directory/)
+
+    await expect(
+      syncCommand(
+        fx.bucket,
+        makeInputs('sync', fx, {
+          source: 'weights.pt',
+          destination: '~/../../escape',
+          syncDirection: 'down',
+        }),
+      ),
+    ).rejects.toThrow(/escapes the home directory/)
+  })
+
+  it('rejects traversal-after-tilde on upload sources and verify destinations', async () => {
+    await expect(
+      uploadCommand(fx.bucket, makeInputs('upload', fx, { source: '~/../../escape/secret.txt' })),
+    ).rejects.toThrow(/escapes the home directory/)
+
+    await seedFile(fx, 'weights.pt', 'w')
+    await expect(
+      verifyCommand(
+        fx.bucket,
+        makeInputs('verify', fx, {
+          source: 'weights.pt',
+          destination: '~/../../escape/weights.pt',
+        }),
+      ),
+    ).rejects.toThrow(/escapes the home directory/)
   })
 })
 
@@ -210,6 +272,33 @@ describe('glob uploads whose matches live outside the working directory', () => 
     )
     expect(r.files.map((f) => f.fileName)).toEqual(['artifacts/nested/a.bin'])
   })
+
+  it('rejects duplicate final keys from multiple absolute search roots before uploading', async () => {
+    await mkdir(join(outside, 'a'), { recursive: true })
+    await mkdir(join(outside, 'b'), { recursive: true })
+    await writeFile(join(outside, 'a', 'model.bin'), 'a')
+    await writeFile(join(outside, 'b', 'model.bin'), 'b')
+    const source = `${join(outside, 'a').replaceAll('\\', '/')}/*.bin`
+    const include = [`${join(outside, 'b').replaceAll('\\', '/')}/*.bin`]
+    let uploadCalls = 0
+    const originalUpload = fx.bucket.upload.bind(fx.bucket)
+    fx.bucket.upload = async (...args: Parameters<typeof fx.bucket.upload>) => {
+      uploadCalls++
+      return await originalUpload(...args)
+    }
+
+    try {
+      await expect(
+        uploadCommand(
+          fx.bucket,
+          makeInputs('upload', fx, { source, include, destination: 'artifacts/' }),
+        ),
+      ).rejects.toThrow(/artifacts\/model\.bin/)
+      expect(uploadCalls).toBe(0)
+    } finally {
+      fx.bucket.upload = originalUpload
+    }
+  })
 })
 
 describe('relativeUploadKey', () => {
@@ -230,6 +319,34 @@ describe('relativeUploadKey', () => {
     const key = relativeUploadKey([join(tmpdir(), 'a', 'b')], join(tmpdir(), 'a', 'c', 'd.bin'))
     expect(key).not.toContain('..')
   })
+
+  it('exposes basename fallback collisions to the duplicate-key preflight', () => {
+    const first = join(tmpdir(), 'first', 'model.bin')
+    const second = join(tmpdir(), 'second', 'model.bin')
+    const files = [first, second].map((localPath) => ({
+      localPath,
+      fileName: relativeUploadKey([join(tmpdir(), 'root')], localPath),
+    }))
+
+    expect(files.map((file) => file.fileName)).toEqual(['model.bin', 'model.bin'])
+    expect(findDuplicateUploadFileNames(files)).toEqual([
+      { fileName: 'model.bin', localPaths: [first, second].sort() },
+    ])
+  })
+
+  it('sorts duplicate-key diagnostics by final B2 key', () => {
+    expect(
+      findDuplicateUploadFileNames([
+        { fileName: 'z.bin', localPath: '/tmp/z-2.bin' },
+        { fileName: 'a.bin', localPath: '/tmp/a-2.bin' },
+        { fileName: 'z.bin', localPath: '/tmp/z-1.bin' },
+        { fileName: 'a.bin', localPath: '/tmp/a-1.bin' },
+      ]),
+    ).toEqual([
+      { fileName: 'a.bin', localPaths: ['/tmp/a-1.bin', '/tmp/a-2.bin'] },
+      { fileName: 'z.bin', localPaths: ['/tmp/z-1.bin', '/tmp/z-2.bin'] },
+    ])
+  })
 })
 
 describe('warnOnImplicitDownload', () => {
@@ -241,10 +358,10 @@ describe('warnOnImplicitDownload', () => {
     expect(stdout).toContain("'direction: up'")
   })
 
-  it('warns for tilde and absolute sources too', async () => {
+  it('warns for tilde and Windows-drive sources too', async () => {
     const stdout = await captureStdout(() => {
       warnOnImplicitDownload('auto', 'b2-to-local', '~/.cache/huggingface')
-      warnOnImplicitDownload('auto', 'b2-to-local', '/var/data/cache')
+      warnOnImplicitDownload('auto', 'b2-to-local', 'C:\\data\\cache')
     })
     expect(stdout.match(/::warning::/g)).toHaveLength(2)
   })
@@ -253,6 +370,7 @@ describe('warnOnImplicitDownload', () => {
     const stdout = await captureStdout(() => {
       warnOnImplicitDownload('down', 'b2-to-local', './.cache/huggingface')
       warnOnImplicitDownload('auto', 'b2-to-local', 'caches/Linux/huggingface/')
+      warnOnImplicitDownload('auto', 'b2-to-local', '/backups/')
       warnOnImplicitDownload('auto', 'local-to-b2', './public')
     })
     expect(stdout).not.toContain('::warning::')
