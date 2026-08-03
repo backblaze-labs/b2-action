@@ -20,6 +20,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Documentation
 
+- README and `.github/workflows/README.md`: the example suite no longer claims that every `example-*.yml` runs on pull requests. `example-ml-cache-sync.yml` is `push` + `workflow_dispatch` only because it runs `uses: ./` with B2 secrets, which a pull request could modify; `__tests__/workflow-policy.test.ts` enforces that.
 - README: worked examples after the first few omit the credential inputs, which now says so and points at the `B2_APPLICATION_KEY_ID` / `B2_APPLICATION_KEY` fallback rather than leaving the snippets to fail with a missing-credential error.
 - README: the `presign`, chain-outputs, and `retry-after` examples pass step outputs through `env:` instead of interpolating `${{ }}` into `run:` bodies, matching the example workflows and the repository's own guidance about `retry-after`.
 - README: `keep-mode` states that deletion applies to whichever side is the destination, so a `down` sync with `keep-mode: delete` removes local files; the sync examples say the same inline.

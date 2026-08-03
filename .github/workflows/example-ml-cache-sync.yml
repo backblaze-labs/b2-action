@@ -100,8 +100,10 @@ jobs:
           direction: down
 
       - name: Compare restored tree against the original
+        # A down sync leaves the SDK's `.b2sdk-download-staging` scratch
+        # directory in the destination, so exclude it from the comparison.
         run: |
-          diff -r "$HF_HOME" "$GITHUB_WORKSPACE/.cache/restored"
+          diff -r -x '.b2sdk-download-staging' "$HF_HOME" "$GITHUB_WORKSPACE/.cache/restored"
 
       - name: Cleanup
         if: always()

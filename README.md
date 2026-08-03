@@ -15,7 +15,7 @@ A Backblaze-maintained B2 GitHub Action. TypeScript-native, built on [@backblaze
 - **Step-summary tables** rendered on every run via `$GITHUB_STEP_SUMMARY`, capped at 100 per-file rows with an omitted-row notice.
 - **Secret-safe.** App keys, auth tokens, and presigned URLs are auto-masked with `::add-mask::`.
 
-> **Live test suite = the examples.** Every workflow under [.github/workflows/example-*.yml](./.github/workflows/README.md) is both a copy-paste-runnable example and an integration test that runs on every PR.
+> **Live test suite = the examples.** Every workflow under [.github/workflows/example-*.yml](./.github/workflows/README.md) is both a copy-paste-runnable example and a live integration test. All but one run on every PR; [the ML cache round-trip](./.github/workflows/example-ml-cache-sync.yml) is push-only because it runs `uses: ./` with B2 secrets.
 
 ## Table of contents
 

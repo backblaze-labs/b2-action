@@ -17,10 +17,25 @@ import { captureStdout, makeFixture, makeInputs, seedFile, type TestFixture } fr
  * Point `os.homedir()` at a scratch directory so the tilde tests never touch
  * the real home directory of a contributor or a CI runner. `homedir()` reads
  * `HOME` on POSIX and `USERPROFILE` on Windows.
+ *
+ * This only works while `process.env` is the original object. `resetInputEnv()`
+ * replaces it wholesale (`process.env = { ...ORIGINAL_ENV }`), after which
+ * `homedir()` stops reflecting `HOME` for the rest of the worker and these
+ * tests would silently operate on the real home directory. That is why this
+ * file never calls `resetInputEnv()`, and why {@link expectFakeHome} asserts
+ * the stubbing actually took effect.
  */
 function useFakeHome(dir: string): void {
   process.env.HOME = dir
   process.env.USERPROFILE = dir
+}
+
+/** Fail loudly if the `HOME` stubbing silently stopped working. */
+function expectFakeHome(dir: string): void {
+  expect(
+    homedir(),
+    'homedir() no longer reflects the stubbed HOME, so these tests would touch the real home directory',
+  ).toBe(dir)
 }
 
 function restoreEnv(name: 'HOME' | 'USERPROFILE', value: string | undefined): void {
@@ -39,6 +54,7 @@ describe('expandTilde', () => {
   beforeEach(async () => {
     fakeHome = await mkdtemp(join(tmpdir(), 'b2-home-'))
     useFakeHome(fakeHome)
+    expectFakeHome(fakeHome)
   })
   afterEach(async () => {
     restoreEnv('HOME', originalHome)
@@ -88,6 +104,7 @@ describe('tilde-prefixed local paths reach the real home directory', () => {
     fx = await makeFixture(`tilde-${process.hrtime.bigint()}`)
     fakeHome = await mkdtemp(join(tmpdir(), 'b2-home-'))
     useFakeHome(fakeHome)
+    expectFakeHome(fakeHome)
     cwd = process.cwd()
     process.chdir(fx.workDir)
   })
