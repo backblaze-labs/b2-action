@@ -50,6 +50,7 @@ markdownlintignore
 mbps
 md5
 millis
+minimatch
 modtime
 multipart
 mutator

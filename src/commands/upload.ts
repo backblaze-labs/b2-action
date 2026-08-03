@@ -167,13 +167,19 @@ interface UploadPlan {
   fileInfo: Record<string, string>
 }
 
+/** Duplicate B2 key detected before upload starts. */
 export interface UploadFileNameCollision {
+  /** Final B2 file name that more than one local path would write. */
   fileName: string
+  /** Local files that would collide on {@link UploadFileNameCollision.fileName}. */
   localPaths: string[]
 }
 
+/** Local file and projected B2 key used for duplicate upload-key checks. */
 export interface UploadFileNameOwner {
+  /** Absolute or resolved local file path. */
   localPath: string
+  /** Final B2 file name after destination remapping. */
   fileName: string
 }
 
