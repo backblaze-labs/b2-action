@@ -125,6 +125,8 @@ describe('parseInputs: exhaustive validation rejects', () => {
           setInput('compare-mode', cmp)
           setInput('keep-mode', keep)
           setInput('direction', dir)
+          // `keep-days` mode requires an explicit window; see inputs.test.ts.
+          setInput('keep-days', keep === 'keep-days' ? '7' : '')
           const r = parseInputs()
           expect(r.compareMode).toBe(cmp)
           expect(r.keepMode).toBe(keep)

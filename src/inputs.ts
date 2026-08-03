@@ -162,6 +162,8 @@ export interface ParsedInputs {
   compareMode: CompareMode
   /** How `sync` treats destination-only files. */
   keepMode: KeepMode
+  /** Retention window in days for `keep-mode: keep-days`. */
+  keepDays: number | undefined
   /** Direction of a `sync` (auto-detected when set to `auto`). */
   syncDirection: SyncDirection
   /** Cap on listed/presigned entries for `list` and prefix `presign`. */
@@ -272,6 +274,20 @@ export function parseInputs(): ParsedInputs {
     (core.getInput('keep-mode') || 'no-delete').toLowerCase(),
     VALID_KEEP,
   )
+  const keepDaysInput = optional('keep-days')
+  const keepDays =
+    keepDaysInput !== undefined ? parsePositiveInt('keep-days', keepDaysInput) : undefined
+  if (keepMode === 'keep-days' && keepDays === undefined) {
+    // The SDK defaults `keepDays` to 0, which deletes every orphan immediately
+    // and makes `keep-days` behave exactly like `delete`. Fail loudly instead.
+    throw new Error("'keep-days' is required when 'keep-mode' is 'keep-days'")
+  }
+  if (keepDays !== undefined && keepMode !== 'keep-days') {
+    core.warning(
+      `'keep-days' is ignored because 'keep-mode' is '${keepMode}'; set 'keep-mode: keep-days' to apply it.`,
+    )
+  }
+
   const syncDirection = parseEnum(
     'direction',
     (core.getInput('direction') || 'auto').toLowerCase(),
@@ -313,6 +329,7 @@ export function parseInputs(): ParsedInputs {
     encryption,
     compareMode,
     keepMode,
+    keepDays,
     syncDirection,
     maxResults,
     expectedSha1,

@@ -34,6 +34,7 @@ export function makeParsedInputs(
     encryption: undefined,
     compareMode: 'modtime',
     keepMode: 'no-delete',
+    keepDays: undefined,
     syncDirection: 'auto',
     maxResults: 1000,
     expectedSha1: undefined,
