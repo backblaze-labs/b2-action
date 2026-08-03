@@ -6,6 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- Local path inputs now expand a leading `~` or `~/` to the runner's home directory: `source` for `upload` and `sync` up, `destination` for `download`, `sync` down, and `verify`, plus `include` / `exclude` globs. Action inputs are not shell-expanded, so `destination: ~/.cache/huggingface` previously created a literal `~` directory inside the workspace, while `@actions/glob` already expanded `~` for upload patterns. B2 keys are never tilde-expanded because `~` is a legal key character. `~user` forms are passed through with a warning.
+- `keep-days` input: the retention window for `keep-mode: keep-days`, which the action never forwarded to the SDK. The SDK defaults the window to 0 days, so `keep-mode: keep-days` deleted every destination-only file immediately and behaved exactly like `keep-mode: delete`. The input is now required when `keep-mode` is `keep-days` (a clear failure replaces the silent wrong behavior) and warns when set with any other `keep-mode`.
+- `sync` warns when `direction: auto` resolves to a B2-to-local sync while `source` still looks like a local path (`~`, `./`, `../`, absolute, or a Windows drive). Auto-detection treats "not an existing local directory" as "must be a B2 prefix", so a mistyped or not-yet-created local path silently reversed the intended direction.
+
+### Fixed
+
+- `upload`: glob matches outside the working directory no longer produce B2 keys containing `..` path segments. The key was computed with `relative(process.cwd(), match)`, so a pattern such as `/tmp/build/*.bin` yielded keys like `artifacts/../../../tmp/build/a.bin`. Those objects uploaded successfully but this action's own prefix `download` then refused to map them back onto disk, so they could not be restored. Keys are now resolved against the first containing root (the working directory first, so in-workspace globs keep their existing keys, then the glob's own search paths), falling back to the basename.
+
+### Documentation
+
+- README: worked examples after the first few omit the credential inputs, which now says so and points at the `B2_APPLICATION_KEY_ID` / `B2_APPLICATION_KEY` fallback rather than leaving the snippets to fail with a missing-credential error.
+- README: the `presign`, chain-outputs, and `retry-after` examples pass step outputs through `env:` instead of interpolating `${{ }}` into `run:` bodies, matching the example workflows and the repository's own guidance about `retry-after`.
+- README: `keep-mode` states that deletion applies to whichever side is the destination, so a `down` sync with `keep-mode: delete` removes local files; the sync examples say the same inline.
+- README: the `delete` verb row distinguishes exact-name deletes (latest version only, history preserved) from prefix deletes (every version, same as `purge`).
+- README: `source-bucket` notes that cross-bucket `copy` needs a key that reaches both buckets, so a single-bucket-restricted key cannot do it.
+
 ## [1.1.0] - 2026-06-23
 
 ### Security

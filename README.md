@@ -92,7 +92,7 @@ Exact-version releases publish an attested `dist/index.js` asset for provenance 
 | `download` | Single-file or prefix-bulk download. | `source`, `bucket` |
 | `sync` | Mirror a local directory ↔ a B2 prefix. Direction auto-detected. | `source`, `destination`, `bucket` |
 | `copy` | Server-side copy. Same bucket by default; cross-bucket with `source-bucket`. | `source`, `destination`, `bucket` |
-| `delete` | Single file by name, or prefix-bulk via `b2_list_file_versions`. Supports `dry-run` and `bypass-governance` for governance-retained versions. | `source`, `bucket` |
+| `delete` | Exact name: removes only the latest version, preserving history. Prefix (trailing `/`): removes **every** version under it via `b2_list_file_versions`, same as `purge`. Supports `dry-run` and `bypass-governance` for governance-retained versions. | `source`, `bucket` |
 | `list` | List files under a prefix; emits JSON for downstream steps. | `bucket` (and usually `source`) |
 | `hide` | Soft-delete via hide marker. Underlying data preserved until lifecycle. | `source`, `bucket` |
 | `unhide` | Restore a hidden file by deleting its top hide marker. | `source`, `bucket` |
@@ -109,6 +109,8 @@ Exact-name `copy`, single-file `delete`, and `retention` operate only when the l
 ## Worked examples
 
 > These examples use `@v1` for brevity. For production, pin to a commit SHA; see [Pinning and versioning](#pinning-and-versioning).
+>
+> Examples after the first few also omit `application-key-id` / `application-key` for brevity. Those runs need the credentials from somewhere: either add both inputs, or set `B2_APPLICATION_KEY_ID` and `B2_APPLICATION_KEY` once at the job level and let the fallback chain pick them up.
 
 ### Upload a single file
 
@@ -189,9 +191,10 @@ Exact-name `copy`, single-file `delete`, and `retention` operate only when the l
     source: ./public
     destination: site
     compare-mode: modtime
-    keep-mode: delete   # remove remote files not present locally
+    keep-mode: delete   # up sync: removes REMOTE files not present locally
 
-# Force B2 → local (cache restore)
+# Force B2 → local (cache restore). Leave keep-mode at no-delete here:
+# on a down sync, keep-mode: delete removes LOCAL files missing from B2.
 - uses: backblaze-labs/b2-action@v1
   with:
     action: sync
@@ -288,7 +291,10 @@ the step; comparable SHA-1 mismatches also fail.
     source: reports/2026-q1.pdf
     presign-ttl: 7200
 
-- run: curl -fSL "${{ steps.link.outputs.presigned-url }}" -o report.pdf
+- name: Fetch the artifact
+  env:
+    REPORT_URL: ${{ steps.link.outputs.presigned-url }}
+  run: curl -fSL "$REPORT_URL" -o report.pdf
 ```
 
 ### Server-side encryption
@@ -357,10 +363,15 @@ Set `bypass-governance: true` to shorten governance-mode retention or to remove 
     bucket: my-bucket
     source: ./build/app.tar.gz
 
-- run: |
-    echo "Uploaded file ID: ${{ steps.up.outputs.file-id }}"
-    echo "SHA-1:            ${{ steps.up.outputs.content-sha1 }}"
-    echo "Bytes:            ${{ steps.up.outputs.bytes-transferred }}"
+- name: Record the upload
+  env:
+    FILE_ID: ${{ steps.up.outputs.file-id }}
+    FILE_SHA1: ${{ steps.up.outputs.content-sha1 }}
+    FILE_BYTES: ${{ steps.up.outputs.bytes-transferred }}
+  run: |
+    echo "Uploaded file ID: $FILE_ID"
+    echo "SHA-1:            $FILE_SHA1"
+    echo "Bytes:            $FILE_BYTES"
 ```
 
 ---
@@ -373,9 +384,9 @@ Set `bypass-governance: true` to shorten governance-mode retention or to remove 
 | `application-key-id` | no\* | | B2 application key ID. Falls back to `$B2_APPLICATION_KEY_ID`. |
 | `application-key` | no\* | | B2 application key. Falls back to `$B2_APPLICATION_KEY`. |
 | `bucket` | yes | | Destination bucket name. |
-| `source-bucket` | copy only | `bucket` | Source bucket for cross-bucket copy. |
-| `source` | command-dependent | | Local path/glob (upload/sync up); B2 file name or prefix (everything else). Prefix downloads reject keys with empty, `.`, `..`, or control-character path segments. For whole-bucket purge, omit `source` or set `/` and set `allow-bucket-purge: true`. |
-| `destination` | command-dependent | | B2 file/prefix (upload/sync up/copy); local path (download/sync down/verify). Upload destinations are not normalized by the action; SDK/B2 key validation errors are surfaced rather than silently rewriting `/` characters. |
+| `source-bucket` | copy only | `bucket` | Source bucket for cross-bucket copy. The key must reach both buckets (read on the source, write on the destination), so a key restricted to a single bucket cannot do this. |
+| `source` | command-dependent | | Local path/glob (upload/sync up); B2 file name or prefix (everything else). Local paths and globs expand a leading `~` or `~/` to the runner home directory; B2 keys never are. Prefix downloads reject keys with empty, `.`, `..`, or control-character path segments. For whole-bucket purge, omit `source` or set `/` and set `allow-bucket-purge: true`. |
+| `destination` | command-dependent | | B2 file/prefix (upload/sync up/copy); local path (download/sync down/verify). Local destinations expand a leading `~` or `~/`; parent directories are created as needed. Upload destinations are not normalized by the action; SDK/B2 key validation errors are surfaced rather than silently rewriting `/` characters. |
 | `include` | no | | CSV of glob patterns to include (upload). |
 | `exclude` | no | `.git/**` | CSV of glob patterns to exclude (upload). |
 | `concurrency` | no | `4` | Parallel parts/files. Must be a positive decimal integer. |
@@ -395,7 +406,8 @@ Set `bypass-governance: true` to shorten governance-mode retention or to remove 
 | `fail-on-empty` | no | `true` | Fail if an upload glob matches zero files. |
 | `sse` | no | | Server-side encryption: `B2` (SSE-B2) or `C:<base64-32-byte-key>` (SSE-C). SSE-C keys must use canonical base64 and decode to exactly 32 bytes. |
 | `compare-mode` | no | `modtime` | Sync comparison: `modtime` \| `size` \| `none`. |
-| `keep-mode` | no | `no-delete` | Sync deletion of orphans: `no-delete` \| `delete` \| `keep-days`. |
+| `keep-mode` | no | `no-delete` | Sync deletion of destination-only files: `no-delete` \| `delete` \| `keep-days`. Deletion applies to whichever side is the destination, so a `down` sync with `delete` removes **local** files. |
+| `keep-days` | with `keep-mode: keep-days` | | Retention window in days. Destination-only files younger than this are kept. Required when `keep-mode` is `keep-days`; warns and is ignored otherwise. |
 | `direction` | no | `auto` | Sync direction: `auto` \| `up` (local→B2) \| `down` (B2→local). |
 | `max-results` | no | `1000` | `list` upper bound. Must be a positive decimal integer. Truncation is reported in the step summary. |
 | `expected-sha1` | no | | `verify` literal 40-character hexadecimal SHA-1 to compare against; malformed values fail the action before comparison. Non-comparable remote SHA-1 headers such as `none` or `unverified:<sha1>` publish `verified=false` outputs before failing the step. |
@@ -454,8 +466,10 @@ For `presign`, `summary-json` and `summary-json-preview` contain only non-secret
 
 - name: Retry after a safe transient failure
   if: steps.b2.outputs.retryable == 'true'
+  env:
+    RETRY_AFTER: ${{ steps.b2.outputs['retry-after'] || '30' }}
   run: |
-    sleep "${{ steps.b2.outputs['retry-after'] || '30' }}"
+    sleep "$RETRY_AFTER"
     echo "retry the read-only operation here"
 ```
 
