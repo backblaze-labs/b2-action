@@ -46,8 +46,12 @@ src/
   sse.ts           # SSE-B2 / SSE-C input parser
   progress.ts      # throttled progress listener
   summary.ts       # $GITHUB_STEP_SUMMARY writer
-  version.ts       # VERSION constant (bumped in lockstep with package.json)
-  commands/<verb>.ts  # one file per verb (13 today)
+  outputs.ts       # core.setOutput mapping + summary-json shaping
+  errors.ts        # error normalization for core.setFailed
+  format.ts        # byte / duration formatting helpers
+  fs.ts            # filesystem helpers (tilde expansion, safe stat)
+  version.ts       # VERSION constant (read from package.json)
+  commands/<verb>.ts  # one file per verb (13 verbs); delete-all.ts is a shared bulk-delete helper, not a verb
 __tests__/
   _helpers.ts      # shared makeInputs() builder for command tests
   *.test.ts        # unit tests against the SDK's in-memory B2Simulator
@@ -55,6 +59,11 @@ __tests__/
   ci.yml                # lint, typecheck, test, coverage, build, dist freshness, smoke
   security.yml          # shared GitHub Actions workflow security checks
   codeql.yml            # CodeQL (SAST) static analysis of the TypeScript source
+  docs.yml              # TypeDoc build + GitHub Pages deploy
+  docs-lint.yml         # action.yml<>README sync, markdownlint, link check, cspell
+  full-lockfile-audit.yml            # full-lockfile pnpm audit (dev/build tooling)
+  full-lockfile-audit-heartbeat.yml  # ensures the full audit fires on schedule
+  mutation-testing.yml  # weekly batched Stryker mutation run
   release.yml           # see RELEASE.md
   daily-smoke.yml       # 03:13 UTC: real-B2 end-to-end against the test bucket
   large-multipart-smoke.yml  # weekly real-B2 multipart upload integrity check
@@ -310,7 +319,7 @@ The redundancy is deliberate: the simulator suite is what guarantees a contribut
 
 ## Coverage
 
-Coverage is at **100 % statements / 100 % branches / 100 % functions / 100 % lines** across 156 tests. Zero `v8 ignore` annotations in `src/`. Every uncovered branch the SDK formerly exposed (multipart `contentSha1: null`, pagination handover, `delete-remote` on unversioned buckets, `error` events from `deleteAll`, `bucket.head()` shape, `pageSize` rename, `SyncEvent` narrowing) shipped in the SDK and the action's tests drive them against real simulator behavior. If you add a new code path, add a real test for it; do not introduce a `v8 ignore` without a documented external reason.
+Coverage runs about **98 % statements / 96 % branches / 100 % functions / 99 % lines**, comfortably above the `vitest.config.ts` gate of 95 % / 85 % / 100 % / 95 %, across roughly 30 test files. If you add a new code path, add a real test for it; do not introduce a `v8 ignore` without a documented external reason.
 
 ## Step-by-step: adding a new verb
 

@@ -1,5 +1,9 @@
 # Security policy
 
+## Supported versions
+
+Security fixes ship in the latest released `1.x` version. Pin to a released `vX.Y.Z` tag (or a commit SHA) and upgrade to the newest `1.x` release to receive them; older minor versions are not separately patched.
+
 ## Reporting a vulnerability
 
 If you find a security issue in this Action, please **do not** open a public GitHub issue. Instead:

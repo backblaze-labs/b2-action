@@ -9,12 +9,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Security
 
 - Hardened release/test tooling to clear GitHub security-scanning findings: bearer-token-like test data is no longer committed as a contiguous literal, release-provenance checks reuse parsed step bodies, mutation-report paths sanitize POSIX and Windows separators, and mutation-report tables share one column definition.
+- Bumped pinned CI action SHAs, `biome.json`, and development dependencies to clear GitHub Dependabot security alerts.
 
 ### Added
 
 - Local path inputs now expand a leading `~` or `~/` to the runner's home directory: `source` for `upload` and `sync` up, `destination` for `download`, `sync` down, and `verify`, plus `include` / `exclude` globs. Action inputs are not shell-expanded, so `destination: ~/.cache/huggingface` previously created a literal `~` directory inside the workspace, while `@actions/glob` already expanded `~` for upload patterns. B2 keys are never tilde-expanded because `~` is a legal key character. `~user` forms are passed through with a warning, and `~/..` paths are rejected because the expanded path would leave the runner home directory.
 - `keep-days` input: the retention window for `keep-mode: keep-days`, which the action never forwarded to the SDK. The SDK defaults the window to 0 days, so `keep-mode: keep-days` can delete every destination-only file immediately and behave exactly like `keep-mode: delete`. For v1 compatibility, `keep-mode: keep-days` without `keep-days` still parses but emits a deprecation warning; set `keep-days` explicitly to use the intended retention window. A future major release should make the window required. Setting `keep-days` with any other `keep-mode` warns that it is ignored.
 - `sync` warns when `direction: auto` resolves to a B2-to-local sync while `source` still looks like a local path (`~`, `./`, `../`, or a Windows drive). Auto-detection treats "not an existing local directory" as "must be a B2 prefix", so a mistyped or not-yet-created local path silently reversed the intended direction.
+- `upload` file metadata and content headers: new `file-info` (custom `X-Bz-Info-*` entries), `cache-control`, `content-disposition`, `content-language`, and `expires` inputs, plus `preserve-mtime` to record the local file's modification time. Uploaded-file entries in the `summary-json` output now include the resolved `fileInfo`.
+
+### Changed
+
+- Updated the `@backblaze-labs/b2-sdk` dependency from `^0.1.0` to `^0.2.0`.
+- `bypass-governance` now also covers `delete` and `purge`, not just retention changes: it is forwarded to Object Lock delete operations, so a governance-locked file can be removed when the application key has the capability.
+
+### Deprecated
+
+- `keep-mode: keep-days` without an explicit `keep-days` value. It still parses but emits a deprecation warning, and because the SDK defaults the window to 0 days it deletes destination-only files immediately (like `keep-mode: delete`). Set `keep-days` explicitly; a future major release will require it.
 
 ### Fixed
 
@@ -23,6 +34,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `upload`: multi-file uploads now fail before any upload starts if two local files would map to the same final B2 file name after destination remapping. This avoids silent overwrites from same-basename files matched through multiple absolute roots or basename fallback.
 - `copy`: abort signals now flow through both small-file and large-file copy paths, so workflow cancellation behaves consistently.
 - `file-info`: oversized metadata entries are now checked against the remaining total metadata budget, producing one coherent limit instead of a value-only limit that could still fail the final total check.
+- `copy`: large cross-bucket copies now land in the destination bucket. `copyLargeFile` was never sent the destination bucket id, so a large file copied across buckets was silently written back into the source bucket.
 
 ### Documentation
 

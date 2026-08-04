@@ -30,7 +30,9 @@ src/
   sse.ts           # SSE-B2 / SSE-C input parser
   progress.ts      # throttled progress listener
   summary.ts       # $GITHUB_STEP_SUMMARY writer
-  commands/<verb>.ts  # one file per verb
+  outputs.ts       # core.setOutput mapping + summary-json shaping
+  errors.ts / format.ts / fs.ts  # error, formatting, and filesystem helpers
+  commands/<verb>.ts  # one file per verb (13 verbs); delete-all.ts is a shared helper
 __tests__/
   _helpers.ts      # shared `makeInputs()` for tests
   *.test.ts        # unit tests (run against the SDK's B2Simulator, no network)
