@@ -275,11 +275,12 @@ function checkReleaseWorkflow(doc) {
     // The tag authorization and checkout happen in shell, so this is a
     // command-shape check for the race-prevention invariant, not a formatter
     // assertion about the whole script body.
+    const releaseRefRun = stepRun(releaseRefStep)
     requireCondition(
-      stepRun(releaseRefStep).includes('refs/tags/$REQUESTED_REF') &&
-        stepRun(releaseRefStep).includes('refs/remotes/origin/main') &&
-        stepRun(releaseRefStep).includes('git merge-base --is-ancestor') &&
-        stepRun(releaseRefStep).includes('git checkout --detach'),
+      releaseRefRun.includes('refs/tags/$REQUESTED_REF') &&
+        releaseRefRun.includes('refs/remotes/origin/main') &&
+        releaseRefRun.includes('git merge-base --is-ancestor') &&
+        releaseRefRun.includes('git checkout --detach'),
       'validate must reject non-tag dispatch refs and require the tag commit to be on main',
     )
   }
@@ -291,12 +292,13 @@ function checkReleaseWorkflow(doc) {
     // action and disables automatic caching; `cache` must also stay unset so
     // the release gate cannot opt into explicit dependency caching.
     const setupNodeWith = asMapping(setupNodeStep.with)
+    const packageManagerCacheDisabled = setupNodeWith['package-manager-cache']
     requireCondition(
-      setupNodeWith['package-manager-cache'] === false,
+      packageManagerCacheDisabled === false,
       'validate setup-node must disable automatic package-manager caching',
     )
     requireCondition(
-      setupNodeWith.cache === undefined,
+      !Object.hasOwn(setupNodeWith, 'cache'),
       'validate setup-node must not enable explicit dependency caching',
     )
   }
@@ -352,7 +354,7 @@ function checkReleaseWorkflow(doc) {
   requireCheckoutByValidatedSha('publish', publish)
   requireTagReverification('publish', publish)
   requireCondition(
-    !steps(publish).some((step) => stepUses(step, 'softprops/action-gh-release@')),
+    steps(publish).every((step) => !stepUses(step, 'softprops/action-gh-release@')),
     'publish must not delegate release asset upload to softprops/action-gh-release',
   )
   requireStepId('publish', publish, 'verify-local-assets', 'verify release assets before upload')
