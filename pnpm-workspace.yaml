@@ -11,15 +11,16 @@ minimumReleaseAgeExclude:
 # Keep lockfile/install resolution on patched dev/build tooling versions, with
 # explicit current-major ceilings so future major upgrades stay reviewed.
 overrides:
-  # markdownlint-cli2 pulls js-yaml; keep it above the <=4.1.1 parser DoS range.
-  # Drop when markdownlint-cli2 resolves js-yaml >=4.2.0 without an override.
-  js-yaml: '>=4.2.0 <5.0.0'
-  # markdownlint-cli2 and TypeDoc pull markdown-it; keep it above the <=14.1.1
-  # parser DoS range. Drop when both trees resolve markdown-it >=14.2.0 directly.
-  markdown-it: '>=14.2.0 <15.0.0'
+  # markdownlint-cli2 pulls js-yaml; keep it above the <4.3.0 parser DoS range.
+  # Drop when markdownlint-cli2 resolves a patched js-yaml directly.
+  js-yaml: 5.2.3
+  # markdownlint-cli2 and TypeDoc pull markdown-it/linkify-it; keep the tree
+  # above the linkify-it <=5.0.1 mailto parser DoS range.
+  markdown-it: 14.3.0
+  linkify-it: 5.0.2
   # @actions/http-client pulls undici; keep production action deps above the
-  # <6.27.0 WebSocket DoS range. Drop when it resolves undici >=6.27.0 directly.
-  undici: '>=6.27.0 <7.0.0'
+  # <6.28.0 HTTP parser ranges. Drop when it resolves undici >=6.28.0 directly.
+  undici: 6.28.0
   # @actions/glob pulls minimatch, which pulls brace-expansion. Keep production
   # action deps above the <5.0.9 brace expansion DoS range.
   brace-expansion: '>=5.0.9 <6.0.0'
@@ -29,6 +30,12 @@ overrides:
   # Vite pulls esbuild; keep it above the <0.28.1 dev-server file-read range.
   # Drop when Vite's esbuild floor is >=0.28.1.
   esbuild: '>=0.28.1 <0.29.0'
+  # Vite pulls PostCSS; keep it above the <=8.5.22 source-map disclosure ranges.
+  # Drop when Vite's PostCSS floor is >=8.5.23.
+  postcss: 8.5.25
+  # Stryker pulls Ajv, which pulls fast-uri; keep it above the <3.1.5 host
+  # confusion ranges. Drop when Ajv resolves fast-uri >=3.1.5 directly.
+  fast-uri: 3.1.5
   # Stryker depends on @inquirer/prompts for interactive init. Keep the
   # non-interactive mutation runner on the latest 7.x line so the lockfile uses
   # @inquirer/core's wrap-ansi/string-width-family tree and does not pull the

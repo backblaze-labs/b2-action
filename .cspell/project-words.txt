@@ -45,6 +45,7 @@ listhide
 lockdown
 lychee
 lycheeverse
+linkify
 markdownlint
 markdownlintignore
 mbps
