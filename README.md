@@ -26,6 +26,7 @@ A Backblaze-maintained B2 GitHub Action. TypeScript-native, built on [@backblaze
   - [Verbs](#verbs)
   - [Worked examples](#worked-examples)
     - [Upload a single file](#upload-a-single-file)
+    - [Upload with metadata and content headers](#upload-with-metadata-and-content-headers)
     - [Upload a directory with globs](#upload-a-directory-with-globs)
     - [Download a file or a prefix](#download-a-file-or-a-prefix)
     - [Sync (both directions)](#sync-both-directions)

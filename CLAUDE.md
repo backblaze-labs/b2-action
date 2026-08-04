@@ -27,7 +27,7 @@ pnpm lint:fix
 pnpm typecheck   # tsc --noEmit
 pnpm test        # vitest run, against B2Simulator
 pnpm build       # ncc build src/main.ts -o dist
-pnpm all         # lint + typecheck + test + build
+pnpm all         # lint + release policy + typecheck + test + build + spellcheck
 pnpm verify-dist # build, then `git diff --exit-code dist/`: must be clean before commit
 ```
 

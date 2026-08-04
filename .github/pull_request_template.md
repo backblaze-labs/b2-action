@@ -8,7 +8,7 @@ Thanks for sending a pull request! A few quick checks before submitting:
 
 ## Checklist
 
-- [ ] `pnpm all` passes locally (lint + typecheck + test + build).
+- [ ] `pnpm all` passes locally (lint + release policy + typecheck + test + build + spellcheck).
 - [ ] If `src/` changed, `dist/index.js` was rebuilt and is included in this PR. CI will fail otherwise.
 - [ ] Test coverage for new logic added under `__tests__/` (and passes the 95%/85%/100%/95% coverage gate).
 - [ ] If a new `action:` verb was added: it's listed in `src/inputs.ts` `ActionName`, wired in `src/main.ts`, documented in `action.yml`, and has a usage entry in the [README](../README.md).
