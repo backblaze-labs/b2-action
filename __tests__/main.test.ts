@@ -1126,36 +1126,39 @@ describe('main dispatcher', () => {
   it.each([
     ['delete', 'Delete', 1],
     ['purge', 'Purge', 2],
-  ] as const)('preserves %s aggregate errors when summary-json is truncated', async (action, label, errors) => {
-    const ctx = await loadMain()
-    const files = Array.from({ length: 3 }, (_, i) => ({
-      fileName: `stuck-${i}-${'x'.repeat(SUMMARY_JSON_MAX_UTF8_BYTES)}`,
-      fileId: `id-stuck-${i}`,
-      skipped: false,
-    }))
-    ctx.parseInputs.mockReturnValue(
-      inputs(action, action === 'purge' ? { allowBucketPurge: true } : {}),
-    )
-    const command = action === 'delete' ? ctx.commands.deleteCommand : ctx.commands.purgeCommand
-    command.mockResolvedValue({ files, errors })
+  ] as const)(
+    'preserves %s aggregate errors when summary-json is truncated',
+    async (action, label, errors) => {
+      const ctx = await loadMain()
+      const files = Array.from({ length: 3 }, (_, i) => ({
+        fileName: `stuck-${i}-${'x'.repeat(SUMMARY_JSON_MAX_UTF8_BYTES)}`,
+        fileId: `id-stuck-${i}`,
+        skipped: false,
+      }))
+      ctx.parseInputs.mockReturnValue(
+        inputs(action, action === 'purge' ? { allowBucketPurge: true } : {}),
+      )
+      const command = action === 'delete' ? ctx.commands.deleteCommand : ctx.commands.purgeCommand
+      command.mockResolvedValue({ files, errors })
 
-    await ctx.run()
+      await ctx.run()
 
-    const out = outputs(ctx)
-    expect(ctx.core.setFailed).toHaveBeenCalledWith(`${label} completed with ${errors} error(s)`)
-    expect(out).toMatchObject({
-      'files-deleted': '3',
-      'file-count': '3',
-      'summary-json-truncated': 'true',
-    })
-    expect(JSON.parse(out['summary-json'] ?? 'null')).toEqual([])
-    expect(JSON.parse(out[SUMMARY_JSON_NOTICE_OUTPUT_NAME] ?? '{}')).toMatchObject({
-      truncated: true,
-      totalCount: files.length,
-    })
-    expect(out[SUMMARY_JSON_PREVIEW_OUTPUT_NAME]).toBe('[]')
-    expect(ctx.writeStepSummary).not.toHaveBeenCalled()
-  })
+      const out = outputs(ctx)
+      expect(ctx.core.setFailed).toHaveBeenCalledWith(`${label} completed with ${errors} error(s)`)
+      expect(out).toMatchObject({
+        'files-deleted': '3',
+        'file-count': '3',
+        'summary-json-truncated': 'true',
+      })
+      expect(JSON.parse(out['summary-json'] ?? 'null')).toEqual([])
+      expect(JSON.parse(out[SUMMARY_JSON_NOTICE_OUTPUT_NAME] ?? '{}')).toMatchObject({
+        truncated: true,
+        totalCount: files.length,
+      })
+      expect(out[SUMMARY_JSON_PREVIEW_OUTPUT_NAME]).toBe('[]')
+      expect(ctx.writeStepSummary).not.toHaveBeenCalled()
+    },
+  )
 
   it('caps purge summary rows while counting every file', async () => {
     const ctx = await loadMain()

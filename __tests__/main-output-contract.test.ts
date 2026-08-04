@@ -79,13 +79,14 @@ afterEach(() => {
 })
 
 describe('main output contract', () => {
-  it.each(
-    Object.keys(EXPECTED_OUTPUT_KEYS) as ActionName[],
-  )('emits the golden output key set for %s', async (action) => {
-    const keys = await captureOutputKeys(action)
+  it.each(Object.keys(EXPECTED_OUTPUT_KEYS) as ActionName[])(
+    'emits the golden output key set for %s',
+    async (action) => {
+      const keys = await captureOutputKeys(action)
 
-    expect(keys).toEqual([...EXPECTED_OUTPUT_KEYS[action]].sort())
-  })
+      expect(keys).toEqual([...EXPECTED_OUTPUT_KEYS[action]].sort())
+    },
+  )
 })
 
 async function captureOutputKeys(action: ActionName): Promise<string[]> {

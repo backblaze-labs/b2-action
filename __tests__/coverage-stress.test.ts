@@ -1722,18 +1722,15 @@ describe('processSyncEvent: handles every SyncEvent variant', () => {
     expect(captured).toContain('boom')
   })
 
-  it.each([
-    'upload-start',
-    'compare',
-    'download-start',
-    'copy-start',
-    'copy-done',
-  ] as const)('informational event %s is a no-op', (type) => {
-    const before = freshCounters()
-    const c = freshCounters()
-    processSyncEvent({ type, path: 'x.txt', size: 0 }, c)
-    expect(c).toEqual(before)
-  })
+  it.each(['upload-start', 'compare', 'download-start', 'copy-start', 'copy-done'] as const)(
+    'informational event %s is a no-op',
+    (type) => {
+      const before = freshCounters()
+      const c = freshCounters()
+      processSyncEvent({ type, path: 'x.txt', size: 0 }, c)
+      expect(c).toEqual(before)
+    },
+  )
 })
 
 // =========================================================================
