@@ -39680,12 +39680,10 @@ async function copyCommand(client, destinationBucket, inputs, signal) {
             ...(sourceBucketName !== destinationBucket.name
                 ? { destinationBucketId: destinationBucket.id }
                 : {}),
+            ...(signal !== undefined ? { signal } : {}),
         };
         const result = isLarge
-            ? await destinationBucket.copyLargeFile({
-                ...copyOptions,
-                ...(signal !== undefined ? { signal } : {}),
-            })
+            ? await destinationBucket.copyLargeFile(copyOptions)
             : await destinationBucket.copyFile(copyOptions);
         info(`  copied → fileId=${result.fileId}, size=${result.contentLength}`);
         return {

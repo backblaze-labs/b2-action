@@ -1,6 +1,6 @@
 import { rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { copyCommand } from '../../src/commands/copy.ts'
 import { deleteCommand } from '../../src/commands/delete.ts'
 import { presignCommand } from '../../src/commands/presign.ts'
@@ -252,6 +252,34 @@ describe('copy command', () => {
     const remaining = await fx.bucket.listFileNames({ prefix: '' })
     expect(remaining.files.some((f) => f.fileName === 'src.txt')).toBe(true)
     expect(remaining.files.some((f) => f.fileName === 'archive/src.txt')).toBe(true)
+  })
+
+  it('passes abort signals to small-file copies', async () => {
+    const local = join(fx.workDir, 'signal-src.txt')
+    await writeFile(local, 'copy me')
+    await uploadCommand(fx.bucket, {
+      ...baseInputs('upload'),
+      source: local,
+      destination: 'signal-src.txt',
+    })
+
+    const signal = new AbortController().signal
+    const copyFileSpy = vi.spyOn(fx.bucket, 'copyFile')
+    try {
+      await copyCommand(
+        fx.client,
+        fx.bucket,
+        {
+          ...baseInputs('copy'),
+          source: 'signal-src.txt',
+          destination: 'archive/signal-src.txt',
+        },
+        signal,
+      )
+      expect(copyFileSpy).toHaveBeenCalledWith(expect.objectContaining({ signal }))
+    } finally {
+      copyFileSpy.mockRestore()
+    }
   })
 
   it('errors when source is missing', async () => {
