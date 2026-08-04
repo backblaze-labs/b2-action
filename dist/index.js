@@ -39260,6 +39260,16 @@ function parseInputs() {
     const retentionUntil = optional('retention-until');
     const compareMode = parseEnum('compare-mode', (getInput('compare-mode') || 'modtime').toLowerCase(), VALID_COMPARE);
     const keepMode = parseEnum('keep-mode', (getInput('keep-mode') || 'no-delete').toLowerCase(), VALID_KEEP);
+    const keepDaysInput = optional('keep-days');
+    const keepDays = keepDaysInput !== undefined ? parsePositiveInt('keep-days', keepDaysInput) : undefined;
+    if (keepMode === 'keep-days' && keepDays === undefined) {
+        warning("'keep-mode: keep-days' without 'keep-days' preserves the v1 legacy SDK default " +
+            'retention window, which can delete destination-only files immediately. Set ' +
+            "'keep-days' explicitly; a future major release will require it.");
+    }
+    if (keepDays !== undefined && keepMode !== 'keep-days') {
+        warning(`'keep-days' is ignored because 'keep-mode' is '${keepMode}'; set 'keep-mode: keep-days' to apply it.`);
+    }
     const syncDirection = parseEnum('direction', (getInput('direction') || 'auto').toLowerCase(), VALID_DIRECTION);
     const retentionMode = parseOptionalEnum('retention-mode', optional('retention-mode')?.toLowerCase(), VALID_RETENTION_MODE);
     const legalHold = parseOptionalEnum('legal-hold', optional('legal-hold')?.toLowerCase(), VALID_LEGAL_HOLD);
@@ -39288,6 +39298,7 @@ function parseInputs() {
         encryption,
         compareMode,
         keepMode,
+        keepDays,
         syncDirection,
         maxResults,
         expectedSha1,
@@ -39719,8 +39730,36 @@ var promises_ = __nccwpck_require__(1455);
 var external_node_stream_ = __nccwpck_require__(7075);
 ;// CONCATENATED MODULE: external "node:stream/promises"
 const external_node_stream_promises_namespaceObject = __WEBPACK_EXTERNAL_createRequire(import.meta.url)("node:stream/promises");
+;// CONCATENATED MODULE: external "node:os"
+const external_node_os_namespaceObject = __WEBPACK_EXTERNAL_createRequire(import.meta.url)("node:os");
 ;// CONCATENATED MODULE: ./src/fs.ts
 
+
+
+
+function expandTilde(path) {
+    if (path === undefined || !path.startsWith('~'))
+        return path;
+    const home = (0,external_node_path_.resolve)((0,external_node_os_namespaceObject.homedir)());
+    if (path === '~')
+        return home;
+    const separatorIndex = path.search(/[/\\]/);
+    if (separatorIndex === 1) {
+        const expanded = (0,external_node_path_.resolve)(home, path.slice(2).replace(/^[/\\]+/u, ''));
+        if (!isInsideOrEqual(home, expanded)) {
+            throw new Error(`Tilde-expanded path "${path}" escapes the home directory (${home}). ` +
+                'Use an absolute path if this location is intentional.');
+        }
+        return expanded;
+    }
+    warning(`Local path "${path}" is used as-is: this action expands a leading "~" or "~/" only, ` +
+        'not "~user" forms. Use an absolute path or a workspace-relative path instead.');
+    return path;
+}
+function isInsideOrEqual(root, candidate) {
+    const rel = (0,external_node_path_.relative)(root, candidate);
+    return rel === '' || (!rel.startsWith('..') && !(0,external_node_path_.isAbsolute)(rel));
+}
 /**
  * `stat(path)` that returns `undefined` instead of throwing on ENOENT/EACCES
  * etc. Used at filesystem boundaries where the caller wants to distinguish
@@ -39809,10 +39848,13 @@ async function downloadCommand(bucket, inputs, signal) {
     const source = requireSource(inputs.source, 'download', 'a B2 file name or prefix');
     const isPrefix = source.endsWith('/');
     const sseDownload = sseFromInputs(inputs);
+    // `destination` is a local path here, so a leading `~` means the runner's
+    // home directory rather than a directory named `~` in the workspace.
+    const destination = expandTilde(inputs.destination);
     if (isPrefix) {
-        return downloadPrefix(bucket, source, inputs.destination ?? '.', sseDownload, signal);
+        return downloadPrefix(bucket, source, destination ?? '.', sseDownload, signal);
     }
-    const out = await downloadOne(bucket, source, inputs.destination, sseDownload, signal);
+    const out = await downloadOne(bucket, source, destination, sseDownload, signal);
     return { files: [out], bytesTransferred: out.size };
 }
 function sseFromInputs(inputs) {
@@ -45208,6 +45250,7 @@ function summarizeSyncErrors(events, limit = 3) {
 async function syncCommand(bucket, inputs, signal) {
     const source = requireSource(inputs.source, 'sync', 'a local directory (up) or B2 prefix (down)');
     const direction = await sync_resolveDirection(inputs.syncDirection, source);
+    warnOnImplicitDownload(inputs.syncDirection, direction, source);
     const compareMode = inputs.compareMode;
     const keepMode = inputs.keepMode;
     const dryRun = inputs.dryRun;
@@ -45251,8 +45294,42 @@ async function sync_resolveDirection(requested, source) {
         return 'local-to-b2';
     if (requested === 'down')
         return 'b2-to-local';
-    const localStat = await tryStat(source);
-    return localStat?.isDirectory() ? 'local-to-b2' : 'b2-to-local';
+    // Auto-detection stats the local candidate, so expand `~` first: otherwise a
+    // real home-directory source is never recognized and silently flips the sync
+    // into a download.
+    const expandedSource = expandTilde(source);
+    const localStat = await tryStat(expandedSource);
+    if (!localStat?.isDirectory())
+        return 'b2-to-local';
+    if (isExpandableTildePath(source)) {
+        throw new Error(`'direction: auto' is ambiguous for tilde-prefixed sync source "${source}": ` +
+            `it could be the B2 prefix "${source}" or the local directory "${expandedSource}". ` +
+            "Set 'direction: up' for a local-to-B2 sync or 'direction: down' for a B2-to-local sync.");
+    }
+    return 'local-to-b2';
+}
+function isExpandableTildePath(path) {
+    return path === '~' || /^~[/\\]/u.test(path);
+}
+/**
+ * `direction: auto` infers `down` for anything that is not an existing local
+ * directory, so a mistyped or not-yet-created local path silently becomes a
+ * B2-to-local sync instead of failing. Warn when the source still looks like a
+ * local path so the mistake is visible in the log. A leading slash is omitted
+ * deliberately because B2 prefixes may also be written that way, and the
+ * down-sync path normalizes those slashes.
+ *
+ * @internal
+ */
+function warnOnImplicitDownload(requested, resolved, source) {
+    if (requested !== 'auto' || resolved !== 'b2-to-local')
+        return;
+    // Leading `~`, `./` or `../`, or a Windows drive (`C:\`) reads like a local path.
+    if (!/^(?:~|\.{1,2}[/\\]|[A-Za-z]:[/\\])/.test(source))
+        return;
+    warning(`'source' ("${source}") looks like a local path but is not an existing directory, so ` +
+        "'direction: auto' resolved this sync to B2 → local. Set 'direction: up' (or 'down') " +
+        'explicitly to remove the ambiguity.');
 }
 async function buildConfig(bucket, source, inputs, direction, signal) {
     const compareMode = inputs.compareMode;
@@ -45264,24 +45341,29 @@ async function buildConfig(bucket, source, inputs, direction, signal) {
         keepMode,
         concurrency,
         dryRun,
+        ...(inputs.keepDays !== undefined ? { keepDays: inputs.keepDays } : {}),
         ...(signal !== undefined ? { signal } : {}),
     };
     if (direction === 'local-to-b2') {
-        const stats = await tryStat(source);
+        // Up: `source` is the local directory, `destination` is the B2 prefix.
+        const localSource = expandTilde(source);
+        const stats = await tryStat(localSource);
         if (!stats?.isDirectory()) {
-            throw new Error(`'sync' up requires 'source' to be an existing local directory: ${source}`);
+            throw new Error(`'sync' up requires 'source' to be an existing local directory: ${localSource}`);
         }
         const prefix = (inputs.destination ?? '').replace(/^\/+|\/+$/g, '');
         return {
-            source: new LocalFolder((0,external_node_path_.resolve)(source)),
+            source: new LocalFolder((0,external_node_path_.resolve)(localSource)),
             dest: new B2Folder(bucket, prefix === '' ? '' : `${prefix}/`),
             bucket,
             prefix: prefix === '' ? '' : `${prefix}/`,
             options,
         };
     }
+    // Down: `source` is the B2 prefix (opaque, never tilde-expanded),
+    // `destination` is the local directory.
     const remotePrefix = source.replace(/^\/+|\/+$/g, '');
-    const localDest = inputs.destination ?? '.';
+    const localDest = expandTilde(inputs.destination) ?? '.';
     const localRoot = await prepareLocalDestinationRoot(localDest);
     return {
         source: new B2Folder(bucket, remotePrefix === '' ? '' : `${remotePrefix}/`),
@@ -45677,7 +45759,7 @@ const range = (a, b, str) => {
     return result;
 };
 //# sourceMappingURL=index.js.map
-;// CONCATENATED MODULE: ./node_modules/.pnpm/brace-expansion@5.0.6/node_modules/brace-expansion/dist/esm/index.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/brace-expansion@5.0.9/node_modules/brace-expansion/dist/esm/index.js
 
 const escSlash = '\0SLASH' + Math.random() + '\0';
 const escOpen = '\0OPEN' + Math.random() + '\0';
@@ -45695,6 +45777,17 @@ const closePattern = /\\}/g;
 const commaPattern = /\\,/g;
 const periodPattern = /\\\./g;
 const EXPANSION_MAX = 100_000;
+// `EXPANSION_MAX` caps the *number* of expansions, but not their length. An
+// input like `'{a,b}'.repeat(1500)` stays under that count - its output is
+// truncated to 100k results - while making every result ~1500 characters
+// long. The result set, and the intermediate arrays built while combining
+// brace sets, then grow large enough to exhaust memory and crash the process
+// (CVE-2026-14257). `EXPANSION_MAX_LENGTH` bounds the total number of
+// characters the accumulator may hold at any point, so memory stays flat no
+// matter how many brace groups are chained. The limit sits well above any
+// realistic expansion (100k results hitting `EXPANSION_MAX` measure ~1M
+// characters) so legitimate input is unaffected.
+const EXPANSION_MAX_LENGTH = 4_000_000;
 function numeric(str) {
     return !isNaN(str) ? parseInt(str, 10) : str.charCodeAt(0);
 }
@@ -45744,7 +45837,7 @@ function expand(str, options = {}) {
     if (!str) {
         return [];
     }
-    const { max = EXPANSION_MAX } = options;
+    const { max = EXPANSION_MAX, maxLength = EXPANSION_MAX_LENGTH } = options;
     // I don't know why Bash 4.3 does this, but it does.
     // Anything starting with {} will have the first two bytes preserved
     // but *only* at the top level, so {},a}b will not expand to anything,
@@ -45754,7 +45847,7 @@ function expand(str, options = {}) {
     if (str.slice(0, 2) === '{}') {
         str = '\\{\\}' + str.slice(2);
     }
-    return expand_(escapeBraces(str), max, true).map(unescapeBraces);
+    return expand_(escapeBraces(str), max, maxLength, true).map(unescapeBraces);
 }
 function embrace(str) {
     return '{' + str + '}';
@@ -45768,22 +45861,117 @@ function lte(i, y) {
 function gte(i, y) {
     return i >= y;
 }
-function expand_(str, max, isTop) {
-    /** @type {string[]} */
-    const expansions = [];
-    const m = balanced('{', '}', str);
-    if (!m)
-        return [str];
-    // no need to expand pre, since it is guaranteed to be free of brace-sets
-    const pre = m.pre;
-    const post = m.post.length ? expand_(m.post, max, false) : [''];
-    if (/\$$/.test(m.pre)) {
-        for (let k = 0; k < post.length && k < max; k++) {
-            const expansion = pre + '{' + m.body + '}' + post[k];
-            expansions.push(expansion);
+// Build `{ acc[a] + pre + values[v] }` for every combination, capping the
+// number of results at `max` and the total number of characters at `maxLength`.
+// This is the one place output grows, so bounding it here keeps the single
+// accumulator - and therefore memory - flat regardless of how many brace groups
+// are combined (CVE-2026-14257).
+function combine(acc, pre, values, max, maxLength, dropEmpties) {
+    const out = [];
+    let length = 0;
+    for (let a = 0; a < acc.length; a++) {
+        for (let v = 0; v < values.length; v++) {
+            if (out.length >= max)
+                return out;
+            const expansion = acc[a] + pre + values[v];
+            // Bash drops empty results at the top level. Skip them before they count
+            // against `max`, so `max` bounds the number of *kept* results.
+            if (dropEmpties && !expansion)
+                continue;
+            if (length + expansion.length > maxLength)
+                return out;
+            out.push(expansion);
+            length += expansion.length;
         }
     }
-    else {
+    return out;
+}
+// The expansion values of a single numeric (`1..5`) or alphabetic (`a..e..2`)
+// sequence body.
+function expandSequence(body, isAlphaSequence, max, maxLength) {
+    const n = body.split(/\.\./);
+    const N = [];
+    // A sequence body always splits into two or three parts, but the compiler
+    // can't know that.
+    /* c8 ignore start */
+    if (n[0] === undefined || n[1] === undefined) {
+        return N;
+    }
+    /* c8 ignore stop */
+    const x = numeric(n[0]);
+    const y = numeric(n[1]);
+    const width = Math.max(n[0].length, n[1].length);
+    let incr = n.length === 3 && n[2] !== undefined ?
+        Math.max(Math.abs(numeric(n[2])), 1)
+        : 1;
+    let test = lte;
+    const reverse = y < x;
+    if (reverse) {
+        incr *= -1;
+        test = gte;
+    }
+    const pad = n.some(isPadded);
+    let length = 0;
+    for (let i = x; test(i, y) && N.length < max; i += incr) {
+        let c;
+        if (isAlphaSequence) {
+            c = String.fromCharCode(i);
+            if (c === '\\') {
+                c = '';
+            }
+        }
+        else {
+            c = String(i);
+            if (pad) {
+                const need = width - c.length;
+                if (need > 0) {
+                    const z = new Array(need + 1).join('0');
+                    if (i < 0) {
+                        c = '-' + z + c.slice(1);
+                    }
+                    else {
+                        c = z + c;
+                    }
+                }
+            }
+        }
+        if (length + c.length > maxLength)
+            break;
+        N.push(c);
+        length += c.length;
+    }
+    return N;
+}
+function expand_(str, max, maxLength, isTop) {
+    // Consume the string's top-level brace groups left to right, threading a
+    // running set of combined prefixes (`acc`). Expanding the tail iteratively -
+    // rather than recursing on `m.post` once per group - keeps the native stack
+    // depth constant, so deeply chained input (`'{a,b}'.repeat(3000)`) can no
+    // longer overflow the stack, and leaves a single accumulator whose size
+    // `maxLength` bounds directly (CVE-2026-14257).
+    let acc = [''];
+    // Bash drops empty results, but only when the *first* top-level group is a
+    // comma set - a sequence like `{a..\}` may legitimately yield ''. The drop
+    // is on the final strings, so it is applied to whichever `combine` produces
+    // them (the one with no brace set left in the tail).
+    let dropEmpties = false;
+    let firstGroup = true;
+    for (;;) {
+        const m = balanced('{', '}', str);
+        // No brace set left: the rest of the string is literal.
+        if (!m) {
+            return combine(acc, str, [''], max, maxLength, dropEmpties);
+        }
+        // no need to expand pre, since it is guaranteed to be free of brace-sets
+        const pre = m.pre;
+        if (/\$$/.test(pre)) {
+            acc = combine(acc, pre + '{' + m.body + '}', [''], max, maxLength, dropEmpties && !m.post.length);
+            firstGroup = false;
+            if (!m.post.length)
+                break;
+            str = m.post;
+            continue;
+        }
         const isNumericSequence = /^-?\d+\.\.-?\d+(?:\.\.-?\d+)?$/.test(m.body);
         const isAlphaSequence = /^[a-zA-Z]\.\.[a-zA-Z](?:\.\.-?\d+)?$/.test(m.body);
         const isSequence = isNumericSequence || isAlphaSequence;
@@ -45792,87 +45980,69 @@ function expand_(str, max, isTop) {
             // {a},b}
             if (m.post.match(/,(?!,).*\}/)) {
                 str = m.pre + '{' + m.body + escClose + m.post;
-                return expand_(str, max, true);
+                isTop = true;
+                continue;
             }
-            return [str];
+            // Nothing here expands, so the whole remaining string is literal.
+            return combine(acc, pre + '{' + m.body + '}' + m.post, [''], max, maxLength, dropEmpties);
         }
-        let n;
+        if (firstGroup) {
+            dropEmpties = isTop && !isSequence;
+            firstGroup = false;
+        }
+        let values;
         if (isSequence) {
-            n = m.body.split(/\.\./);
+            values = expandSequence(m.body, isAlphaSequence, max, maxLength);
         }
         else {
-            n = parseCommaParts(m.body);
+            let n = parseCommaParts(m.body);
             if (n.length === 1 && n[0] !== undefined) {
                 // x{{a,b}}y ==> x{a}y x{b}y
-                n = expand_(n[0], max, false).map(embrace);
+                n = expand_(n[0], max, maxLength, false).map(embrace);
                 //XXX is this necessary? Can't seem to hit it in tests.
                 /* c8 ignore start */
                 if (n.length === 1) {
-                    return post.map(p => m.pre + n[0] + p);
+                    acc = combine(acc, pre + n[0], [''], max, maxLength, dropEmpties && !m.post.length);
+                    if (!m.post.length)
+                        break;
+                    str = m.post;
+                    continue;
                 }
                 /* c8 ignore stop */
             }
-        }
-        // at this point, n is the parts, and we know it's not a comma set
-        // with a single entry.
-        let N;
-        if (isSequence && n[0] !== undefined && n[1] !== undefined) {
-            const x = numeric(n[0]);
-            const y = numeric(n[1]);
-            const width = Math.max(n[0].length, n[1].length);
-            let incr = n.length === 3 && n[2] !== undefined ?
-                Math.max(Math.abs(numeric(n[2])), 1)
-                : 1;
-            let test = lte;
-            const reverse = y < x;
-            if (reverse) {
-                incr *= -1;
-                test = gte;
+            // Values that `combine` is going to drop as empty produce no result, so
+            // they must not count against `max` - otherwise `{a,,b}` with `max: 2`
+            // would stop at `['a', '']` and yield one result instead of two. Skipping
+            // them outright keeps `values` bounded while leaving `max` a bound on
+            // *kept* results.
+            let dropsEmpties = dropEmpties && !m.post.length && !pre;
+            for (let d = 0; dropsEmpties && d < acc.length; d++) {
+                if (acc[d]) {
+                    dropsEmpties = false;
+                }
             }
-            const pad = n.some(isPadded);
-            N = [];
-            for (let i = x; test(i, y) && N.length < max; i += incr) {
-                let c;
-                if (isAlphaSequence) {
-                    c = String.fromCharCode(i);
-                    if (c === '\\') {
-                        c = '';
+            values = [];
+            let valuesLength = 0;
+            outer: for (let j = 0; j < n.length; j++) {
+                const expanded = expand_(n[j], max, maxLength, false);
+                for (let k = 0; k < expanded.length; k++) {
+                    const v = expanded[k];
+                    if (dropsEmpties && !v)
+                        continue;
+                    if (values.length >= max || valuesLength + v.length > maxLength) {
+                        break outer;
                     }
-                }
-                else {
-                    c = String(i);
-                    if (pad) {
-                        const need = width - c.length;
-                        if (need > 0) {
-                            const z = new Array(need + 1).join('0');
-                            if (i < 0) {
-                                c = '-' + z + c.slice(1);
-                            }
-                            else {
-                                c = z + c;
-                            }
-                        }
-                    }
-                }
-                N.push(c);
-            }
-        }
-        else {
-            N = [];
-            for (let j = 0; j < n.length; j++) {
-                N.push.apply(N, expand_(n[j], max, false));
-            }
-        }
-        for (let j = 0; j < N.length; j++) {
-            for (let k = 0; k < post.length && expansions.length < max; k++) {
-                const expansion = pre + N[j] + post[k];
-                if (!isTop || isSequence || expansion) {
-                    expansions.push(expansion);
+                    values.push(v);
+                    valuesLength += v.length;
                 }
             }
         }
+        acc = combine(acc, pre, values, max, maxLength, dropEmpties && !m.post.length);
+        if (!m.post.length)
+            break;
+        str = m.post;
     }
-    return expansions;
+    return acc;
 }
 //# sourceMappingURL=index.js.map
 ;// CONCATENATED MODULE: ./node_modules/.pnpm/minimatch@10.2.5/node_modules/minimatch/dist/esm/assert-valid-pattern.js
@@ -48765,6 +48935,7 @@ async function uploadCommand(bucket, inputs, signal) {
         signal?.throwIfAborted();
         return await prepareUploadPlan(f, inputs, isSingleExplicitFile);
     });
+    assertUniqueUploadFileNames(uploadPlans);
     const uploaded = await mapWithConcurrency(uploadPlans, fileConcurrency, async (plan) => {
         signal?.throwIfAborted();
         const uploadLabel = `upload ${plan.localPath} → b2://${bucket.name}/${plan.fileName}`;
@@ -48816,7 +48987,12 @@ async function mapWithConcurrency(items, concurrency, mapper) {
         throw firstError;
     return results;
 }
-async function resolveFiles(source, include, exclude) {
+async function resolveFiles(rawSource, rawInclude, rawExclude) {
+    // `source`, `include` and `exclude` are all local paths or globs, so a
+    // leading `~` is the user's home directory, not a directory named `~`.
+    const source = expandTilde(rawSource);
+    const include = rawInclude.map((pattern) => expandTilde(pattern));
+    const exclude = rawExclude.map((pattern) => expandTilde(pattern));
     const explicitFile = await tryStat(source);
     const looksLikeGlob = /[*?[\]]/.test(source);
     if (explicitFile?.isFile() && !looksLikeGlob && include.length === 0) {
@@ -48848,7 +49024,14 @@ async function resolveFiles(source, include, exclude) {
         matchDirectories: false,
     });
     const matches = await globber.glob();
-    const root = explicitFile?.isDirectory() ? (0,external_node_path_.resolve)(source) : process.cwd();
+    // `process.cwd()` stays first so in-workspace globs keep their historical
+    // keys. A match outside every root used to produce `relative()` output full
+    // of `..` segments, yielding B2 keys such as
+    // `artifacts/../../../tmp/x/a.bin` that this action's own prefix download
+    // then refuses to map back onto disk.
+    const roots = explicitFile?.isDirectory()
+        ? [(0,external_node_path_.resolve)(source)]
+        : [process.cwd(), ...globber.getSearchPaths()];
     const out = [];
     for (const m of matches) {
         const s = await tryStat(m);
@@ -48856,11 +49039,62 @@ async function resolveFiles(source, include, exclude) {
         // symlinks, races where a file is unlinked between glob and stat, etc.).
         if (!s?.isFile())
             continue;
-        const rel = (0,external_node_path_.relative)(root, m).split(external_node_path_.sep).join(external_node_path_.posix.sep);
+        const rel = relativeUploadKey(roots, m);
         out.push({ localPath: m, fileName: rel, size: s.size, mtimeMs: s.mtimeMs });
     }
     out.sort(compareResolvedFiles);
     return { files: out, isSingleExplicitFile: false };
+}
+/**
+ * Project a matched local path onto its B2 key, relative to the first root
+ * that actually contains it. Falls back to the basename so a match outside
+ * every candidate root still produces a mappable key instead of one carrying
+ * `..` path segments.
+ *
+ * @internal
+ */
+function relativeUploadKey(roots, match) {
+    for (const root of roots) {
+        const rel = (0,external_node_path_.relative)(root, match);
+        if (rel === '' || (0,external_node_path_.isAbsolute)(rel) || rel === '..' || rel.startsWith(`..${external_node_path_.sep}`))
+            continue;
+        return rel.split(external_node_path_.sep).join(external_node_path_.posix.sep);
+    }
+    return (0,external_node_path_.basename)(match);
+}
+/**
+ * Find upload plans that would write multiple local files to the same B2 key.
+ *
+ * @internal
+ */
+function findDuplicateUploadFileNames(files) {
+    const byFileName = new Map();
+    for (const file of files) {
+        const owners = byFileName.get(file.fileName);
+        if (owners === undefined) {
+            byFileName.set(file.fileName, [file.localPath]);
+        }
+        else {
+            owners.push(file.localPath);
+        }
+    }
+    return Array.from(byFileName.entries())
+        .filter(([, localPaths]) => localPaths.length > 1)
+        .map(([fileName, localPaths]) => ({
+        fileName,
+        localPaths: [...localPaths].sort(compareStrings),
+    }))
+        .sort((a, b) => compareStrings(a.fileName, b.fileName));
+}
+function assertUniqueUploadFileNames(files) {
+    const collisions = findDuplicateUploadFileNames(files);
+    if (collisions.length === 0)
+        return;
+    const details = collisions
+        .map((collision) => `"${collision.fileName}" <= ${collision.localPaths.map((p) => `"${p}"`).join(', ')}`)
+        .join('; ');
+    throw new Error(`Upload would overwrite ${collisions.length} B2 file name(s) from multiple local files: ${details}. ` +
+        'Narrow the glob/include patterns or set a destination that preserves unique paths.');
 }
 function compareResolvedFiles(a, b) {
     return compareStrings(a.fileName, b.fileName) || compareStrings(a.localPath, b.localPath);
@@ -48969,6 +49203,7 @@ function buildUploadFileInfo(inputFileInfo, lastModifiedMillis) {
 
 
 
+
 /**
  * Verify that a B2 object matches a local file (or an expected SHA-1) without
  * transferring the body.
@@ -48997,8 +49232,10 @@ async function verifyCommand(bucket, inputs) {
         const remoteSha1 = headers.contentSha1;
         let localSha1 = null;
         let expected = inputs.expectedSha1 !== undefined ? verify_normalizeSha1(inputs.expectedSha1, 'expected-sha1') : null;
-        if (expected === null && inputs.destination !== undefined && inputs.destination !== '') {
-            localSha1 = await sha1OfFile(inputs.destination);
+        // `destination` is the local file to hash, so expand a leading `~`.
+        const localFile = expandTilde(inputs.destination);
+        if (expected === null && localFile !== undefined && localFile !== '') {
+            localSha1 = await sha1OfFile(localFile);
             expected = verify_normalizeSha1(localSha1, 'destination');
         }
         if (expected === null) {

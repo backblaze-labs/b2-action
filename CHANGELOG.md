@@ -6,6 +6,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- Local path inputs now expand a leading `~` or `~/` to the runner's home directory: `source` for `upload` and `sync` up, `destination` for `download`, `sync` down, and `verify`, plus `include` / `exclude` globs. Action inputs are not shell-expanded, so `destination: ~/.cache/huggingface` previously created a literal `~` directory inside the workspace, while `@actions/glob` already expanded `~` for upload patterns. B2 keys are never tilde-expanded because `~` is a legal key character. `~user` forms are passed through with a warning, and `~/..` paths are rejected because the expanded path would leave the runner home directory.
+- `keep-days` input: the retention window for `keep-mode: keep-days`, which the action never forwarded to the SDK. The SDK defaults the window to 0 days, so `keep-mode: keep-days` can delete every destination-only file immediately and behave exactly like `keep-mode: delete`. For v1 compatibility, `keep-mode: keep-days` without `keep-days` still parses but emits a deprecation warning; set `keep-days` explicitly to use the intended retention window. A future major release should make the window required. Setting `keep-days` with any other `keep-mode` warns that it is ignored.
+- `sync` warns when `direction: auto` resolves to a B2-to-local sync while `source` still looks like a local path (`~`, `./`, `../`, or a Windows drive). Auto-detection treats "not an existing local directory" as "must be a B2 prefix", so a mistyped or not-yet-created local path silently reversed the intended direction.
+
+### Fixed
+
+- `sync`: `direction: auto` now fails closed for an expandable tilde-prefixed `source` that exists as a local directory, because the same string can also be a valid B2 prefix. Set `direction: up` for a local home-directory upload or `direction: down` for a B2-prefix download. This is a version-to-version behavior change for `~`-prefixed auto sources that briefly resolved as uploads after tilde expansion was added.
+- `upload`: glob matches outside the working directory no longer produce B2 keys containing `..` path segments. The key was computed with `relative(process.cwd(), match)`, so a pattern such as `/tmp/build/*.bin` yielded keys like `artifacts/../../../tmp/build/a.bin`. Those objects uploaded successfully but this action's own prefix `download` then refused to map them back onto disk, so they could not be restored. Keys are now resolved against the first containing root (the working directory first, so in-workspace globs keep their existing keys, then the glob's own search paths), falling back to the basename.
+- `upload`: multi-file uploads now fail before any upload starts if two local files would map to the same final B2 file name after destination remapping. This avoids silent overwrites from same-basename files matched through multiple absolute roots or basename fallback.
+
+### Documentation
+
+- README and `.github/workflows/README.md`: the example suite no longer claims that every `example-*.yml` runs on pull requests. `example-ml-cache-sync.yml` is `push` + `workflow_dispatch` only because it runs `uses: ./` with B2 secrets, which a pull request could modify; `__tests__/workflow-policy.test.ts` enforces that.
+- README: worked examples after the first few omit the credential inputs, which now says so and points at the `B2_APPLICATION_KEY_ID` / `B2_APPLICATION_KEY` fallback rather than leaving the snippets to fail with a missing-credential error.
+- README: the `presign`, chain-outputs, and `retry-after` examples pass step outputs through `env:` instead of interpolating `${{ }}` into `run:` bodies, matching the example workflows and the repository's own guidance about `retry-after`.
+- README: `keep-mode` states that deletion applies to whichever side is the destination, so a `down` sync with `keep-mode: delete` removes local files; the sync examples say the same inline.
+- README: the `delete` verb row distinguishes exact-name deletes (latest version only, history preserved) from prefix deletes (every version, same as `purge`).
+- README: `source-bucket` notes that cross-bucket `copy` needs a key that reaches both buckets, so a single-bucket-restricted key cannot do it.
+
 ## [1.1.0] - 2026-06-23
 
 ### Security

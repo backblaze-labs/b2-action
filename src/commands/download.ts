@@ -6,7 +6,7 @@ import { Readable, Transform } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import * as core from '@actions/core'
 import type { Bucket, SseCDownloadKey } from '@backblaze-labs/b2-sdk'
-import { tryStat } from '../fs.ts'
+import { expandTilde, tryStat } from '../fs.ts'
 import { type ParsedInputs, requireSource } from '../inputs.ts'
 import { makeProgressListener } from '../progress.ts'
 
@@ -76,11 +76,14 @@ export async function downloadCommand(
   const isPrefix = source.endsWith('/')
 
   const sseDownload = sseFromInputs(inputs)
+  // `destination` is a local path here, so a leading `~` means the runner's
+  // home directory rather than a directory named `~` in the workspace.
+  const destination = expandTilde(inputs.destination)
 
   if (isPrefix) {
-    return downloadPrefix(bucket, source, inputs.destination ?? '.', sseDownload, signal)
+    return downloadPrefix(bucket, source, destination ?? '.', sseDownload, signal)
   }
-  const out = await downloadOne(bucket, source, inputs.destination, sseDownload, signal)
+  const out = await downloadOne(bucket, source, destination, sseDownload, signal)
   return { files: [out], bytesTransferred: out.size }
 }
 

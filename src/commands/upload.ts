@@ -1,11 +1,11 @@
 import { createReadStream } from 'node:fs'
-import { basename, posix, relative, resolve, sep } from 'node:path'
+import { basename, isAbsolute, posix, relative, resolve, sep } from 'node:path'
 import { Readable } from 'node:stream'
 import * as core from '@actions/core'
 import * as glob from '@actions/glob'
 import type { Bucket } from '@backblaze-labs/b2-sdk'
 import { StreamSource } from '@backblaze-labs/b2-sdk/streams'
-import { tryStat } from '../fs.ts'
+import { expandTilde, tryStat } from '../fs.ts'
 import {
   type ParsedInputs,
   requireSource,
@@ -84,6 +84,7 @@ export async function uploadCommand(
     signal?.throwIfAborted()
     return await prepareUploadPlan(f, inputs, isSingleExplicitFile)
   })
+  assertUniqueUploadFileNames(uploadPlans)
 
   const uploaded = await mapWithConcurrency(uploadPlans, fileConcurrency, async (plan) => {
     signal?.throwIfAborted()
@@ -166,11 +167,32 @@ interface UploadPlan {
   fileInfo: Record<string, string>
 }
 
+/** Duplicate B2 key detected before upload starts. */
+export interface UploadFileNameCollision {
+  /** Final B2 file name that more than one local path would write. */
+  fileName: string
+  /** Local files that would collide on {@link UploadFileNameCollision.fileName}. */
+  localPaths: string[]
+}
+
+/** Local file and projected B2 key used for duplicate upload-key checks. */
+export interface UploadFileNameOwner {
+  /** Absolute or resolved local file path. */
+  localPath: string
+  /** Final B2 file name after destination remapping. */
+  fileName: string
+}
+
 async function resolveFiles(
-  source: string,
-  include: string[],
-  exclude: string[],
+  rawSource: string,
+  rawInclude: string[],
+  rawExclude: string[],
 ): Promise<ResolvedFiles> {
+  // `source`, `include` and `exclude` are all local paths or globs, so a
+  // leading `~` is the user's home directory, not a directory named `~`.
+  const source = expandTilde(rawSource)
+  const include = rawInclude.map((pattern) => expandTilde(pattern))
+  const exclude = rawExclude.map((pattern) => expandTilde(pattern))
   const explicitFile = await tryStat(source)
   const looksLikeGlob = /[*?[\]]/.test(source)
 
@@ -202,7 +224,14 @@ async function resolveFiles(
     matchDirectories: false,
   })
   const matches = await globber.glob()
-  const root = explicitFile?.isDirectory() ? resolve(source) : process.cwd()
+  // `process.cwd()` stays first so in-workspace globs keep their historical
+  // keys. A match outside every root used to produce `relative()` output full
+  // of `..` segments, yielding B2 keys such as
+  // `artifacts/../../../tmp/x/a.bin` that this action's own prefix download
+  // then refuses to map back onto disk.
+  const roots = explicitFile?.isDirectory()
+    ? [resolve(source)]
+    : [process.cwd(), ...globber.getSearchPaths()]
 
   const out: ResolvedFile[] = []
   for (const m of matches) {
@@ -210,11 +239,71 @@ async function resolveFiles(
     // Filesystem boundary: skip entries that aren't readable files (broken
     // symlinks, races where a file is unlinked between glob and stat, etc.).
     if (!s?.isFile()) continue
-    const rel = relative(root, m).split(sep).join(posix.sep)
+    const rel = relativeUploadKey(roots, m)
     out.push({ localPath: m, fileName: rel, size: s.size, mtimeMs: s.mtimeMs })
   }
   out.sort(compareResolvedFiles)
   return { files: out, isSingleExplicitFile: false }
+}
+
+/**
+ * Project a matched local path onto its B2 key, relative to the first root
+ * that actually contains it. Falls back to the basename so a match outside
+ * every candidate root still produces a mappable key instead of one carrying
+ * `..` path segments.
+ *
+ * @internal
+ */
+export function relativeUploadKey(roots: readonly string[], match: string): string {
+  for (const root of roots) {
+    const rel = relative(root, match)
+    if (rel === '' || isAbsolute(rel) || rel === '..' || rel.startsWith(`..${sep}`)) continue
+    return rel.split(sep).join(posix.sep)
+  }
+  return basename(match)
+}
+
+/**
+ * Find upload plans that would write multiple local files to the same B2 key.
+ *
+ * @internal
+ */
+export function findDuplicateUploadFileNames(
+  files: readonly UploadFileNameOwner[],
+): UploadFileNameCollision[] {
+  const byFileName = new Map<string, string[]>()
+  for (const file of files) {
+    const owners = byFileName.get(file.fileName)
+    if (owners === undefined) {
+      byFileName.set(file.fileName, [file.localPath])
+    } else {
+      owners.push(file.localPath)
+    }
+  }
+
+  return Array.from(byFileName.entries())
+    .filter(([, localPaths]) => localPaths.length > 1)
+    .map(([fileName, localPaths]) => ({
+      fileName,
+      localPaths: [...localPaths].sort(compareStrings),
+    }))
+    .sort((a, b) => compareStrings(a.fileName, b.fileName))
+}
+
+function assertUniqueUploadFileNames(files: readonly UploadFileNameOwner[]) {
+  const collisions = findDuplicateUploadFileNames(files)
+  if (collisions.length === 0) return
+
+  const details = collisions
+    .map(
+      (collision) =>
+        `"${collision.fileName}" <= ${collision.localPaths.map((p) => `"${p}"`).join(', ')}`,
+    )
+    .join('; ')
+  throw new Error(
+    `Upload would overwrite ${collisions.length} B2 file name(s) from multiple local files: ${details}. ` +
+      'Narrow the glob/include patterns or set a destination that preserves unique paths.',
+  )
 }
 
 function compareResolvedFiles(a: ResolvedFile, b: ResolvedFile): number {

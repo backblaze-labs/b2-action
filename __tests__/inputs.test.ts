@@ -248,4 +248,53 @@ describe('parseInputs', () => {
     expect(confirmed.source).toBe('')
     expect(confirmed.allowBucketPurge).toBe(true)
   })
+
+  it("warns when 'keep-mode: keep-days' omits the retention window", async () => {
+    setInput('action', 'sync')
+    setInput('application-key-id', 'k')
+    setInput('application-key', 's')
+    setInput('bucket', 'b')
+    setInput('source', './public')
+    setInput('keep-mode', 'keep-days')
+
+    let parsed: ReturnType<typeof parseInputs> | undefined
+    const stdout = await captureStdout(() => {
+      parsed = parseInputs()
+    })
+    expect(parsed?.keepDays).toBeUndefined()
+    expect(stdout).toContain('::warning::')
+    expect(stdout).toContain('future major release')
+
+    setInput('keep-days', '30')
+    expect(parseInputs().keepDays).toBe(30)
+  })
+
+  it("rejects a non-positive 'keep-days'", () => {
+    setInput('action', 'sync')
+    setInput('application-key-id', 'k')
+    setInput('application-key', 's')
+    setInput('bucket', 'b')
+    setInput('source', './public')
+    setInput('keep-mode', 'keep-days')
+    setInput('keep-days', '0')
+    expect(() => parseInputs()).toThrow(/Invalid positive integer for 'keep-days'/)
+  })
+
+  it("warns when 'keep-days' is set without 'keep-mode: keep-days'", async () => {
+    setInput('action', 'sync')
+    setInput('application-key-id', 'k')
+    setInput('application-key', 's')
+    setInput('bucket', 'b')
+    setInput('source', './public')
+    setInput('keep-mode', 'delete')
+    setInput('keep-days', '30')
+
+    let parsed: ReturnType<typeof parseInputs> | undefined
+    const stdout = await captureStdout(() => {
+      parsed = parseInputs()
+    })
+    expect(parsed?.keepDays).toBe(30)
+    expect(stdout).toContain('::warning::')
+    expect(stdout).toContain("'keep-days' is ignored")
+  })
 })

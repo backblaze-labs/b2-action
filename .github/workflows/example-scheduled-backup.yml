@@ -1,4 +1,4 @@
-name: 'Example: scheduled backup (cron + SSE-B2 + retention)'
+name: 'Example: scheduled backup (cron + SSE-B2 + governance retention)'
 
 # Daily cron that captures a small payload, uploads with SSE-B2, and applies a
 # 7-day governance retention. The bucket must have Object Lock enabled

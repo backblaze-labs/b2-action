@@ -11,9 +11,17 @@ const protectedPullRequestWorkflows = [
   '.github/workflows/security.yml',
   '.github/workflows/full-lockfile-audit.yml',
 ]
+const localActionSecretedExamples = ['.github/workflows/example-ml-cache-sync.yml']
 
 type WorkflowJob = {
   if?: unknown
+  steps?: WorkflowStep[]
+}
+
+type WorkflowStep = {
+  uses?: unknown
+  with?: Record<string, unknown>
+  env?: Record<string, unknown>
 }
 
 type WorkflowConfig = {
@@ -37,6 +45,22 @@ describe('pull_request workflow policy', () => {
       }
     }
   })
+
+  it('does not expose B2 secrets to pull_request runs of local example action code', async () => {
+    for (const workflowPath of localActionSecretedExamples) {
+      const workflow = await readWorkflow(workflowPath)
+      const secretedLocalSteps = localActionStepsUsingB2Secrets(workflow)
+
+      expect(
+        secretedLocalSteps.length,
+        `${workflowPath} should contain at least one secreted local-action step for this policy guard`,
+      ).toBeGreaterThan(0)
+      expect(
+        hasPullRequestTrigger(workflow),
+        `${workflowPath} must not run PR-controlled uses: ./ code with B2 secrets`,
+      ).toBe(false)
+    }
+  })
 })
 
 async function readWorkflow(workflowPath: string): Promise<WorkflowConfig> {
@@ -51,4 +75,12 @@ function hasPullRequestTrigger(workflow: WorkflowConfig): boolean {
 
 function jobCondition(job: WorkflowJob): string {
   return typeof job.if === 'string' ? job.if : ''
+}
+
+function localActionStepsUsingB2Secrets(workflow: WorkflowConfig): WorkflowStep[] {
+  return Object.values(workflow.jobs ?? {}).flatMap((job) =>
+    (job.steps ?? []).filter(
+      (step) => step.uses === './' && JSON.stringify([step.with, step.env]).includes('secrets.B2_'),
+    ),
+  )
 }

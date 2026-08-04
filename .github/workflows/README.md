@@ -12,11 +12,13 @@ This folder contains:
 - **`release.yml`**: fires on three-component `vX.Y.Z` tags (a bare `v1` does **not** trigger it): full gate + GitHub Release + floats the major-version tag (`v1`, `v2`, …).
 - **`daily-smoke.yml`**: 03:13 UTC cron: real-B2 end-to-end smoke against the test bucket.
 - **`large-multipart-smoke.yml`**: weekly real-B2 multipart upload + download SHA-1 integrity check for a payload above B2's recommended part size.
-- **`example-*.yml`**: twelve **example workflows that are also the integration test suite**. See the table below.
+- **`example-*.yml`**: thirteen **example workflows that are also the integration test suite**. See the table below.
 
 ## Example workflows (= integration test suite)
 
 Every `example-*.yml` is two things at once: a copy-paste-runnable snippet you can drop into your own repo (with secrets swapped in), and a live integration test that runs against this project's Backblaze test bucket. There is no separate `integration.yml`; these workflows *are* the integration suite.
+
+All but one run on `pull_request` as well as `push` and `workflow_dispatch`. `example-ml-cache-sync.yml` is `push` + `workflow_dispatch` only, enforced by `__tests__/workflow-policy.test.ts`, because it runs `uses: ./` with B2 secrets and a pull request can modify that action code.
 
 | Workflow | Demonstrates | Verb(s) |
 | --- | --- | --- |
@@ -32,6 +34,7 @@ Every `example-*.yml` is two things at once: a copy-paste-runnable snippet you c
 | [example-sse-encryption.yml](./example-sse-encryption.yml) | Round-trip with SSE-B2 and SSE-C | `upload`, `download`, `sse` |
 | [example-head.yml](./example-head.yml) | Probe remote object metadata (size, sha1, contentType, fileInfo) without a body transfer | `head` |
 | [example-purge.yml](./example-purge.yml) | Permanent wipe of every file version under a prefix, including hide markers and history | `purge` |
+| [example-ml-cache-sync.yml](./example-ml-cache-sync.yml) | Round-trip an ML cache with explicit `direction` on both legs, then diff the restored tree (push / dispatch only) | `sync`, `purge` |
 
 All are gated on `github.event.pull_request.head.repo.fork == false` so forks (which can't access repo secrets) skip silently. Maintainers can also dispatch each one manually from the Actions UI via `workflow_dispatch`.
 

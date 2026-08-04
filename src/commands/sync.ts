@@ -10,7 +10,7 @@ import type {
   SynchronizerUpConfig,
 } from '@backblaze-labs/b2-sdk/sync'
 import { B2Folder, LocalFolder, synchronize } from '@backblaze-labs/b2-sdk/sync'
-import { tryStat } from '../fs.ts'
+import { expandTilde, tryStat } from '../fs.ts'
 import { type ParsedInputs, requireSource } from '../inputs.ts'
 
 /**
@@ -146,6 +146,7 @@ export async function syncCommand(
   const source = requireSource(inputs.source, 'sync', 'a local directory (up) or B2 prefix (down)')
 
   const direction = await resolveDirection(inputs.syncDirection, source)
+  warnOnImplicitDownload(inputs.syncDirection, direction, source)
   const compareMode = inputs.compareMode
   const keepMode = inputs.keepMode
   const dryRun = inputs.dryRun
@@ -201,8 +202,49 @@ async function resolveDirection(
 ): Promise<'local-to-b2' | 'b2-to-local'> {
   if (requested === 'up') return 'local-to-b2'
   if (requested === 'down') return 'b2-to-local'
-  const localStat = await tryStat(source)
-  return localStat?.isDirectory() ? 'local-to-b2' : 'b2-to-local'
+  // Auto-detection stats the local candidate, so expand `~` first: otherwise a
+  // real home-directory source is never recognized and silently flips the sync
+  // into a download.
+  const expandedSource = expandTilde(source)
+  const localStat = await tryStat(expandedSource)
+  if (!localStat?.isDirectory()) return 'b2-to-local'
+  if (isExpandableTildePath(source)) {
+    throw new Error(
+      `'direction: auto' is ambiguous for tilde-prefixed sync source "${source}": ` +
+        `it could be the B2 prefix "${source}" or the local directory "${expandedSource}". ` +
+        "Set 'direction: up' for a local-to-B2 sync or 'direction: down' for a B2-to-local sync.",
+    )
+  }
+  return 'local-to-b2'
+}
+
+function isExpandableTildePath(path: string): boolean {
+  return path === '~' || /^~[/\\]/u.test(path)
+}
+
+/**
+ * `direction: auto` infers `down` for anything that is not an existing local
+ * directory, so a mistyped or not-yet-created local path silently becomes a
+ * B2-to-local sync instead of failing. Warn when the source still looks like a
+ * local path so the mistake is visible in the log. A leading slash is omitted
+ * deliberately because B2 prefixes may also be written that way, and the
+ * down-sync path normalizes those slashes.
+ *
+ * @internal
+ */
+export function warnOnImplicitDownload(
+  requested: 'up' | 'down' | 'auto',
+  resolved: 'local-to-b2' | 'b2-to-local',
+  source: string,
+): void {
+  if (requested !== 'auto' || resolved !== 'b2-to-local') return
+  // Leading `~`, `./` or `../`, or a Windows drive (`C:\`) reads like a local path.
+  if (!/^(?:~|\.{1,2}[/\\]|[A-Za-z]:[/\\])/.test(source)) return
+  core.warning(
+    `'source' ("${source}") looks like a local path but is not an existing directory, so ` +
+      "'direction: auto' resolved this sync to B2 → local. Set 'direction: up' (or 'down') " +
+      'explicitly to remove the ambiguity.',
+  )
 }
 
 async function buildConfig(
@@ -221,17 +263,22 @@ async function buildConfig(
     keepMode,
     concurrency,
     dryRun,
+    ...(inputs.keepDays !== undefined ? { keepDays: inputs.keepDays } : {}),
     ...(signal !== undefined ? { signal } : {}),
   }
 
   if (direction === 'local-to-b2') {
-    const stats = await tryStat(source)
+    // Up: `source` is the local directory, `destination` is the B2 prefix.
+    const localSource = expandTilde(source)
+    const stats = await tryStat(localSource)
     if (!stats?.isDirectory()) {
-      throw new Error(`'sync' up requires 'source' to be an existing local directory: ${source}`)
+      throw new Error(
+        `'sync' up requires 'source' to be an existing local directory: ${localSource}`,
+      )
     }
     const prefix = (inputs.destination ?? '').replace(/^\/+|\/+$/g, '')
     return {
-      source: new LocalFolder(resolve(source)),
+      source: new LocalFolder(resolve(localSource)),
       dest: new B2Folder(bucket, prefix === '' ? '' : `${prefix}/`),
       bucket,
       prefix: prefix === '' ? '' : `${prefix}/`,
@@ -239,8 +286,10 @@ async function buildConfig(
     }
   }
 
+  // Down: `source` is the B2 prefix (opaque, never tilde-expanded),
+  // `destination` is the local directory.
   const remotePrefix = source.replace(/^\/+|\/+$/g, '')
-  const localDest = inputs.destination ?? '.'
+  const localDest = expandTilde(inputs.destination) ?? '.'
   const localRoot = await prepareLocalDestinationRoot(localDest)
   return {
     source: new B2Folder(bucket, remotePrefix === '' ? '' : `${remotePrefix}/`),
