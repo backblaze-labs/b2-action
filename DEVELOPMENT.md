@@ -100,7 +100,7 @@ The full-lockfile audit uses the pnpm builtin directly, not a package script:
 `pnpm audit --audit-level high`. This mirrors the per-change and
 scheduled/manual workflow that covers dev/build tooling.
 
-Requirements: Node 24+, pnpm 11+. The Action runs on Node 24 in the GitHub Actions runtime; CI tests Node 24 across Ubuntu / macOS / Windows.
+Requirements: Node 24+. pnpm is pinned via the `packageManager` field in `package.json` (currently `pnpm@11.5.3`); with corepack enabled, running `pnpm` in this repo uses that version automatically, so local and CI share one pnpm version. The Action runs on Node 24 in the GitHub Actions runtime; CI tests Node 24 across Ubuntu / macOS / Windows.
 
 ### Managed lychee binary
 

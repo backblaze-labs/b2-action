@@ -9,7 +9,7 @@ pnpm install
 pnpm all        # lint + release policy + typecheck + test + build + spellcheck
 ```
 
-Requirements: Node 24+, pnpm 11+. The action runs on Node 24 in the GitHub Actions runtime; we test against Node 24 on Linux, macOS, and Windows.
+Requirements: Node 24+. pnpm is pinned via the `packageManager` field in `package.json` (currently `pnpm@11.5.3`); with corepack enabled, `pnpm` in this repo uses that version automatically. The action runs on Node 24 in the GitHub Actions runtime; we test against Node 24 on Linux, macOS, and Windows.
 
 `pnpm install` also wires up git hooks (via [husky](https://github.com/typicode/husky)):
 

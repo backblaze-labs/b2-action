@@ -4,6 +4,7 @@
   "private": true,
   "description": "Upload, download, sync, copy, and manage Backblaze B2 Cloud Storage from GitHub Actions. Built on @backblaze-labs/b2-sdk.",
   "type": "module",
+  "packageManager": "pnpm@11.5.3",
   "engines": {
     "node": ">=24"
   },
