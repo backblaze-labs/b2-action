@@ -14,6 +14,18 @@ The single source of truth for how releases of this Action are cut, automated, a
 
 As you land PRs, accumulate notes under the `## [Unreleased]` heading in [`CHANGELOG.md`](./CHANGELOG.md), grouped Keep-a-Changelog style (`### Added`, `### Changed`, `### Fixed`, `### Removed`).
 
+### Pre-release checklist
+
+The release workflow gates code and provenance, but a few coherence checks are not automated. Run through this on a clean, up-to-date `main` before `pnpm version`:
+
+- [ ] **CHANGELOG is complete.** Review `git log <last-tag>..HEAD` (or the merged-PR list for the milestone) and confirm every notable change has an `[Unreleased]` entry: new/changed `action.yml` inputs or outputs, behavior changes, deprecations, and dependency bumps (especially `@backblaze-labs/b2-sdk`).
+- [ ] **Docs match code.** `pnpm docs:check-action-yml` passes (README inputs/outputs synced with `action.yml`), and the verb count, workflow inventory, and coverage claim in `README.md` / `DEVELOPMENT.md` / `CONTRIBUTING.md` still reflect reality. Prefer gate-backed wording (for example the `95+%` coverage badge) over hard-coded counts that silently drift.
+- [ ] **All gates green locally.** `pnpm all` (lint, release-provenance, typecheck, test, build, spellcheck), plus `pnpm test:coverage`, `pnpm docs:lint`, `pnpm docs:links`, and `pnpm audit`.
+- [ ] **`dist/` is fresh.** `pnpm verify-dist` is clean (rebuild produces no diff).
+- [ ] **No stale version references** in prose or examples.
+
+Automating the CHANGELOG-completeness check (a PR-time gate requiring a `CHANGELOG.md` entry) is tracked separately; until then this checklist is the backstop.
+
 From a clean, up-to-date `main`:
 
 ```bash
