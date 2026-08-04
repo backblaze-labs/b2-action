@@ -40916,8 +40916,7 @@ async function purgeCommand(bucket, inputs, signal) {
     if (bucketWide && !inputs.allowBucketPurge) {
         throw new Error("'allow-bucket-purge' must be true for whole-bucket purge (set 'source' to a prefix for scoped purge)");
     }
-    const source = inputs.source ?? '';
-    const prefix = bucketWide ? '' : source.endsWith('/') ? source : `${source}/`;
+    const prefix = normalizePrefix(inputs.source ?? '', bucketWide);
     const dryRun = inputs.dryRun;
     if (prefix === '' && !dryRun) {
         warning(`purge will permanently delete EVERY version in bucket "${bucket.name}". Continuing because allow-bucket-purge is true.`);
@@ -40927,11 +40926,15 @@ async function purgeCommand(bucket, inputs, signal) {
     startGroup(`${dryRun ? 'dry-run' : 'purge'} b2://${bucket.name}/${prefix} (all versions)`);
     try {
         const opts = {
-            ...(prefix !== '' ? { prefix } : {}),
             dryRun,
             bypassGovernance: inputs.bypassGovernance,
-            ...(signal !== undefined ? { signal } : {}),
         };
+        if (prefix !== '') {
+            opts.prefix = prefix;
+        }
+        if (signal !== undefined) {
+            opts.signal = signal;
+        }
         for await (const event of deleteAllVersions(bucket, opts)) {
             if (event.type === 'delete') {
                 files.push({
@@ -40961,6 +40964,12 @@ async function purgeCommand(bucket, inputs, signal) {
         endGroup();
     }
     return { files, errors };
+}
+function normalizePrefix(source, bucketWide) {
+    if (bucketWide) {
+        return '';
+    }
+    return source.endsWith('/') ? source : `${source}/`;
 }
 
 ;// CONCATENATED MODULE: ./src/commands/retention.ts
