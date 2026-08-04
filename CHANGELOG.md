@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-08-04
+
 ### Security
 
 - Hardened release/test tooling to clear GitHub security-scanning findings: bearer-token-like test data is no longer committed as a contiguous literal, release-provenance checks reuse parsed step bodies, mutation-report paths sanitize POSIX and Windows separators, and mutation-report tables share one column definition. ([#176](https://github.com/backblaze-labs/b2-action/issues/176))
@@ -175,7 +177,8 @@ Initial release. Built on [`@backblaze-labs/b2-sdk`](https://github.com/backblaz
 
 `file-id`, `file-name`, `content-sha1`, `bytes-transferred`, `files-uploaded`, `files-downloaded`, `files-deleted`, `files-listed`, `presigned-url`, `verified`, `remote-sha1`, `local-sha1`, `summary-json`.
 
-[Unreleased]: https://github.com/backblaze-labs/b2-action/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/backblaze-labs/b2-action/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/backblaze-labs/b2-action/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/backblaze-labs/b2-action/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/backblaze-labs/b2-action/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/backblaze-labs/b2-action/releases/tag/v1.0.0

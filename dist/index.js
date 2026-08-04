@@ -39089,7 +39089,7 @@ function bindAccountInfoAuthContext(accountInfo, realmUrl, applicationKeyId) {
 
 //# sourceMappingURL=client.js.map
 ;// CONCATENATED MODULE: ./package.json
-const package_namespaceObject = {"rE":"1.1.0"};
+const package_namespaceObject = {"rE":"1.2.0"};
 ;// CONCATENATED MODULE: ./src/version.ts
 
 /**
