@@ -160,7 +160,7 @@ describe('upload + download commands (B2Simulator)', () => {
         encryption: parseSse('B2'),
         preserveMtime: true,
       }),
-    ).rejects.toThrow(/Invalid fileInfo value for "src_last_modified_millis"/)
+    ).rejects.toThrow(/Invalid fileInfo entry for "src_last_modified_millis"/)
 
     expect(uploadCalls).toHaveLength(0)
   })

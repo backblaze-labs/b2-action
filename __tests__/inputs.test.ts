@@ -186,7 +186,7 @@ describe('parseInputs', () => {
     setInput('sse', 'B2')
 
     expect(() => parseInputs()).toThrow(
-      /Invalid fileInfo value for "build": 2048 bytes exceeds 2043/,
+      /Invalid fileInfo entry for "build": 2053 bytes exceeds 2048/,
     )
 
     resetInputEnv()

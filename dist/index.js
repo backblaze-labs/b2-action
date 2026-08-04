@@ -39603,11 +39603,12 @@ function validateFileInfo(fileInfo, totalMaxBytes = FILE_INFO_TOTAL_MAX_BYTES) {
             throw new Error(`Invalid fileInfo key "${key}": ${keyBytes} bytes exceeds ${FILE_INFO_KEY_MAX_BYTES}`);
         }
         const valueBytes = inputs_utf8Encoder.encode(value).byteLength;
-        const remainingValueBytes = Math.max(0, totalMaxBytes - totalBytes - keyBytes);
-        if (valueBytes > remainingValueBytes) {
-            throw new Error(`Invalid fileInfo value for "${key}": ${valueBytes} bytes exceeds ${remainingValueBytes}`);
+        const entryBytes = keyBytes + valueBytes;
+        const remainingTotalBytes = Math.max(0, totalMaxBytes - totalBytes);
+        if (entryBytes > remainingTotalBytes) {
+            throw new Error(`Invalid fileInfo entry for "${key}": ${entryBytes} bytes exceeds ${remainingTotalBytes}`);
         }
-        totalBytes += keyBytes + valueBytes;
+        totalBytes += entryBytes;
     }
     if (totalBytes > totalMaxBytes) {
         throw new Error(`Invalid fileInfo: total size ${totalBytes} bytes exceeds ${totalMaxBytes}`);
