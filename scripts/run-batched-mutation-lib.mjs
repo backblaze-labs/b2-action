@@ -93,10 +93,7 @@ export function runBatchedMutation({
       return 1
     }
 
-    copyFileSync(
-      resolve(cwd, REPORT),
-      resolve(cwd, BY_FILE_DIR, `${file.replaceAll('/', '__')}.json`),
-    )
+    copyFileSync(resolve(cwd, REPORT), resolve(cwd, BY_FILE_DIR, byFileReportName(file)))
     const report = JSON.parse(readFileSync(resolve(cwd, REPORT), 'utf8'))
     const counts = countsForReport(report, unknownStatuses)
     rows.push({ file, ...counts, score: score(counts) })
@@ -206,6 +203,10 @@ function zero() {
   return Object.fromEntries(STATUS_KEYS.map((key) => [key, 0]))
 }
 
+function byFileReportName(file) {
+  return `${file.replace(/[\\/]/gu, '__')}.json`
+}
+
 function writePerFileConfig(cwd, config, file) {
   mkdirSync(resolve(cwd, 'reports/mutation'), { recursive: true })
   const thresholds =
@@ -252,19 +253,39 @@ function isPerFileThresholdExit(failure, row, threshold) {
 function printAggregate(rows, totals, stdout) {
   const pad = (value, width) => String(value).padEnd(width)
   const padL = (value, width) => String(value).padStart(width)
+  const columns = [
+    { key: 'file', header: 'file', width: 28, align: 'left' },
+    {
+      key: 'score',
+      header: 'score',
+      width: 8,
+      align: 'right',
+      format: (value) => `${value.toFixed(2)}%`,
+    },
+    { key: 'killed', header: 'killed', width: 8, align: 'right' },
+    { key: 'timeout', header: 'time', width: 6, align: 'right' },
+    { key: 'survived', header: 'surv', width: 6, align: 'right' },
+    { key: 'noCoverage', header: 'noCov', width: 7, align: 'right' },
+    { key: 'ignored', header: 'ign', width: 5, align: 'right' },
+    { key: 'errors', header: 'err', width: 5, align: 'right' },
+    { key: 'unknown', header: 'unk', width: 5, align: 'right' },
+  ]
+  const formatLine = (source, useHeader = false) =>
+    columns
+      .map((column) => {
+        const raw = useHeader ? column.header : source[column.key]
+        const value = !useHeader && typeof column.format === 'function' ? column.format(raw) : raw
+        return column.align === 'left' ? pad(value, column.width) : padL(value, column.width)
+      })
+      .join('')
+  const lineWidth = columns.reduce((width, column) => width + column.width, 0)
 
   stdout('\n================= Aggregate mutation report =================')
-  stdout(
-    `${pad('file', 28)}${padL('score', 8)}${padL('killed', 8)}${padL('time', 6)}${padL('surv', 6)}${padL('noCov', 7)}${padL('ign', 5)}${padL('err', 5)}${padL('unk', 5)}`,
-  )
+  stdout(formatLine(null, true))
   for (const row of rows) {
-    stdout(
-      `${pad(row.file, 28)}${padL(`${row.score.toFixed(2)}%`, 8)}${padL(row.killed, 8)}${padL(row.timeout, 6)}${padL(row.survived, 6)}${padL(row.noCoverage, 7)}${padL(row.ignored, 5)}${padL(row.errors, 5)}${padL(row.unknown, 5)}`,
-    )
+    stdout(formatLine(row))
   }
   const aggregateScore = score(totals)
-  stdout('-'.repeat(70))
-  stdout(
-    `${pad('ALL', 28)}${padL(`${aggregateScore.toFixed(2)}%`, 8)}${padL(totals.killed, 8)}${padL(totals.timeout, 6)}${padL(totals.survived, 6)}${padL(totals.noCoverage, 7)}${padL(totals.ignored, 5)}${padL(totals.errors, 5)}${padL(totals.unknown, 5)}`,
-  )
+  stdout('-'.repeat(lineWidth))
+  stdout(formatLine({ ...totals, file: 'ALL', score: aggregateScore }))
 }

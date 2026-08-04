@@ -39603,11 +39603,12 @@ function validateFileInfo(fileInfo, totalMaxBytes = FILE_INFO_TOTAL_MAX_BYTES) {
             throw new Error(`Invalid fileInfo key "${key}": ${keyBytes} bytes exceeds ${FILE_INFO_KEY_MAX_BYTES}`);
         }
         const valueBytes = inputs_utf8Encoder.encode(value).byteLength;
-        const remainingValueBytes = Math.max(0, totalMaxBytes - totalBytes - keyBytes);
-        if (valueBytes > remainingValueBytes) {
-            throw new Error(`Invalid fileInfo value for "${key}": ${valueBytes} bytes exceeds ${remainingValueBytes}`);
+        const entryBytes = keyBytes + valueBytes;
+        const remainingTotalBytes = Math.max(0, totalMaxBytes - totalBytes);
+        if (entryBytes > remainingTotalBytes) {
+            throw new Error(`Invalid fileInfo entry for "${key}": ${entryBytes} bytes exceeds ${remainingTotalBytes}`);
         }
-        totalBytes += keyBytes + valueBytes;
+        totalBytes += entryBytes;
     }
     if (totalBytes > totalMaxBytes) {
         throw new Error(`Invalid fileInfo: total size ${totalBytes} bytes exceeds ${totalMaxBytes}`);
@@ -39680,12 +39681,10 @@ async function copyCommand(client, destinationBucket, inputs, signal) {
             ...(sourceBucketName !== destinationBucket.name
                 ? { destinationBucketId: destinationBucket.id }
                 : {}),
+            ...(signal !== undefined ? { signal } : {}),
         };
         const result = isLarge
-            ? await destinationBucket.copyLargeFile({
-                ...copyOptions,
-                ...(signal !== undefined ? { signal } : {}),
-            })
+            ? await destinationBucket.copyLargeFile(copyOptions)
             : await destinationBucket.copyFile(copyOptions);
         info(`  copied → fileId=${result.fileId}, size=${result.contentLength}`);
         return {
@@ -40918,8 +40917,7 @@ async function purgeCommand(bucket, inputs, signal) {
     if (bucketWide && !inputs.allowBucketPurge) {
         throw new Error("'allow-bucket-purge' must be true for whole-bucket purge (set 'source' to a prefix for scoped purge)");
     }
-    const source = inputs.source ?? '';
-    const prefix = bucketWide ? '' : source.endsWith('/') ? source : `${source}/`;
+    const prefix = normalizePrefix(inputs.source ?? '', bucketWide);
     const dryRun = inputs.dryRun;
     if (prefix === '' && !dryRun) {
         warning(`purge will permanently delete EVERY version in bucket "${bucket.name}". Continuing because allow-bucket-purge is true.`);
@@ -40929,11 +40927,15 @@ async function purgeCommand(bucket, inputs, signal) {
     startGroup(`${dryRun ? 'dry-run' : 'purge'} b2://${bucket.name}/${prefix} (all versions)`);
     try {
         const opts = {
-            ...(prefix !== '' ? { prefix } : {}),
             dryRun,
             bypassGovernance: inputs.bypassGovernance,
-            ...(signal !== undefined ? { signal } : {}),
         };
+        if (prefix !== '') {
+            opts.prefix = prefix;
+        }
+        if (signal !== undefined) {
+            opts.signal = signal;
+        }
         for await (const event of deleteAllVersions(bucket, opts)) {
             if (event.type === 'delete') {
                 files.push({
@@ -40963,6 +40965,12 @@ async function purgeCommand(bucket, inputs, signal) {
         endGroup();
     }
     return { files, errors };
+}
+function normalizePrefix(source, bucketWide) {
+    if (bucketWide) {
+        return '';
+    }
+    return source.endsWith('/') ? source : `${source}/`;
 }
 
 ;// CONCATENATED MODULE: ./src/commands/retention.ts

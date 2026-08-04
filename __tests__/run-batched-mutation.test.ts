@@ -13,6 +13,7 @@ const scriptPath = join(
 
 // @ts-expect-error scripts are dependency-free JavaScript, not typed modules.
 const runner = (await import('../scripts/run-batched-mutation-lib.mjs')) as {
+  BY_FILE_DIR: string
   defaultPnpmCommand: (platform?: NodeJS.Platform) => string
   isEntrypoint: (metaUrl: string, argv1: string | undefined) => boolean
   PER_FILE_CONFIG: string
@@ -177,6 +178,21 @@ describe('batched mutation runner', () => {
     ).rejects.toThrow(/ENOENT/u)
     await expect(
       access(join(result.cwd, 'reports/mutation/by-file/src__example.ts.json')),
+    ).resolves.toBeUndefined()
+  })
+
+  it('flattens POSIX and Windows separators in per-file report names', async () => {
+    const result = await runFixture({
+      files: ['src/example.ts', 'src\\windows\\example.ts'],
+      statuses: ['Killed'],
+    })
+
+    expect(result.exitCode).toBe(0)
+    await expect(
+      access(join(result.cwd, runner.BY_FILE_DIR, 'src__example.ts.json')),
+    ).resolves.toBeUndefined()
+    await expect(
+      access(join(result.cwd, runner.BY_FILE_DIR, 'src__windows__example.ts.json')),
     ).resolves.toBeUndefined()
   })
 })
