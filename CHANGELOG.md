@@ -44,7 +44,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - README: `keep-mode` states that deletion applies to whichever side is the destination, so a `down` sync with `keep-mode: delete` removes local files; the sync examples say the same inline.
 - README: the `delete` verb row distinguishes exact-name deletes (latest version only, history preserved) from prefix deletes (every version, same as `purge`).
 - README: `source-bucket` notes that cross-bucket `copy` needs a key that reaches both buckets, so a single-bucket-restricted key cannot do it.
-- Contributor docs now require pnpm 11+, use `pnpm run docs` for TypeDoc, and document that the link checker skips generated `docs/` output.
+- Release and contributor docs now include the pre-release coherence checklist, require pnpm 11+, use `pnpm run docs` for TypeDoc, and document that the link checker skips generated `docs/` output.
 
 ## [1.1.0] - 2026-06-23
 
