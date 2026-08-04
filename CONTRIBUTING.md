@@ -9,7 +9,7 @@ pnpm install
 pnpm all        # lint + release policy + typecheck + test + build + spellcheck
 ```
 
-Requirements: Node 24+, pnpm 10+. The action runs on Node 24 in the GitHub Actions runtime; we test against Node 24 on Linux, macOS, and Windows.
+Requirements: Node 24+, pnpm 11+. The action runs on Node 24 in the GitHub Actions runtime; we test against Node 24 on Linux, macOS, and Windows.
 
 `pnpm install` also wires up git hooks (via [husky](https://github.com/typicode/husky)):
 
@@ -70,7 +70,7 @@ The pattern is the same every time:
 ## Style
 
 - Biome handles formatting + linting (config in [`biome.json`](./biome.json)). Run `pnpm lint:fix` before submitting.
-- `exactOptionalPropertyTypes` is on. Use the conditional-spread pattern (`...(v !== undefined ? { k: v } : {})`) rather than passing `undefined`.
+- `exactOptionalPropertyTypes` is on. Use conditional spread or explicit optional-property assignment rather than passing `undefined`.
 - `verbatimModuleSyntax` is on. Use `import type` for type-only imports.
 - Internal relative imports use `.ts` extensions (`import { x } from './foo.ts'`), not `.js`.
 - 2-space indent, single quotes, no semicolons, 100-char line width.

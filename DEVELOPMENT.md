@@ -58,7 +58,7 @@ __tests__/
   release.yml           # see RELEASE.md
   daily-smoke.yml       # 03:13 UTC: real-B2 end-to-end against the test bucket
   large-multipart-smoke.yml  # weekly real-B2 multipart upload integrity check
-  example-*.yml         # 12 copy-paste workflows that double as integration tests
+  example-*.yml         # 13 copy-paste workflows that double as integration tests
 action.yml         # Marketplace manifest (inputs, outputs, branding)
 dist/index.js      # ncc-bundled entrypoint (committed; CI fails if stale)
 ```
@@ -79,10 +79,10 @@ pnpm run audit      # pnpm audit --prod --audit-level high (CI gate; needs netwo
 pnpm spellcheck     # cspell across src/, __tests__/, *.md, *.yml, action.yml
 pnpm all            # lint + release policy + typecheck + test + build + spellcheck
 pnpm verify-dist    # build, then `git diff --exit-code dist/` (must be clean)
-pnpm docs           # typedoc (strict): generates docs/ for GitHub Pages
+pnpm run docs       # typedoc (strict): generates docs/ for GitHub Pages
 pnpm docs:watch     # typedoc in watch mode for local authoring
 pnpm docs:lint      # markdownlint-cli2 against **/*.md
-pnpm docs:links     # runs pinned lychee in offline + fragment-aware mode, excluding node_modules
+pnpm docs:links     # runs pinned lychee in offline + fragment-aware mode, excluding docs/ and node_modules
 pnpm docs:check-action-yml  # action.yml <> README sync check
 pnpm check:release-provenance  # release.yml provenance isolation policy
 ```
@@ -221,7 +221,7 @@ env ACTIONLINT_CACHE_DIR=/private/tmp/backblaze-actionlint bash ../github-action
 This repo mirrors the [`b2-sdk-typescript`](https://github.com/backblaze-labs/b2-sdk-typescript) style:
 
 - Biome formatter / linter (2-space indent, single quotes, no semicolons, 100-char width). Run `pnpm lint:fix` before pushing.
-- `exactOptionalPropertyTypes` is ON. Use conditional-spread (`...(v !== undefined ? { k: v } : {})`) rather than passing `undefined`.
+- `exactOptionalPropertyTypes` is ON. Use conditional-spread or explicit optional-property assignment rather than passing `undefined`.
 - `verbatimModuleSyntax` is ON. Use `import type` for type-only imports.
 - Internal relative imports use `.ts` extensions (`import { x } from './foo.ts'`), not `.js`.
 - All source under `src/`. Tests under `__tests__/` so they don't ship in `dist/`.
@@ -247,7 +247,7 @@ listed in the same table and called out explicitly.
 | `heartbeat` ([full-lockfile-audit-heartbeat.yml](./.github/workflows/full-lockfile-audit-heartbeat.yml)) | Daily check that a scheduled, manual, or main-push full-lockfile audit has fired in the last 10 days; opens or updates one labeled tracking issue when a transient cron drop leaves the audit stale, and closes it once the audit recovers. It stays silent before the first audit run has ever been observed. Because it is also scheduled, this heartbeat does not protect against GitHub's 60-day inactivity auto-disable or a broader GitHub Actions scheduling outage; after long repository inactivity, maintainers should verify scheduled workflows in the Actions UI or manually dispatch `full-lockfile-audit.yml` on `main`. |
 | `sync-check` ([docs-lint.yml](./.github/workflows/docs-lint.yml)) | every input/output in `action.yml` also appears in the README reference tables. Drift fails CI. |
 | `markdownlint` ([docs-lint.yml](./.github/workflows/docs-lint.yml)) | prose-style consistency across `**/*.md`. Config in [`.markdownlint-cli2.jsonc`](./.markdownlint-cli2.jsonc). |
-| `link-check` ([docs-lint.yml](./.github/workflows/docs-lint.yml)) | `pnpm docs:links` runs pinned lychee in `--offline` mode against `**/*.md`; catches broken relative paths and anchor fragments. External URLs are not pinged. |
+| `link-check` ([docs-lint.yml](./.github/workflows/docs-lint.yml)) | `pnpm docs:links` runs pinned lychee in `--offline` mode against source markdown and excludes generated `docs/`; catches broken relative paths and anchor fragments. External URLs are not pinged. |
 | `spellcheck` ([docs-lint.yml](./.github/workflows/docs-lint.yml)) | cspell across `**/*.ts`, `**/*.md`, `**/*.yml`, `action.yml`. Config in [`cspell.json`](./cspell.json); domain-specific words live in [`.cspell/project-words.txt`](./.cspell/project-words.txt). Add a word there when cspell flags a deliberate identifier. |
 | `docs` ([docs.yml](./.github/workflows/docs.yml)) | TypeDoc with `treatWarningsAsErrors: true`; every export must have JSDoc. Published to GitHub Pages on push to `main`. |
 
