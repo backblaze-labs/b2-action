@@ -70,6 +70,40 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
 
+  typecheck-native:
+    name: typecheck (TS 7 native, advisory)
+    runs-on: ubuntu-latest
+    # Advisory only. The native compiler (tsgo, the TypeScript 7.x preview) runs
+    # beside the authoritative `tsc` typecheck to track diagnostic parity and
+    # speed. It must never gate a PR, so the whole job is soft-fail. See #179/#178.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Native typecheck (tsgo --noEmit)
+        run: |
+          start=$(date +%s%N)
+          set +e
+          pnpm typecheck:native
+          status=$?
+          set -e
+          elapsed_ms=$(( ($(date +%s%N) - start) / 1000000 ))
+          {
+            echo "### TypeScript 7 native typecheck (advisory)"
+            echo ""
+            echo "- compiler: \`tsgo --noEmit\` (@typescript/native-preview)"
+            echo "- exit status: ${status} (0 = parity with tsc)"
+            echo "- elapsed: ${elapsed_ms} ms"
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
+
   audit:
     name: dependency audit
     runs-on: ubuntu-latest
