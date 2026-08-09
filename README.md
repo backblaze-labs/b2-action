@@ -94,7 +94,7 @@ Exact-version releases publish an attested `dist/index.js` asset for provenance 
 | `sync` | Mirror a local directory ↔ a B2 prefix. Direction auto-detected. | `source`, `destination`, `bucket` |
 | `copy` | Server-side copy. Same bucket by default; cross-bucket with `source-bucket`. | `source`, `destination`, `bucket` |
 | `delete` | Exact name: removes only the latest version, preserving history. Prefix (trailing `/`): removes **every** version under it via `b2_list_file_versions`, same as `purge`. Supports `dry-run` and `bypass-governance` for governance-retained versions. | `source`, `bucket` |
-| `list` | List files under a prefix; emits JSON for downstream steps. | `bucket` (and usually `source`) |
+| `list` | List files under a prefix, optionally grouped by a delimiter; emits JSON for downstream steps. | `bucket` (and usually `source`) |
 | `hide` | Soft-delete via hide marker. Underlying data preserved until lifecycle. | `source`, `bucket` |
 | `unhide` | Restore a hidden file by deleting its top hide marker. | `source`, `bucket` |
 | `verify` | HEAD-request the remote whole-file SHA-1 and compare to `expected-sha1` or `destination` (local file). No body transfer; multipart objects cannot be verified when B2 does not expose a whole-file SHA-1. | `source`, `bucket`, plus one of `expected-sha1` / `destination` |
@@ -236,6 +236,7 @@ Exact-name `copy`, single-file `delete`, and `retention` operate only when the l
     bucket: my-bucket
     source: tmp/
     max-results: 5000
+    delimiter: /
 
 - uses: backblaze-labs/b2-action@v1
   with:
@@ -411,7 +412,8 @@ Set `bypass-governance: true` to shorten governance-mode retention or to remove 
 | `keep-mode` | no | `no-delete` | Sync deletion of destination-only files: `no-delete` \| `delete` \| `keep-days`. Deletion applies to whichever side is the destination, so a `down` sync with `delete` removes **local** files. |
 | `keep-days` | no | | Retention window in days. Destination-only files younger than this are kept. Recommended when `keep-mode` is `keep-days`; omitting it preserves the v1 legacy SDK default with a warning. Warns and is ignored with other `keep-mode` values. |
 | `direction` | no | `auto` | Sync direction: `auto` \| `up` (local→B2) \| `down` (B2→local). |
-| `max-results` | no | `1000` | `list` upper bound. Must be a positive decimal integer. Truncation is reported in the step summary. |
+| `max-results` | no | `1000` | `list` entry upper bound (files plus grouped prefixes). Must be a positive decimal integer. Truncation is reported in the step summary. |
+| `delimiter` | no | | Optional `list` virtual-prefix grouping delimiter, commonly `/`. Omit it for the existing flat listing. |
 | `expected-sha1` | no | | `verify` literal 40-character hexadecimal SHA-1 to compare against; malformed values fail the action before comparison. Non-comparable remote SHA-1 headers such as `none` or `unverified:<sha1>` publish `verified=false` outputs before failing the step. |
 | `retention-mode` | no | | `retention` mode: `compliance` \| `governance` \| `none`. |
 | `retention-until` | no | | `retention` ISO 8601 expiry (required when mode is compliance/governance). |
@@ -428,11 +430,11 @@ Set `bypass-governance: true` to shorten governance-mode retention or to remove 
 | `file-name` | single-file ops | B2 file name (path). |
 | `content-sha1` | upload / download / head when available | SHA-1 hex. Omitted when B2 does not expose a whole-file SHA-1, including multipart objects. |
 | `bytes-transferred` | upload / download / sync / copy / head | Total bytes moved. Head emits `0`. |
-| `file-count` | every command | Aggregate count of files matched or processed, including skipped sync entries and dry-run delete/purge matches. Prefer verb-specific count outputs when available. |
+| `file-count` | every command | Aggregate count of files or list entries matched or processed, including grouped list prefixes, skipped sync entries, and dry-run delete/purge matches. Prefer verb-specific count outputs when available. |
 | `files-uploaded` | upload / sync up | Count. |
 | `files-downloaded` | download / sync down | Count. |
 | `files-deleted` | delete / purge / sync | Count. |
-| `files-listed` | list / prefix presign | Count returned (capped by `max-results`). |
+| `files-listed` | list / prefix presign | Entry count returned by `list` (files plus grouped prefixes), or file count returned by prefix `presign` (capped by `max-results`). |
 | `presigned-url` | presign | Time-limited download URL. Masked as a secret. This is the only structured output that carries the live presigned URL. |
 | `verified` | verify | `true` / `false`. |
 | `remote-sha1` | verify | Normalized comparable remote SHA-1, raw non-comparable B2 value such as `none` or `unverified:<sha1>`, or empty when B2 does not expose one. |
@@ -447,6 +449,8 @@ Set `bypass-governance: true` to shorten governance-mode retention or to remove 
 `summary-json` is complete-or-empty-on-truncation: it never changes shape and never carries a silently partial array. Consumers that parse `summary-json` as an array must first branch on `summary-json-truncated`; when it is `true`, the scalar count outputs (`file-count`, `files-listed`, `files-uploaded`, and the other verb-specific counts) remain the authoritative totals and may exceed the number of entries in `summary-json-preview`. Do not use `summary-json-preview` as an authoritative manifest for security-sensitive checks; fail or fetch a complete manifest another way.
 
 For upload entries, `fileInfo` contains SDK-returned metadata when B2 reports it; if the SDK response omits metadata, the action falls back to the canonical fileInfo submitted with the upload request.
+
+For `list`, omitting `delimiter` preserves the existing flat file objects in `summary-json`. When `delimiter` is set, every entry includes `entryType`: file entries use `entryType: "file"` and retain the normal file fields, while grouped prefixes use `entryType: "prefix"` with a `prefix` field. The job summary labels both entry types explicitly.
 
 When truncated, `summary-json-notice` contains `{ "truncated": true, "reason": string, "totalCount": number, "previewCount": number, "previewOutput": "summary-json-preview" }`.
 

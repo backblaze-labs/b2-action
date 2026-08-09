@@ -8,7 +8,7 @@ import { deleteCommand } from './commands/delete.ts'
 import { downloadCommand } from './commands/download.ts'
 import { headCommand } from './commands/head.ts'
 import { hideCommand } from './commands/hide.ts'
-import { listCommand } from './commands/list.ts'
+import { type ListedFile, listCommand } from './commands/list.ts'
 import { type PresignedFile, presignCommand } from './commands/presign.ts'
 import { purgeCommand } from './commands/purge.ts'
 import { retentionCommand } from './commands/retention.ts'
@@ -207,28 +207,29 @@ export async function run(): Promise<void> {
       }
       case 'list': {
         const result = await listCommand(bucket, inputs)
-        core.setOutput('files-listed', String(result.files.length))
-        setFileCountOutput(result.files.length)
+        const entries: ListOutputEntry[] =
+          inputs.delimiter === undefined
+            ? result.files
+            : [
+                ...result.files.map((file) => ({ entryType: 'file' as const, ...file })),
+                ...result.prefixes.map(({ prefix }) => ({ entryType: 'prefix' as const, prefix })),
+              ].sort((left, right) => listEntryName(left).localeCompare(listEntryName(right)))
+        core.setOutput('files-listed', String(entries.length))
+        setFileCountOutput(entries.length)
         if (result.truncated) {
           core.warning(
             `list result truncated at max-results=${inputs.maxResults}; raise it to see more`,
           )
         }
         await writeStepSummary({
-          title: `Backblaze B2: list (${result.files.length}${result.truncated ? '+' : ''})`,
+          title: `Backblaze B2: list (${entries.length}${result.truncated ? '+' : ''})`,
           totals: {
             files: result.files.length,
             bytes: result.files.reduce((s, f) => s + f.size, 0),
           },
-          ...stepSummaryRows(result.files, (f) => ({
-            fileName: f.fileName,
-            size: f.size,
-            fileId: f.fileId,
-            sha1: f.contentSha1,
-            status: f.contentType,
-          })),
+          ...stepSummaryRows(entries, listSummaryRow),
         })
-        setSummaryJsonOutput(result.files)
+        setSummaryJsonOutput(entries)
         return
       }
       case 'hide': {
@@ -414,6 +415,26 @@ function stepSummaryRows<T>(
 
 function presignSummaryItem(file: PresignedFile): Pick<PresignedFile, 'fileName' | 'expiresAt'> {
   return { fileName: file.fileName, expiresAt: file.expiresAt }
+}
+
+type ListOutputEntry =
+  | ListedFile
+  | ({ entryType: 'file' } & ListedFile)
+  | { entryType: 'prefix'; prefix: string }
+
+function listEntryName(entry: ListOutputEntry): string {
+  return 'prefix' in entry ? entry.prefix : entry.fileName
+}
+
+function listSummaryRow(entry: ListOutputEntry): SummaryRow {
+  if ('prefix' in entry) return { fileName: entry.prefix, status: 'prefix' }
+  return {
+    fileName: entry.fileName,
+    size: entry.size,
+    fileId: entry.fileId,
+    sha1: entry.contentSha1,
+    status: 'entryType' in entry ? `file (${entry.contentType})` : entry.contentType,
+  }
 }
 
 function setFileCountOutput(count: number): void {

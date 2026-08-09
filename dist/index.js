@@ -39367,6 +39367,7 @@ function parseInputs() {
     const bypassGovernance = parseBool('bypass-governance', getInput('bypass-governance') || 'false');
     const presignTtlSeconds = parsePositiveInt('presign-ttl', getInput('presign-ttl') || '3600');
     const maxResults = parsePositiveInt('max-results', getInput('max-results') || '1000');
+    const delimiter = optional('delimiter');
     const endpoint = optional('endpoint');
     const sse = optional('sse');
     const encryption = parseSse(sse);
@@ -39425,6 +39426,7 @@ function parseInputs() {
         keepDays,
         syncDirection,
         maxResults,
+        delimiter,
         expectedSha1,
         retentionMode,
         retentionUntil,
@@ -40399,7 +40401,8 @@ async function hideCommand(bucket, inputs) {
  *
  * `source` is the prefix (use trailing `/` to list a "directory"). Empty
  * `source` lists everything the application key is allowed to see. Pagination
- * is followed transparently up to `max-results` matches.
+ * is followed transparently up to `max-results` entries. When `delimiter` is
+ * set, B2 folder markers are returned separately as virtual prefixes.
  *
  * Useful for "decide what to do next" workflow steps:
  *   - inventory before a delete
@@ -40410,59 +40413,70 @@ async function listCommand(bucket, inputs) {
     const prefix = inputs.source ?? '';
     const maxResults = inputs.maxResults;
     const files = [];
+    const prefixes = [];
     let startFileName;
     startGroup(`list b2://${bucket.name}/${prefix} (max ${maxResults})`);
     try {
-        while (files.length < maxResults) {
-            const remaining = maxResults - files.length;
+        while (files.length + prefixes.length < maxResults) {
+            const remaining = maxResults - files.length - prefixes.length;
             const pageSize = Math.min(1000, remaining);
             const page = await bucket.listFileNames({
                 prefix,
                 pageSize,
+                ...(inputs.delimiter !== undefined ? { delimiter: inputs.delimiter } : {}),
                 ...(startFileName !== undefined ? { startFileName } : {}),
             });
             for (const f of page.files) {
-                if (f.action !== 'upload')
+                if (f.action === 'upload') {
+                    files.push({
+                        fileName: f.fileName,
+                        fileId: f.fileId,
+                        size: f.contentLength,
+                        contentSha1: f.contentSha1,
+                        uploadTimestamp: f.uploadTimestamp,
+                        contentType: f.contentType,
+                        fileInfo: f.fileInfo,
+                    });
+                }
+                else if (f.action === 'folder') {
+                    prefixes.push({ prefix: f.fileName });
+                }
+                else {
                     continue;
-                files.push({
-                    fileName: f.fileName,
-                    fileId: f.fileId,
-                    size: f.contentLength,
-                    contentSha1: f.contentSha1,
-                    uploadTimestamp: f.uploadTimestamp,
-                    contentType: f.contentType,
-                    fileInfo: f.fileInfo,
-                });
-                if (files.length >= maxResults) {
+                }
+                if (files.length + prefixes.length >= maxResults) {
                     if (!page.nextFileName)
-                        return { files, truncated: false };
+                        return { files, prefixes, truncated: false };
                     return {
                         files,
-                        truncated: await hasVisibleUploadAfter(bucket, prefix, page.nextFileName),
+                        prefixes,
+                        truncated: await hasVisibleEntryAfter(bucket, prefix, inputs.delimiter, page.nextFileName),
                     };
                 }
             }
             if (!page.nextFileName) {
-                return { files, truncated: false };
+                return { files, prefixes, truncated: false };
             }
             startFileName = page.nextFileName;
         }
-        return { files, truncated: true };
+        return { files, prefixes, truncated: true };
     }
     finally {
-        info(`  ${files.length} file(s) listed`);
+        const entryCount = files.length + prefixes.length;
+        info(`  ${entryCount} ${entryCount === 1 ? 'entry' : 'entries'} listed`);
         endGroup();
     }
 }
-async function hasVisibleUploadAfter(bucket, prefix, startFileName) {
+async function hasVisibleEntryAfter(bucket, prefix, delimiter, startFileName) {
     let cursor = startFileName;
     while (cursor !== undefined) {
         const page = await bucket.listFileNames({
             prefix,
             pageSize: 1000,
             startFileName: cursor,
+            ...(delimiter !== undefined ? { delimiter } : {}),
         });
-        if (page.files.some((f) => f.action === 'upload'))
+        if (page.files.some((f) => f.action === 'upload' || f.action === 'folder'))
             return true;
         cursor = page.nextFileName ?? undefined;
     }
@@ -50049,26 +50063,26 @@ async function run() {
             }
             case 'list': {
                 const result = await listCommand(bucket, inputs);
-                setOutput('files-listed', String(result.files.length));
-                setFileCountOutput(result.files.length);
+                const entries = inputs.delimiter === undefined
+                    ? result.files
+                    : [
+                        ...result.files.map((file) => ({ entryType: 'file', ...file })),
+                        ...result.prefixes.map(({ prefix }) => ({ entryType: 'prefix', prefix })),
+                    ].sort((left, right) => listEntryName(left).localeCompare(listEntryName(right)));
+                setOutput('files-listed', String(entries.length));
+                setFileCountOutput(entries.length);
                 if (result.truncated) {
                     warning(`list result truncated at max-results=${inputs.maxResults}; raise it to see more`);
                 }
                 await writeStepSummary({
-                    title: `Backblaze B2: list (${result.files.length}${result.truncated ? '+' : ''})`,
+                    title: `Backblaze B2: list (${entries.length}${result.truncated ? '+' : ''})`,
                     totals: {
                         files: result.files.length,
                         bytes: result.files.reduce((s, f) => s + f.size, 0),
                     },
-                    ...stepSummaryRows(result.files, (f) => ({
-                        fileName: f.fileName,
-                        size: f.size,
-                        fileId: f.fileId,
-                        sha1: f.contentSha1,
-                        status: f.contentType,
-                    })),
+                    ...stepSummaryRows(entries, listSummaryRow),
                 });
-                setSummaryJsonOutput(result.files);
+                setSummaryJsonOutput(entries);
                 return;
             }
             case 'hide': {
@@ -50249,6 +50263,20 @@ function stepSummaryRows(items, row) {
 }
 function presignSummaryItem(file) {
     return { fileName: file.fileName, expiresAt: file.expiresAt };
+}
+function listEntryName(entry) {
+    return 'prefix' in entry ? entry.prefix : entry.fileName;
+}
+function listSummaryRow(entry) {
+    if ('prefix' in entry)
+        return { fileName: entry.prefix, status: 'prefix' };
+    return {
+        fileName: entry.fileName,
+        size: entry.size,
+        fileId: entry.fileId,
+        sha1: entry.contentSha1,
+        status: 'entryType' in entry ? `file (${entry.contentType})` : entry.contentType,
+    };
 }
 function setFileCountOutput(count) {
     setOutput('file-count', String(count));

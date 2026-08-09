@@ -20,11 +20,19 @@ export interface ListedFile {
   fileInfo: Record<string, string>
 }
 
+/** One virtual prefix returned when the list request uses a delimiter. */
+export interface ListedPrefix {
+  /** Common B2 key prefix, including the delimiter that ended the group. */
+  prefix: string
+}
+
 /** Result of {@link listCommand}. */
 export interface ListResult {
   /** Files matching the prefix, capped by `maxResults`. */
   files: ListedFile[]
-  /** True when more visible upload files exist beyond `maxResults`. Use to detect pagination. */
+  /** Virtual prefixes matching the prefix, capped together with files by `maxResults`. */
+  prefixes: ListedPrefix[]
+  /** True when more visible files or virtual prefixes exist beyond `maxResults`. */
   truncated: boolean
 }
 
@@ -33,7 +41,8 @@ export interface ListResult {
  *
  * `source` is the prefix (use trailing `/` to list a "directory"). Empty
  * `source` lists everything the application key is allowed to see. Pagination
- * is followed transparently up to `max-results` matches.
+ * is followed transparently up to `max-results` entries. When `delimiter` is
+ * set, B2 folder markers are returned separately as virtual prefixes.
  *
  * Useful for "decide what to do next" workflow steps:
  *   - inventory before a delete
@@ -44,55 +53,71 @@ export async function listCommand(bucket: Bucket, inputs: ParsedInputs): Promise
   const prefix = inputs.source ?? ''
   const maxResults = inputs.maxResults
   const files: ListedFile[] = []
+  const prefixes: ListedPrefix[] = []
   let startFileName: string | undefined
 
   core.startGroup(`list b2://${bucket.name}/${prefix} (max ${maxResults})`)
   try {
-    while (files.length < maxResults) {
-      const remaining = maxResults - files.length
+    while (files.length + prefixes.length < maxResults) {
+      const remaining = maxResults - files.length - prefixes.length
       const pageSize = Math.min(1000, remaining)
       const page = await bucket.listFileNames({
         prefix,
         pageSize,
+        ...(inputs.delimiter !== undefined ? { delimiter: inputs.delimiter } : {}),
         ...(startFileName !== undefined ? { startFileName } : {}),
       })
 
       for (const f of page.files) {
-        if (f.action !== 'upload') continue
-        files.push({
-          fileName: f.fileName,
-          fileId: f.fileId,
-          size: f.contentLength,
-          contentSha1: f.contentSha1,
-          uploadTimestamp: f.uploadTimestamp,
-          contentType: f.contentType,
-          fileInfo: f.fileInfo,
-        })
-        if (files.length >= maxResults) {
-          if (!page.nextFileName) return { files, truncated: false }
+        if (f.action === 'upload') {
+          files.push({
+            fileName: f.fileName,
+            fileId: f.fileId,
+            size: f.contentLength,
+            contentSha1: f.contentSha1,
+            uploadTimestamp: f.uploadTimestamp,
+            contentType: f.contentType,
+            fileInfo: f.fileInfo,
+          })
+        } else if (f.action === 'folder') {
+          prefixes.push({ prefix: f.fileName })
+        } else {
+          continue
+        }
+
+        if (files.length + prefixes.length >= maxResults) {
+          if (!page.nextFileName) return { files, prefixes, truncated: false }
           return {
             files,
-            truncated: await hasVisibleUploadAfter(bucket, prefix, page.nextFileName),
+            prefixes,
+            truncated: await hasVisibleEntryAfter(
+              bucket,
+              prefix,
+              inputs.delimiter,
+              page.nextFileName,
+            ),
           }
         }
       }
 
       if (!page.nextFileName) {
-        return { files, truncated: false }
+        return { files, prefixes, truncated: false }
       }
       startFileName = page.nextFileName
     }
 
-    return { files, truncated: true }
+    return { files, prefixes, truncated: true }
   } finally {
-    core.info(`  ${files.length} file(s) listed`)
+    const entryCount = files.length + prefixes.length
+    core.info(`  ${entryCount} ${entryCount === 1 ? 'entry' : 'entries'} listed`)
     core.endGroup()
   }
 }
 
-async function hasVisibleUploadAfter(
+async function hasVisibleEntryAfter(
   bucket: Bucket,
   prefix: string,
+  delimiter: string | undefined,
   startFileName: string,
 ): Promise<boolean> {
   let cursor: string | undefined = startFileName
@@ -102,8 +127,9 @@ async function hasVisibleUploadAfter(
       prefix,
       pageSize: 1000,
       startFileName: cursor,
+      ...(delimiter !== undefined ? { delimiter } : {}),
     })
-    if (page.files.some((f) => f.action === 'upload')) return true
+    if (page.files.some((f) => f.action === 'upload' || f.action === 'folder')) return true
     cursor = page.nextFileName ?? undefined
   }
 
