@@ -70,6 +70,18 @@ const bucket = await client.createBucket({ bucketName: 'gh-action-test', bucketT
 
 The `__tests__/inputs.test.ts` file exercises the env-var fallback chain by setting `INPUT_*` env vars directly. Always clear them in `beforeEach` to avoid cross-test bleed.
 
+## CI policy: Dependabot PRs run no CI
+
+Dependabot pull requests must not trigger any CI. Every job in every `pull_request`-triggered workflow is gated on the actor so it is skipped for Dependabot, using the same condition throughout:
+
+```yaml
+if: ${{ github.actor != 'dependabot[bot]' }}
+```
+
+This is applied directly (`ci.yml`, `docs-lint.yml`, `security.yml`, `full-lockfile-audit.yml`) or folded into an existing condition that already excludes `dependabot[bot]` (`codeql.yml`, `docs.yml`, every `example-*.yml`). Schedule-only, tag-only, and `push`-to-`main`-only workflows (`release.yml`, `daily-smoke.yml`, `large-multipart-smoke.yml`, `mutation-testing.yml`, the audit heartbeat) are not PR-triggered and need no guard.
+
+When adding a new workflow or job that runs on `pull_request`, add the same `github.actor != 'dependabot[bot]'` guard to every job (AND it into any existing `if:`). Do not rely on branch-name filters: the `pull_request` branch filter matches the base branch, not Dependabot's head branch.
+
 ## Git policy
 
 Do not run `git add`, `git commit`, `git push`, `git rebase`, `gh pr create`, or any command that mutates git history unless the user explicitly asks for that specific action in the current turn. Edit files freely; suggest commands the user could run.
