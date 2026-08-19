@@ -49,7 +49,7 @@ describe('head command', () => {
 describe('purge command', () => {
   let fx: TestFixture
   beforeEach(async () => {
-    fx = await makeFixture('gh-action-hpx')
+    fx = await makeFixture('gh-action-hpx', {}, { fileLockEnabled: true })
   })
   afterEach(async () => {
     await rm(fx.workDir, { recursive: true, force: true })

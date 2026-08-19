@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- Updated the `@backblaze-labs/b2-sdk` dependency from `^0.2.0` to `^0.3.0`.
+
+### Fixed
+
+- Server-side `copy` and large-file uploads that use SSE-C (customer-managed keys) no longer fail with a `403`. The `@backblaze-labs/b2-sdk` 0.3.0 upgrade serializes the SSE-C key material into the `b2_copy_file` / `b2_copy_part` / `b2_start_large_file` request bodies instead of a redacting placeholder. Header-based upload and download paths were already unaffected.
+
 ## [1.2.0] - 2026-08-04
 
 ### Security

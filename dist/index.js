@@ -31272,7 +31272,7 @@ function getIDToken(aud) {
  */
 
 //# sourceMappingURL=core.js.map
-;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.2.0/node_modules/@backblaze-labs/b2-sdk/dist/auth/upload-url-pool.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.3.0/node_modules/@backblaze-labs/b2-sdk/dist/auth/upload-url-pool.js
 //#region src/auth/upload-url-pool.ts
 /**
 * Manages a pool of reusable upload URLs keyed by bucket ID or file ID.
@@ -31329,7 +31329,7 @@ var UploadUrlPool = class {
 
 
 //# sourceMappingURL=upload-url-pool.js.map
-;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.2.0/node_modules/@backblaze-labs/b2-sdk/dist/auth/in-memory.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.3.0/node_modules/@backblaze-labs/b2-sdk/dist/auth/in-memory.js
 
 //#region src/auth/in-memory.ts
 /**
@@ -31543,7 +31543,7 @@ var InMemoryAccountInfo = class {
 
 
 //# sourceMappingURL=in-memory.js.map
-;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.2.0/node_modules/@backblaze-labs/b2-sdk/dist/types/ids.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.3.0/node_modules/@backblaze-labs/b2-sdk/dist/types/ids.js
 //#region src/types/ids.ts
 /**
 * Creates a branded {@link AccountId} from a raw string.
@@ -31591,6 +31591,33 @@ function applicationKeyId(raw) {
 	return raw;
 }
 /**
+* Creates a branded {@link GroupId} from a raw string.
+* @param raw - The raw group ID string from the Partner API.
+*
+* @returns A branded GroupId value.
+*/
+function groupId(raw) {
+	return raw;
+}
+/**
+* Creates a branded {@link ComputerId} from a raw string.
+* @param raw - The raw computer ID string from the Computer Backup API.
+*
+* @returns A branded ComputerId value.
+*/
+function computerId(raw) {
+	return raw;
+}
+/**
+* Creates a branded {@link PartnerToken} from a raw authorization token string.
+* @param raw - The raw Partner/Backup authorization token from the B2 API.
+*
+* @returns A branded PartnerToken value.
+*/
+function partnerToken(raw) {
+	return raw;
+}
+/**
 * Creates a branded {@link LargeFileId} from a raw string.
 *
 * `LargeFileId` is the same wire-level shape as `FileId` but is a
@@ -31610,14 +31637,14 @@ function largeFileId(raw) {
 
 
 //# sourceMappingURL=ids.js.map
-;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.2.0/node_modules/@backblaze-labs/b2-sdk/dist/http/retry.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.3.0/node_modules/@backblaze-labs/b2-sdk/dist/http/retry.js
 //#region src/http/retry.ts
 /** Default retry settings: 5 retries, 1s initial delay, 64s max delay, 15 minute timeout. */
 var DEFAULT_RETRY_OPTIONS = {
 	maxRetries: 5,
 	maxRetryDelayMs: 64e3,
 	initialRetryDelayMs: 1e3,
-	requestTimeoutMs: 15 * 6e4
+	requestTimeoutMs: 9e5
 };
 /**
 * Computes the delay before the next retry using exponential backoff with jitter.
@@ -31662,11 +31689,16 @@ function sleep(ms, signal) {
 
 
 //# sourceMappingURL=retry.js.map
-;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.2.0/node_modules/@backblaze-labs/b2-sdk/dist/util/paginator.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.3.0/node_modules/@backblaze-labs/b2-sdk/dist/util/paginator.js
 //#region src/util/paginator.ts
+function isPrimitiveCursor(cursor) {
+	return cursor === null || typeof cursor !== "object" && typeof cursor !== "function";
+}
 /**
 * Async-iterates one page at a time. Stops when `fetcher` returns
-* `nextCursor: undefined`.
+* `nextCursor: undefined` or a primitive cursor that is identical to the
+* cursor just used, which prevents non-advancing server cursors from looping
+* forever.
 *
 * @typeParam Page - The per-page response shape.
 * @typeParam Cursor - The cursor type used to request the next page.
@@ -31698,6 +31730,7 @@ async function* paginatePages(fetcher, signal) {
 		const { page, nextCursor } = await fetcher(cursor);
 		yield page;
 		if (nextCursor === void 0) return;
+		if (cursor !== void 0 && isPrimitiveCursor(cursor) && isPrimitiveCursor(nextCursor) && Object.is(nextCursor, cursor)) return;
 		cursor = nextCursor;
 	}
 }
@@ -31731,7 +31764,7 @@ async function* paginateItems(fetcher, extractItems, signal) {
 
 
 //# sourceMappingURL=paginator.js.map
-;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.2.0/node_modules/@backblaze-labs/b2-sdk/dist/upload/concurrency.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.3.0/node_modules/@backblaze-labs/b2-sdk/dist/upload/concurrency.js
 //#region src/upload/concurrency.ts
 /**
 * Bounded concurrency primitive.
@@ -31812,7 +31845,7 @@ async function mapConcurrent(items, concurrency, fn) {
 
 
 //# sourceMappingURL=concurrency.js.map
-;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.2.0/node_modules/@backblaze-labs/b2-sdk/dist/types/file.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.3.0/node_modules/@backblaze-labs/b2-sdk/dist/types/file.js
 //#region src/types/file.ts
 /**
 * Named constants for the action that created a file version.
@@ -31852,7 +31885,7 @@ var MetadataDirective = {
 
 
 //# sourceMappingURL=file.js.map
-;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.2.0/node_modules/@backblaze-labs/b2-sdk/dist/upload/abort-scope.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.3.0/node_modules/@backblaze-labs/b2-sdk/dist/upload/abort-scope.js
 //#region src/upload/abort-scope.ts
 /**
 * Creates an abort scope linked to an optional upstream signal.
@@ -31894,54 +31927,11 @@ function throwRejectedOrAbortReason(settled, abortScope) {
 	/* v8 ignore next -- Defensive fallback for unexpected task rejections outside the abort scope. */
 	throw rejected.reason;
 }
-/**
-* Returns the observable reason for an aborted signal.
-* @param signal - Aborted signal to inspect.
-*
-* @returns The signal's reason, or a standard AbortError when the runtime did not provide one.
-*/
-function abortReason(signal) {
-	return signal.reason ?? new DOMException("Aborted", "AbortError");
-}
-/**
-* Races a request promise against an abort signal.
-*
-* The underlying request must still receive the same signal so transports can
-* cancel their network work. This helper makes callers stop waiting promptly
-* even when a test double or custom transport ignores the signal.
-*
-* @param promise - Request promise to observe.
-* @param signal - Signal that should stop waiting for the request.
-*
-* @returns The request result if it settles before the signal aborts.
-*
-* @throws The abort reason if the signal aborts first, or the request rejection.
-*/
-async function raceWithAbort(promise, signal) {
-	if (signal.aborted) {
-		promise.catch(() => {});
-		throw abortReason(signal);
-	}
-	let removeAbortListener;
-	const abort = new Promise((_, reject) => {
-		const onAbort = () => reject(abortReason(signal));
-		signal.addEventListener("abort", onAbort, { once: true });
-		removeAbortListener = () => signal.removeEventListener("abort", onAbort);
-	});
-	try {
-		return await Promise.race([promise, abort]);
-	} catch (err) {
-		if (signal.aborted) promise.catch(() => {});
-		throw err;
-	} finally {
-		removeAbortListener?.();
-	}
-}
 //#endregion
 
 
 //# sourceMappingURL=abort-scope.js.map
-;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.2.0/node_modules/@backblaze-labs/b2-sdk/dist/internal/url-redaction.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.3.0/node_modules/@backblaze-labs/b2-sdk/dist/internal/url-redaction.js
 //#region src/internal/url-redaction.ts
 /**
 * Redact a URL before including it in an error message.
@@ -31973,7 +31963,7 @@ function redactPathname(pathname) {
 
 
 //# sourceMappingURL=url-redaction.js.map
-;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.2.0/node_modules/@backblaze-labs/b2-sdk/dist/types/errors.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.3.0/node_modules/@backblaze-labs/b2-sdk/dist/types/errors.js
 //#region src/types/errors.ts
 /**
 * B2 API error codes documented by the SDK.
@@ -31996,6 +31986,7 @@ var KNOWN_B2_ERROR_CODES = [
 	"duplicate_bucket_name",
 	"too_many_buckets",
 	"too_many_files",
+	"too_many_members",
 	"cap_exceeded",
 	"storage_cap_exceeded",
 	"transaction_cap_exceeded",
@@ -32004,9 +31995,16 @@ var KNOWN_B2_ERROR_CODES = [
 	"service_unavailable",
 	"internal_error",
 	"bad_json",
+	"invalid_account_id",
 	"invalid_bucket_id",
 	"invalid_bucket_name",
 	"invalid_bucket_info",
+	"invalid_computer_id",
+	"invalid_email",
+	"invalid_group_id",
+	"invalid_member_account_id",
+	"invalid_region",
+	"invalid_sms_phone",
 	"file_not_present",
 	"no_such_file",
 	"out_of_range",
@@ -32015,13 +32013,14 @@ var KNOWN_B2_ERROR_CODES = [
 	"invalid_file_name",
 	"invalid_file_info",
 	"invalid_part_number",
+	"method_failure",
 	"bad_sha1_checksum"
 ];
 //#endregion
 
 
 //# sourceMappingURL=errors.js.map
-;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.2.0/node_modules/@backblaze-labs/b2-sdk/dist/errors/index.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.3.0/node_modules/@backblaze-labs/b2-sdk/dist/errors/index.js
 
 
 //#region src/errors/index.ts
@@ -32035,9 +32034,10 @@ var KNOWN_B2_ERROR_CODES = [
 * appropriate subclass.
 *
 * Convention: most `B2Error` subclasses represent failures returned by the B2
-* API. The client-side exception is {@link B2RealmConfigurationError}; it
-* extends `B2Error` so realm-validation failures can be handled with the SDK
-* error hierarchy before credentials are sent.
+* API. The client-side exceptions are {@link B2RealmConfigurationError} and
+* {@link B2PartnerAuthorizationError}; they extend `B2Error` so realm- and
+* Partner-authorization failures can be handled with the SDK error hierarchy
+* before or without a server round-trip.
 *
 * Other programming errors and SDK preconditions, such as "not yet authorized",
 * "stream consumed twice", or "called before init", use the native `Error`
@@ -32466,6 +32466,137 @@ var ChecksumMismatchError = class extends B2Error {
 		this.name = "ChecksumMismatchError";
 	}
 };
+/** Thrown when a Partner group has reached its maximum member count. */
+var TooManyMembersError = class extends B2Error {
+	/**
+	* Creates a new TooManyMembersError instance.
+	* @param response - Parsed B2 error response body.
+	* @param options - Optional metadata from response headers.
+	*/
+	constructor(response, options) {
+		super(response, options);
+		this.name = "TooManyMembersError";
+	}
+};
+/**
+* Compatibility alias for the issue #167 Partner member-limit error name.
+* @deprecated Use {@link TooManyMembersError}.
+*/
+var TooManyGroupMembersError = (/* unused pure expression or super */ null && (TooManyMembersError));
+/** Thrown when a Partner group ID is malformed or does not identify a valid group. */
+var InvalidGroupIdError = class extends B2Error {
+	/**
+	* Creates a new InvalidGroupIdError instance.
+	* @param response - Parsed B2 error response body.
+	* @param options - Optional metadata from response headers.
+	*/
+	constructor(response, options) {
+		super(response, options);
+		this.name = "InvalidGroupIdError";
+	}
+};
+/** Thrown when a Partner member email address fails validation. */
+var InvalidEmailError = class extends B2Error {
+	/**
+	* Creates a new InvalidEmailError instance.
+	* @param response - Parsed B2 error response body.
+	* @param options - Optional metadata from response headers.
+	*/
+	constructor(response, options) {
+		super(response, options);
+		this.name = "InvalidEmailError";
+	}
+};
+/** Thrown when a Partner API region value is unsupported or malformed. */
+var InvalidRegionError = class extends B2Error {
+	/**
+	* Creates a new InvalidRegionError instance.
+	* @param response - Parsed B2 error response body.
+	* @param options - Optional metadata from response headers.
+	*/
+	constructor(response, options) {
+		super(response, options);
+		this.name = "InvalidRegionError";
+	}
+};
+/** Thrown when a Partner account SMS phone number fails validation. */
+var InvalidSmsPhoneError = class extends B2Error {
+	/**
+	* Creates a new InvalidSmsPhoneError instance.
+	* @param response - Parsed B2 error response body.
+	* @param options - Optional metadata from response headers.
+	*/
+	constructor(response, options) {
+		super(response, options);
+		this.name = "InvalidSmsPhoneError";
+	}
+};
+/**
+* Compatibility alias for the issue #167 Partner SMS-phone error name.
+* @deprecated Use {@link InvalidSmsPhoneError}.
+*/
+var MissingSmsPhoneError = (/* unused pure expression or super */ null && (InvalidSmsPhoneError));
+/**
+* Thrown when B2 returns `method_failure`.
+*
+* The documented Partner group-member creation flow uses this code after
+* server-side creation fails and Backblaze rolls back before callers retry.
+* The code itself is classified globally, so this class stays endpoint-neutral.
+*/
+var MethodFailureError = class extends B2Error {
+	/** Always `false` because callers should decide when a documented operation-level retry is safe. */
+	retryable = false;
+	/**
+	* Creates a new MethodFailureError instance.
+	* @param response - Parsed B2 error response body.
+	* @param options - Optional metadata from response headers.
+	*/
+	constructor(response, options) {
+		super(response, options);
+		this.name = "MethodFailureError";
+	}
+};
+/**
+* Compatibility alias for the issue #167 Partner group-member failure name.
+* @deprecated Use {@link MethodFailureError}.
+*/
+var GroupMemberCreationFailedError = (/* unused pure expression or super */ null && (MethodFailureError));
+/** Thrown when a Partner group member account ID fails validation. */
+var InvalidMemberAccountIdError = class extends B2Error {
+	/**
+	* Creates a new InvalidMemberAccountIdError instance.
+	* @param response - Parsed B2 error response body.
+	* @param options - Optional metadata from response headers.
+	*/
+	constructor(response, options) {
+		super(response, options);
+		this.name = "InvalidMemberAccountIdError";
+	}
+};
+/** Thrown when an account ID fails Partner or Computer Backup API validation. */
+var InvalidAccountIdError = class extends B2Error {
+	/**
+	* Creates a new InvalidAccountIdError instance.
+	* @param response - Parsed B2 error response body.
+	* @param options - Optional metadata from response headers.
+	*/
+	constructor(response, options) {
+		super(response, options);
+		this.name = "InvalidAccountIdError";
+	}
+};
+/** Thrown when a Computer Backup computer ID fails validation. */
+var InvalidComputerIdError = class extends B2Error {
+	/**
+	* Creates a new InvalidComputerIdError instance.
+	* @param response - Parsed B2 error response body.
+	* @param options - Optional metadata from response headers.
+	*/
+	constructor(response, options) {
+		super(response, options);
+		this.name = "InvalidComputerIdError";
+	}
+};
 /**
 * Thrown by client-side capability checks when the application key is missing
 * capabilities required by an operation. Not raised by the server.
@@ -32532,6 +32663,22 @@ var B2RealmConfigurationError = class extends B2Error {
 			message
 		});
 		this.name = "B2RealmConfigurationError";
+	}
+};
+/** Thrown when Partner authorization returns unusable Partner/Backup auth data. */
+var B2PartnerAuthorizationError = class extends B2Error {
+	/**
+	* Creates a new B2PartnerAuthorizationError instance.
+	*
+	* @param message - Human-readable description of the invalid Partner authorization state.
+	*/
+	constructor(message) {
+		super({
+			status: 400,
+			code: "bad_request",
+			message
+		});
+		this.name = "B2PartnerAuthorizationError";
 	}
 };
 /** Thrown when the SDK refuses to follow an HTTP redirect automatically. */
@@ -32653,6 +32800,7 @@ function classifyKnownError(response, code, options) {
 		case "duplicate_bucket_name": return new DuplicateBucketNameError(response, options);
 		case "too_many_buckets": return new TooManyBucketsError(response, options);
 		case "too_many_files": return new TooManyFilesError(response, options);
+		case "too_many_members": return new TooManyMembersError(response, options);
 		case "cap_exceeded":
 		case "storage_cap_exceeded":
 		case "transaction_cap_exceeded":
@@ -32661,8 +32809,15 @@ function classifyKnownError(response, code, options) {
 		case "service_unavailable": return new ServiceUnavailableError(response, options);
 		case "internal_error": return new InternalError(response, options);
 		case "bad_json": return new BadJsonError(response, options);
+		case "invalid_account_id": return new InvalidAccountIdError(response, options);
 		case "invalid_bucket_id": return new InvalidBucketIdError(response, options);
 		case "invalid_bucket_info": return new InvalidBucketInfoError(response, options);
+		case "invalid_computer_id": return new InvalidComputerIdError(response, options);
+		case "invalid_email": return new InvalidEmailError(response, options);
+		case "invalid_group_id": return new InvalidGroupIdError(response, options);
+		case "invalid_member_account_id": return new InvalidMemberAccountIdError(response, options);
+		case "invalid_region": return new InvalidRegionError(response, options);
+		case "invalid_sms_phone": return new InvalidSmsPhoneError(response, options);
 		case "file_not_present":
 		case "no_such_file": return new FileNotPresentError(response, options);
 		case "out_of_range": return new OutOfRangeError(response, options);
@@ -32671,6 +32826,7 @@ function classifyKnownError(response, code, options) {
 		case "invalid_file_name": return new InvalidFileNameError(response, options);
 		case "invalid_file_info": return new InvalidFileInfoError(response, options);
 		case "invalid_part_number": return new InvalidPartNumberError(response, options);
+		case "method_failure": return new MethodFailureError(response, options);
 		case "bad_sha1_checksum": return new ChecksumMismatchError(response, options);
 		default: return assertNever(code);
 	}
@@ -32707,7 +32863,7 @@ function classifyError(response, options) {
 
 
 //# sourceMappingURL=index.js.map
-;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.2.0/node_modules/@backblaze-labs/b2-sdk/dist/util/best-effort.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.3.0/node_modules/@backblaze-labs/b2-sdk/dist/util/best-effort.js
 //#region src/util/best-effort.ts
 /**
 * Runs an async cleanup operation and swallows any rejection.
@@ -32752,7 +32908,7 @@ async function bestEffort(fn, onError) {
 
 
 //# sourceMappingURL=best-effort.js.map
-;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.2.0/node_modules/@backblaze-labs/b2-sdk/dist/upload/cancel.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.3.0/node_modules/@backblaze-labs/b2-sdk/dist/upload/cancel.js
 
 
 //#region src/upload/cancel.ts
@@ -32932,7 +33088,118 @@ async function cleanupAfterLargeFileError(err, raw, accountInfo, context, option
 
 
 //# sourceMappingURL=cancel.js.map
-;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.2.0/node_modules/@backblaze-labs/b2-sdk/dist/upload/finish.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.3.0/node_modules/@backblaze-labs/b2-sdk/dist/util/abort.js
+//#region src/util/abort.ts
+/**
+* Abort-signal and cancellation-error helpers shared across SDK operations.
+*
+* @packageDocumentation
+*/
+/**
+* Resolves the abort reason for a signal, defaulting to a standard `AbortError`.
+*
+* @param signal - The aborted signal whose reason should be resolved.
+*
+* @returns The signal's `reason`, or a fresh `AbortError` DOMException when unset.
+*/
+function abortReason(signal) {
+	return signal.reason ?? new DOMException("Aborted", "AbortError");
+}
+/**
+* Returns whether an error represents an abort.
+*
+* @param err - Unknown thrown value.
+*
+* @returns True for `Error` or `DOMException` instances named `AbortError`.
+*/
+function isAbortError(err) {
+	return isNamedError(err, "AbortError");
+}
+/**
+* Returns whether an error should be treated as the given signal's abort.
+*
+* @param signal - Controlling signal for the operation.
+* @param err - Unknown thrown value.
+*
+* @returns True when the signal is aborted and `err` is either the signal's
+* reason or a trusted `AbortError` instance.
+*/
+function isSignalAbortError(signal, err) {
+	if (signal?.aborted !== true) return false;
+	if (signal.reason !== void 0 && Object.is(err, signal.reason)) return true;
+	return isAbortError(err);
+}
+/**
+* Returns whether an error represents a timeout.
+*
+* @param err - Unknown thrown value.
+*
+* @returns True for `Error` or `DOMException` instances named `TimeoutError`.
+*/
+function isTimeoutError(err) {
+	return isNamedError(err, "TimeoutError");
+}
+/**
+* Throws the abort reason if the signal is already aborted; otherwise returns.
+*
+* @param signal - The signal to check, or undefined to skip the check.
+*
+* @throws The signal's abort reason when the signal is already aborted.
+*/
+function throwIfSignalAborted(signal) {
+	if (signal?.aborted === true) throw abortReason(signal);
+}
+/**
+* Races a promise against an abort signal. Rejects with the signal's abort
+* reason if the signal fires first, detaching the listener and suppressing the
+* losing promise's rejection so it never surfaces as an unhandled rejection.
+*
+* The underlying work must still receive the same signal so transports can
+* cancel their network activity. This helper only makes callers stop waiting
+* promptly even when a test double or custom transport ignores the signal.
+*
+* @param promise - The work to await.
+* @param signal - Abort signal, or undefined to await the promise directly.
+*
+* @returns The resolved value of `promise` when it settles before the signal aborts.
+*
+* @throws The abort reason if the signal aborts first, or the promise's rejection.
+*/
+async function raceWithAbort(promise, signal) {
+	if (signal === void 0) return promise;
+	if (signal.aborted) {
+		promise.catch(() => {});
+		throw abortReason(signal);
+	}
+	let removeAbortListener;
+	const aborted = new Promise((_, reject) => {
+		const onAbort = () => {
+			promise.catch(() => {});
+			reject(abortReason(signal));
+		};
+		signal.addEventListener("abort", onAbort, { once: true });
+		removeAbortListener = () => signal.removeEventListener("abort", onAbort);
+		if (signal.aborted) onAbort();
+	});
+	try {
+		return await Promise.race([promise, aborted]);
+	} finally {
+		removeAbortListener?.();
+	}
+}
+function isNamedError(err, name) {
+	try {
+		return (err instanceof DOMException || err instanceof Error) && err.name === name;
+	} catch {
+		return false;
+	}
+}
+//#endregion
+
+
+//# sourceMappingURL=abort.js.map
+;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.3.0/node_modules/@backblaze-labs/b2-sdk/dist/upload/finish.js
+
 
 //#region src/upload/finish.ts
 /**
@@ -32982,17 +33249,11 @@ function isAmbiguousFinishDispatchFailure(err, signal) {
 	if (signal.reason !== void 0 && Object.is(err, signal.reason)) return true;
 	return isAbortError(err);
 }
-function isAbortError(err) {
-	return err instanceof DOMException && err.name === "AbortError" || err instanceof Error && err.name === "AbortError";
-}
-function isTimeoutError(err) {
-	return err instanceof DOMException && err.name === "TimeoutError" || err instanceof Error && err.name === "TimeoutError";
-}
 //#endregion
 
 
 //# sourceMappingURL=finish.js.map
-;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.2.0/node_modules/@backblaze-labs/b2-sdk/dist/util/plan-ranges.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.3.0/node_modules/@backblaze-labs/b2-sdk/dist/util/plan-ranges.js
 //#region src/util/plan-ranges.ts
 /**
 * Lays out a sequence of contiguous, non-overlapping byte ranges over
@@ -33045,7 +33306,8 @@ function byteRangeHeader(start, end) {
 
 
 //# sourceMappingURL=plan-ranges.js.map
-;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.2.0/node_modules/@backblaze-labs/b2-sdk/dist/copy/large.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.3.0/node_modules/@backblaze-labs/b2-sdk/dist/copy/large.js
+
 
 
 
@@ -33118,14 +33380,15 @@ async function copyLargeFile(raw, accountInfo, options) {
 			await sem.acquire();
 			try {
 				abortScope.signal.throwIfAborted();
-				const resp = await raceWithAbort(raw.copyPart(accountInfo.getApiUrl(), accountInfo.getAuthToken(), {
+				const copyPromise = raw.copyPart(accountInfo.getApiUrl(), accountInfo.getAuthToken(), {
 					sourceFileId: options.sourceFileId,
 					largeFileId: fileId(startedLargeFileId),
 					partNumber: range.partNumber,
 					range: byteRangeHeader(range.start, range.end),
 					...options.sourceServerSideEncryption !== void 0 ? { sourceServerSideEncryption: options.sourceServerSideEncryption } : {},
 					...options.destinationServerSideEncryption !== void 0 ? { destinationServerSideEncryption: options.destinationServerSideEncryption } : {}
-				}, { signal: abortScope.signal }), abortScope.signal);
+				}, { signal: abortScope.signal });
+				const resp = await raceWithAbort(copyPromise, abortScope.signal);
 				partSha1s[range.partNumber - 1] = resp.contentSha1;
 			} catch (err) {
 				abortScope.abort(err);
@@ -33163,7 +33426,7 @@ function cancelLargeFileAfterStart(started, raw, accountInfo, onCleanupFailure) 
 
 
 //# sourceMappingURL=large.js.map
-;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.2.0/node_modules/@backblaze-labs/b2-sdk/dist/util/text-codec.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.3.0/node_modules/@backblaze-labs/b2-sdk/dist/util/text-codec.js
 //#region src/util/text-codec.ts
 /**
 * Shared UTF-8 codec singletons.
@@ -33194,7 +33457,7 @@ var utf8Decoder = new TextDecoder();
 
 
 //# sourceMappingURL=text-codec.js.map
-;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.2.0/node_modules/@backblaze-labs/b2-sdk/dist/raw/encoding.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.3.0/node_modules/@backblaze-labs/b2-sdk/dist/raw/encoding.js
 
 //#region src/raw/encoding.ts
 /**
@@ -33278,7 +33541,7 @@ function parseFileInfoHeaders(headers) {
 
 
 //# sourceMappingURL=encoding.js.map
-;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.2.0/node_modules/@backblaze-labs/b2-sdk/dist/streams/progress.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.3.0/node_modules/@backblaze-labs/b2-sdk/dist/streams/progress.js
 //#region src/streams/progress.ts
 /**
 * Accumulates byte and part counts and emits {@link ProgressEvent}s to a listener.
@@ -33340,7 +33603,309 @@ var ProgressTracker = class {
 
 
 //# sourceMappingURL=progress.js.map
-;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.2.0/node_modules/@backblaze-labs/b2-sdk/dist/util/normalize.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.3.0/node_modules/@backblaze-labs/b2-sdk/dist/types/download.js
+//#region src/types/download.ts
+/** HTTP response header names returned by B2 download endpoints. */
+var DownloadHeaderName = {
+	/** Header carrying the response content disposition. */
+	ContentDisposition: "Content-Disposition",
+	/** Header carrying the response content language. */
+	ContentLanguage: "Content-Language",
+	/** Header carrying the response content encoding. */
+	ContentEncoding: "Content-Encoding",
+	/** Header carrying the response content type. */
+	ContentType: "Content-Type",
+	/** Header carrying the response cache policy. */
+	CacheControl: "Cache-Control",
+	/** Header carrying the response expiration time. */
+	Expires: "Expires",
+	/** Header carrying the byte range returned for partial downloads. */
+	ContentRange: "Content-Range",
+	/** Header carrying the response content length. */
+	ContentLength: "Content-Length",
+	/** Header carrying the B2 SHA-1 metadata value. */
+	ContentSha1: "X-Bz-Content-Sha1",
+	/** Header carrying the downloaded file version ID. */
+	FileId: "X-Bz-File-Id",
+	/** Header carrying the URL-encoded downloaded file name. */
+	FileName: "X-Bz-File-Name",
+	/** Header carrying the file upload timestamp. */
+	UploadTimestamp: "X-Bz-Upload-Timestamp",
+	/** Header carrying the B2-managed server-side encryption algorithm. */
+	ServerSideEncryption: "X-Bz-Server-Side-Encryption",
+	/** Header carrying the SSE-C algorithm echo. */
+	ServerSideEncryptionCustomerAlgorithm: "X-Bz-Server-Side-Encryption-Customer-Algorithm",
+	/** Header carrying the SSE-C customer-key MD5 echo. */
+	ServerSideEncryptionCustomerKeyMd5: "X-Bz-Server-Side-Encryption-Customer-Key-Md5",
+	/** Header carrying the Object Lock retention mode. */
+	FileRetentionMode: "X-Bz-File-Retention-Mode",
+	/** Header carrying the Object Lock retain-until timestamp. */
+	FileRetentionRetainUntilTimestamp: "X-Bz-File-Retention-Retain-Until-Timestamp",
+	/** Header carrying the Object Lock legal-hold value. */
+	FileLegalHold: "X-Bz-File-Legal-Hold",
+	/** Header carrying names of metadata headers hidden by missing capabilities. */
+	ClientUnauthorizedToRead: "X-Bz-Client-Unauthorized-To-Read"
+};
+/** Documented download metadata markers B2 may hide when the caller lacks read capabilities. */
+var DownloadClientUnauthorizedToReadMarker = {
+	/** B2-managed encryption metadata is hidden. */
+	ServerSideEncryption: DownloadHeaderName.ServerSideEncryption,
+	/** SSE-C algorithm metadata is hidden. */
+	ServerSideEncryptionCustomerAlgorithm: DownloadHeaderName.ServerSideEncryptionCustomerAlgorithm,
+	/** SSE-C customer-key MD5 metadata is hidden. */
+	ServerSideEncryptionCustomerKeyMd5: DownloadHeaderName.ServerSideEncryptionCustomerKeyMd5,
+	/** Object Lock retention mode metadata is hidden. */
+	FileRetentionMode: DownloadHeaderName.FileRetentionMode,
+	/** Object Lock retain-until timestamp metadata is hidden. */
+	FileRetentionRetainUntilTimestamp: DownloadHeaderName.FileRetentionRetainUntilTimestamp,
+	/** Object Lock legal-hold metadata is hidden. */
+	FileLegalHold: DownloadHeaderName.FileLegalHold
+};
+//#endregion
+
+
+//# sourceMappingURL=download.js.map
+;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.3.0/node_modules/@backblaze-labs/b2-sdk/dist/types/encryption.js
+
+//#region src/types/encryption.ts
+/** Named constants for the supported server-side encryption algorithms. */
+var EncryptionAlgorithm = { 
+/** AES with a 256-bit key. The only algorithm B2 currently supports. */
+Aes256: "AES256" };
+/**
+* Named constants for the server-side encryption mode used by a file.
+*
+* Most callers should use the {@link SSE_B2}, {@link SSE_NONE}, and
+* {@link sseCustomer} helpers below which return complete
+* {@link EncryptionSetting} objects. These constants are useful when you
+* need the bare mode discriminator (e.g., when introspecting a file's
+* current encryption setting).
+*/
+var EncryptionMode = {
+	/** B2-managed encryption keys. */
+	SseB2: "SSE-B2",
+	/** Customer-provided encryption keys. */
+	SseC: "SSE-C",
+	/** No encryption. */
+	None: "none"
+};
+/** Pre-built SSE-B2 encryption setting using AES-256. */
+var SSE_B2 = {
+	mode: "SSE-B2",
+	algorithm: "AES256"
+};
+/** Pre-built setting indicating no server-side encryption. */
+var SSE_NONE = { mode: "none" };
+/**
+* Creates an SSE-C encryption setting with a customer-provided key.
+* @param customerKey - Base64-encoded 256-bit encryption key.
+* @param customerKeyMd5 - Base64-encoded MD5 digest of the key.
+*
+* @returns An SSE-C encryption setting ready to pass to upload or download calls.
+*/
+function sseCustomer(customerKey, customerKeyMd5) {
+	return {
+		mode: "SSE-C",
+		algorithm: "AES256",
+		customerKey,
+		customerKeyMd5
+	};
+}
+/**
+* Encodes raw bytes as base64 in an isomorphic way (Node Buffer fallback to btoa).
+*
+* @param bytes - The raw bytes to encode.
+*
+* @returns The base64-encoded string.
+*/
+function bytesToBase64(bytes) {
+	const g = globalThis;
+	if (g.Buffer) return g.Buffer.from(bytes).toString("base64");
+	let binary = "";
+	for (const b of bytes) binary += String.fromCharCode(b);
+	return btoa(binary);
+}
+var SSE_C_KEY_REDACTION = "[redacted SSE-C key]";
+var NODE_INSPECT_CUSTOM = Symbol.for("nodejs.util.inspect.custom");
+function sseCKeyRedactedJson(key, options) {
+	return {
+		...options.mode !== void 0 ? { mode: options.mode } : {},
+		algorithm: key.algorithm,
+		customerKey: SSE_C_KEY_REDACTION,
+		customerKeyMd5: SSE_C_KEY_REDACTION
+	};
+}
+function sseCKeyRedactedString(options) {
+	return `[${options.label} ${SSE_C_KEY_REDACTION}]`;
+}
+/**
+* Wraps SSE-C key material so diagnostic stringification redacts key fields.
+*
+* The returned object keeps `customerKey` and `customerKeyMd5` readable by
+* property access for request header construction, but makes them
+* non-enumerable so object spread and generic serializers do not copy them.
+* Callers that need wire headers must read those fields directly.
+*
+* @param key - SSE-C key material to wrap.
+* @param options - Redaction label and optional encryption mode discriminator.
+*
+* @returns A redacted view with the same readable key fields.
+*/
+function redactSseCKeyMaterial(key, options) {
+	const redacted = {
+		...options.mode !== void 0 ? { mode: options.mode } : {},
+		algorithm: key.algorithm
+	};
+	Object.defineProperties(redacted, {
+		customerKey: {
+			value: key.customerKey,
+			enumerable: false
+		},
+		customerKeyMd5: {
+			value: key.customerKeyMd5,
+			enumerable: false
+		},
+		toJSON: {
+			value: () => sseCKeyRedactedJson(key, options),
+			enumerable: false
+		},
+		toString: {
+			value: () => sseCKeyRedactedString(options),
+			enumerable: false
+		}
+	});
+	Object.defineProperty(redacted, NODE_INSPECT_CUSTOM, {
+		value: () => sseCKeyRedactedString(options),
+		enumerable: false
+	});
+	return redacted;
+}
+/**
+* Safe wrapper around an SSE-C customer key. Hides the key bytes from
+* `JSON.stringify`, `console.log`, and Node's `util.inspect`. Use {@link EncryptionKey.fromBytes}
+* to construct one from a raw 32-byte key; the MD5 digest is computed internally.
+*/
+var EncryptionKey = class EncryptionKey {
+	/** Encryption mode discriminant. Always `'SSE-C'` for this class. */
+	mode = "SSE-C";
+	/** Encryption algorithm. B2's S3-compatible API only supports AES-256. */
+	algorithm = "AES256";
+	/** Base64-encoded 256-bit customer key. Logged as `[redacted SSE-C key]` via `toJSON` / `toString`. */
+	customerKey;
+	/** Base64-encoded MD5 digest of the customer key. Required by B2 for integrity verification. */
+	customerKeyMd5;
+	/**
+	* Internal constructor. Use {@link EncryptionKey.fromBytes} or
+	* {@link EncryptionKey.fromBase64} instead.
+	*
+	* @param customerKey - Base64-encoded 256-bit encryption key.
+	* @param customerKeyMd5 - Base64-encoded MD5 digest of the key.
+	*
+	* @internal
+	*/
+	constructor(customerKey, customerKeyMd5) {
+		this.customerKey = customerKey;
+		this.customerKeyMd5 = customerKeyMd5;
+	}
+	/**
+	* Builds an EncryptionKey from a raw 32-byte (256-bit) key. Computes the
+	* required base64 MD5 digest internally.
+	*
+	* @param rawKey - The raw 256-bit key as bytes. Must be exactly 32 bytes.
+	*
+	* @returns A safely-wrapped EncryptionKey ready for upload/download.
+	*
+	* @throws If the key is not exactly 32 bytes.
+	*/
+	static async fromBytes(rawKey) {
+		if (rawKey.byteLength !== 32) throw new Error(`SSE-C key must be exactly 32 bytes (256 bits); got ${rawKey.byteLength}.`);
+		const customerKey = bytesToBase64(rawKey);
+		const customerKeyMd5 = await md5Base64(rawKey);
+		return new EncryptionKey(customerKey, customerKeyMd5);
+	}
+	/**
+	* Builds an EncryptionKey from precomputed base64 strings. Use this in
+	* environments where MD5 must be computed externally (e.g., browsers).
+	*
+	* @param customerKey - Base64-encoded 256-bit encryption key.
+	* @param customerKeyMd5 - Base64-encoded MD5 digest of the key.
+	*
+	* @returns A safely-wrapped EncryptionKey ready for upload/download.
+	*/
+	static fromBase64(customerKey, customerKeyMd5) {
+		return new EncryptionKey(customerKey, customerKeyMd5);
+	}
+	/**
+	* Hides the key bytes from `JSON.stringify`.
+	*
+	* @returns A redacted shape: same mode and algorithm, but the key and MD5
+	*   replaced with a placeholder string.
+	*/
+	toJSON() {
+		return sseCKeyRedactedJson(this, {
+			label: "EncryptionKey SSE-C",
+			mode: this.mode
+		});
+	}
+	/**
+	* Hides the key bytes from default `toString()`.
+	*
+	* @returns A short opaque label indicating this is an SSE-C key.
+	*/
+	toString() {
+		return sseCKeyRedactedString({ label: "EncryptionKey SSE-C" });
+	}
+	/**
+	* Hides the key bytes from Node's `util.inspect` (and therefore `console.log`).
+	*
+	* @returns A short opaque label indicating this is an SSE-C key.
+	*/
+	[NODE_INSPECT_CUSTOM]() {
+		return this.toString();
+	}
+};
+//#endregion
+
+
+//# sourceMappingURL=encryption.js.map
+;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.3.0/node_modules/@backblaze-labs/b2-sdk/dist/types/lock.js
+//#region src/types/lock.ts
+/**
+* Named constants for the file-level Object Lock retention mode.
+*
+* @example
+* ```ts
+* await object.setRetention(fileId, {
+*   mode: RetentionMode.Compliance,
+*   retainUntilTimestamp: Date.now() + 86_400_000,
+* })
+* ```
+*/
+var RetentionMode = {
+	/** Locked: cannot be deleted or modified until `retainUntilTimestamp`, even by the account owner. */
+	Compliance: "compliance",
+	/** Locked: can be shortened by callers holding the `bypassGovernance` capability. */
+	Governance: "governance"
+};
+/**
+* Named constants for the file legal-hold status.
+*
+* @example
+* ```ts
+* await object.setLegalHold(fileId, LegalHoldValue.On)
+* ```
+*/
+var LegalHoldValue = {
+	/** Apply the legal hold. */
+	On: "on",
+	/** Remove the legal hold. */
+	Off: "off"
+};
+//#endregion
+
+
+//# sourceMappingURL=lock.js.map
+;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.3.0/node_modules/@backblaze-labs/b2-sdk/dist/util/normalize.js
 //#region src/util/normalize.ts
 /**
 * Wire-shape → SDK-shape normalization helpers.
@@ -33379,7 +33944,7 @@ function normalizeSha1(raw) {
 * substitution was needed, so callers paying for change detection
 * (e.g. React memo) see referential stability.
 *
-* @typeParam T - Any object with a `contentSha1: string | null` field.
+* @typeParam T - Any object with a `contentSha1?: string | null` field.
 *
 * @param fv - The wire-shape file-version object.
 *
@@ -33393,11 +33958,11 @@ function normalizeFileVersionSha1(fv) {
 }
 /**
 * Returns a new list-response object with `normalizeFileVersionSha1`
-* applied to every entry in `files`. Used at the `b2_list_file_names` /
-* `b2_list_file_versions` boundary so list output shares the same
-* SHA-1 semantics as the singular endpoints.
+* applied to every entry in `files`. Used at file-version and unfinished
+* large-file list boundaries so list output shares the same SHA-1 semantics
+* as the singular endpoints.
 *
-* @typeParam F - Any object with a `contentSha1: string | null` field.
+* @typeParam F - Any object with a `contentSha1?: string | null` field.
 * @typeParam R - The list-response shape (must have a `files` array of `F`).
 *
 * @param resp - The wire-shape list response.
@@ -33414,7 +33979,7 @@ function normalizeFileVersionListSha1(resp) {
 
 
 //# sourceMappingURL=normalize.js.map
-;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.2.0/node_modules/@backblaze-labs/b2-sdk/dist/streams/hash.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.3.0/node_modules/@backblaze-labs/b2-sdk/dist/streams/hash.js
 
 
 //#region src/streams/hash.ts
@@ -33629,7 +34194,7 @@ async function sha1Hex(data) {
 
 
 //# sourceMappingURL=hash.js.map
-;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.2.0/node_modules/@backblaze-labs/b2-sdk/dist/util/sha1.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.3.0/node_modules/@backblaze-labs/b2-sdk/dist/util/sha1.js
 //#region src/util/sha1.ts
 var sha1HexPattern = /^[0-9a-f]{40}$/i;
 /**
@@ -33656,7 +34221,7 @@ function normalizeVerifiableSha1(sha1) {
 
 
 //# sourceMappingURL=sha1.js.map
-;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.2.0/node_modules/@backblaze-labs/b2-sdk/dist/download/checksum.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.3.0/node_modules/@backblaze-labs/b2-sdk/dist/download/checksum.js
 
 
 
@@ -33679,10 +34244,12 @@ function normalizeVerifiableSha1(sha1) {
 * @returns A typed checksum mismatch error.
 */
 function createDownloadChecksumMismatchError(expectedSha1, actualSha1) {
+	const expected = expectedSha1.toLowerCase();
+	const actual = actualSha1.toLowerCase();
 	return new ChecksumMismatchError({
 		status: 400,
 		code: "bad_sha1_checksum",
-		message: `Downloaded content SHA-1 mismatch: expected ${expectedSha1.toLowerCase()}, got ${actualSha1.toLowerCase()}`
+		message: `Downloaded content SHA-1 mismatch: expected ${expected}, got ${actual}`
 	});
 }
 /**
@@ -33706,10 +34273,12 @@ function assertDownloadSha1(expectedSha1, actualSha1) {
 */
 function assertDownloadSha1HeaderAgreement(expectedSha1, actualSha1) {
 	if (expectedSha1 === actualSha1) return;
+	const expected = formatSha1ForMessage(expectedSha1);
+	const actual = formatSha1ForMessage(actualSha1);
 	throw new ChecksumMismatchError({
 		status: 400,
 		code: "bad_sha1_checksum",
-		message: `Downloaded content SHA-1 header mismatch: expected ${formatSha1ForMessage(expectedSha1)}, got ${formatSha1ForMessage(actualSha1)}`
+		message: `Downloaded content SHA-1 header mismatch: expected ${expected}, got ${actual}`
 	});
 }
 /**
@@ -33744,7 +34313,10 @@ function formatSha1ForMessage(sha1) {
 
 
 //# sourceMappingURL=checksum.js.map
-;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.2.0/node_modules/@backblaze-labs/b2-sdk/dist/download/single.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.3.0/node_modules/@backblaze-labs/b2-sdk/dist/download/single.js
+
+
+
 
 
 
@@ -33935,22 +34507,154 @@ function instrumentProgress(body, totalBytes, listener) {
 * @returns The parsed download metadata.
 */
 function extractDownloadHeaders(headers) {
+	const headerParseIssues = [];
 	const fileInfo = parseFileInfoHeaders(headers);
+	const clientUnauthorizedToRead = parseClientUnauthorizedToRead(headers, headerParseIssues);
+	const contentDisposition = optionalHeader(headers, DownloadHeaderName.ContentDisposition);
+	const contentLanguage = optionalHeader(headers, DownloadHeaderName.ContentLanguage);
+	const contentEncoding = optionalHeader(headers, DownloadHeaderName.ContentEncoding);
+	const cacheControl = optionalHeader(headers, DownloadHeaderName.CacheControl);
+	const expires = optionalHeader(headers, DownloadHeaderName.Expires);
+	const contentRange = optionalHeader(headers, DownloadHeaderName.ContentRange);
+	const serverSideEncryption = parseDownloadServerSideEncryption(headers, headerParseIssues);
+	const fileRetention = parseDownloadFileRetention(headers, clientUnauthorizedToRead, headerParseIssues);
+	const legalHold = parseDownloadLegalHold(headers, clientUnauthorizedToRead, headerParseIssues);
 	return {
-		contentType: headers.get("Content-Type") ?? "application/octet-stream",
-		contentLength: Number.parseInt(headers.get("Content-Length") ?? "0", 10),
-		contentSha1: normalizeSha1(headers.get("X-Bz-Content-Sha1")),
-		fileId: fileId(headers.get("X-Bz-File-Id") ?? ""),
-		fileName: decodeURIComponent(headers.get("X-Bz-File-Name") ?? ""),
+		contentType: headers.get(DownloadHeaderName.ContentType) ?? "application/octet-stream",
+		contentLength: Number.parseInt(headers.get(DownloadHeaderName.ContentLength) ?? "0", 10),
+		...contentDisposition !== void 0 ? { contentDisposition } : {},
+		...contentLanguage !== void 0 ? { contentLanguage } : {},
+		...contentEncoding !== void 0 ? { contentEncoding } : {},
+		...cacheControl !== void 0 ? { cacheControl } : {},
+		...expires !== void 0 ? { expires } : {},
+		...contentRange !== void 0 ? { contentRange } : {},
+		contentSha1: normalizeSha1(headers.get(DownloadHeaderName.ContentSha1)),
+		fileId: fileId(headers.get(DownloadHeaderName.FileId) ?? ""),
+		fileName: decodeURIComponent(headers.get(DownloadHeaderName.FileName) ?? ""),
 		fileInfo,
-		uploadTimestamp: Number.parseInt(headers.get("X-Bz-Upload-Timestamp") ?? "0", 10)
+		uploadTimestamp: Number.parseInt(headers.get(DownloadHeaderName.UploadTimestamp) ?? "0", 10),
+		...serverSideEncryption !== void 0 ? { serverSideEncryption } : {},
+		...fileRetention !== void 0 ? { fileRetention } : {},
+		...legalHold !== void 0 ? { legalHold } : {},
+		...clientUnauthorizedToRead !== void 0 ? { clientUnauthorizedToRead } : {},
+		...headerParseIssues.length > 0 ? { headerParseIssues } : {}
 	};
+}
+function optionalHeader(headers, name) {
+	return headers.get(name) ?? void 0;
+}
+function parseDownloadServerSideEncryption(headers, headerParseIssues) {
+	const managedAlgorithm = optionalHeader(headers, DownloadHeaderName.ServerSideEncryption);
+	if (managedAlgorithm !== void 0) {
+		if (managedAlgorithm !== EncryptionAlgorithm.Aes256) {
+			headerParseIssues.push({
+				headerName: DownloadHeaderName.ServerSideEncryption,
+				value: managedAlgorithm
+			});
+			return;
+		}
+		return {
+			mode: EncryptionMode.SseB2,
+			algorithm: managedAlgorithm
+		};
+	}
+	const customerAlgorithm = optionalHeader(headers, DownloadHeaderName.ServerSideEncryptionCustomerAlgorithm);
+	const customerKeyMd5 = optionalHeader(headers, DownloadHeaderName.ServerSideEncryptionCustomerKeyMd5);
+	if (customerAlgorithm === void 0 || customerKeyMd5 === void 0) return void 0;
+	if (customerAlgorithm !== EncryptionAlgorithm.Aes256) {
+		headerParseIssues.push({
+			headerName: DownloadHeaderName.ServerSideEncryptionCustomerAlgorithm,
+			value: customerAlgorithm
+		});
+		return;
+	}
+	return {
+		mode: EncryptionMode.SseC,
+		algorithm: customerAlgorithm,
+		customerKeyMd5
+	};
+}
+function parseDownloadFileRetention(headers, clientUnauthorizedToRead, headerParseIssues) {
+	if (clientUnauthorizedToRead?.includes(DownloadClientUnauthorizedToReadMarker.FileRetentionMode) === true || clientUnauthorizedToRead?.includes(DownloadClientUnauthorizedToReadMarker.FileRetentionRetainUntilTimestamp) === true) return {
+		isClientAuthorizedToRead: false,
+		value: null
+	};
+	const rawMode = optionalHeader(headers, DownloadHeaderName.FileRetentionMode);
+	const rawRetainUntilTimestamp = optionalHeader(headers, DownloadHeaderName.FileRetentionRetainUntilTimestamp);
+	if (rawMode === void 0 && rawRetainUntilTimestamp === void 0) return void 0;
+	return {
+		isClientAuthorizedToRead: true,
+		value: {
+			mode: parseRetentionMode(rawMode, headerParseIssues),
+			retainUntilTimestamp: parseRetentionTimestamp(rawRetainUntilTimestamp, headerParseIssues)
+		}
+	};
+}
+function parseRetentionMode(rawMode, headerParseIssues) {
+	if (rawMode === void 0) return null;
+	if (rawMode === RetentionMode.Compliance || rawMode === RetentionMode.Governance) return rawMode;
+	headerParseIssues.push({
+		headerName: DownloadHeaderName.FileRetentionMode,
+		value: rawMode
+	});
+	return null;
+}
+function parseRetentionTimestamp(rawTimestamp, headerParseIssues) {
+	if (rawTimestamp === void 0) return null;
+	if (!/^\d+$/.test(rawTimestamp)) {
+		headerParseIssues.push({
+			headerName: DownloadHeaderName.FileRetentionRetainUntilTimestamp,
+			value: rawTimestamp
+		});
+		return null;
+	}
+	const parsed = Number.parseInt(rawTimestamp, 10);
+	if (Number.isFinite(parsed)) return parsed;
+	headerParseIssues.push({
+		headerName: DownloadHeaderName.FileRetentionRetainUntilTimestamp,
+		value: rawTimestamp
+	});
+	return null;
+}
+function parseDownloadLegalHold(headers, clientUnauthorizedToRead, headerParseIssues) {
+	if (clientUnauthorizedToRead?.includes(DownloadClientUnauthorizedToReadMarker.FileLegalHold)) return {
+		isClientAuthorizedToRead: false,
+		value: null
+	};
+	const rawLegalHold = optionalHeader(headers, DownloadHeaderName.FileLegalHold);
+	if (rawLegalHold === void 0) return void 0;
+	if (rawLegalHold === LegalHoldValue.On || rawLegalHold === LegalHoldValue.Off) return {
+		isClientAuthorizedToRead: true,
+		value: rawLegalHold
+	};
+	headerParseIssues.push({
+		headerName: DownloadHeaderName.FileLegalHold,
+		value: rawLegalHold
+	});
+	return {
+		isClientAuthorizedToRead: true,
+		value: null
+	};
+}
+function parseClientUnauthorizedToRead(headers, headerParseIssues) {
+	const value = optionalHeader(headers, DownloadHeaderName.ClientUnauthorizedToRead);
+	if (value === void 0) return void 0;
+	const headerNames = value.split(",").map((header) => header.trim()).filter((header) => header.length > 0);
+	const knownHeaderNames = headerNames.filter(isDownloadClientUnauthorizedToReadMarker);
+	for (const headerName of headerNames) if (!isDownloadClientUnauthorizedToReadMarker(headerName)) headerParseIssues.push({
+		headerName: DownloadHeaderName.ClientUnauthorizedToRead,
+		value: headerName
+	});
+	return knownHeaderNames.length > 0 ? knownHeaderNames : void 0;
+}
+function isDownloadClientUnauthorizedToReadMarker(headerName) {
+	return Object.values(DownloadClientUnauthorizedToReadMarker).includes(headerName);
 }
 //#endregion
 
 
 //# sourceMappingURL=single.js.map
-;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.2.0/node_modules/@backblaze-labs/b2-sdk/dist/internal/upload-retry-options.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.3.0/node_modules/@backblaze-labs/b2-sdk/dist/internal/upload-retry-options.js
 //#region src/internal/upload-retry-options.ts
 /**
 * Merges client upload retry defaults with a per-call override.
@@ -33972,7 +34676,7 @@ function mergeUploadRetryOptions(defaults, override) {
 
 
 //# sourceMappingURL=upload-retry-options.js.map
-;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.2.0/node_modules/@backblaze-labs/b2-sdk/dist/streams/source.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.3.0/node_modules/@backblaze-labs/b2-sdk/dist/streams/source.js
 
 
 
@@ -34059,7 +34763,8 @@ var BlobSource = class BlobSource {
 	async toArrayBuffer(options = {}) {
 		options.signal?.throwIfAborted();
 		if (options.signal === void 0) return this.blob.arrayBuffer();
-		return arrayBufferFor(await collectStream(this.stream(), options));
+		const bytes = await collectStream(this.stream(), options);
+		return arrayBufferFor(bytes);
 	}
 };
 /** ContentSource backed by a Uint8Array buffer. */
@@ -34291,7 +34996,7 @@ function toContentSource(input, size) {
 
 
 //# sourceMappingURL=source.js.map
-;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.2.0/node_modules/@backblaze-labs/b2-sdk/dist/types/bucket.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.3.0/node_modules/@backblaze-labs/b2-sdk/dist/types/bucket.js
 //#region src/types/bucket.ts
 /**
 * Named constants for the bucket access level.
@@ -34370,383 +35075,7 @@ var BucketRetentionMode = {
 
 
 //# sourceMappingURL=bucket.js.map
-;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.2.0/node_modules/@backblaze-labs/b2-sdk/dist/types/encryption.js
-//#region src/types/encryption.ts
-/** Named constants for the supported server-side encryption algorithms. */
-var EncryptionAlgorithm = { 
-/** AES with a 256-bit key. The only algorithm B2 currently supports. */
-Aes256: "AES256" };
-/**
-* Named constants for the server-side encryption mode used by a file.
-*
-* Most callers should use the {@link SSE_B2}, {@link SSE_NONE}, and
-* {@link sseCustomer} helpers below which return complete
-* {@link EncryptionSetting} objects. These constants are useful when you
-* need the bare mode discriminator (e.g., when introspecting a file's
-* current encryption setting).
-*/
-var EncryptionMode = {
-	/** B2-managed encryption keys. */
-	SseB2: "SSE-B2",
-	/** Customer-provided encryption keys. */
-	SseC: "SSE-C",
-	/** No encryption. */
-	None: "none"
-};
-/** Pre-built SSE-B2 encryption setting using AES-256. */
-var SSE_B2 = {
-	mode: "SSE-B2",
-	algorithm: "AES256"
-};
-/** Pre-built setting indicating no server-side encryption. */
-var SSE_NONE = { mode: "none" };
-/**
-* Creates an SSE-C encryption setting with a customer-provided key.
-* @param customerKey - Base64-encoded 256-bit encryption key.
-* @param customerKeyMd5 - Base64-encoded MD5 digest of the key.
-*
-* @returns An SSE-C encryption setting ready to pass to upload or download calls.
-*/
-function sseCustomer(customerKey, customerKeyMd5) {
-	return {
-		mode: "SSE-C",
-		algorithm: "AES256",
-		customerKey,
-		customerKeyMd5
-	};
-}
-/**
-* Encodes raw bytes as base64 in an isomorphic way (Node Buffer fallback to btoa).
-*
-* @param bytes - The raw bytes to encode.
-*
-* @returns The base64-encoded string.
-*/
-function bytesToBase64(bytes) {
-	const g = globalThis;
-	if (g.Buffer) return g.Buffer.from(bytes).toString("base64");
-	let binary = "";
-	for (const b of bytes) binary += String.fromCharCode(b);
-	return btoa(binary);
-}
-/**
-* Computes the MD5 digest of the given bytes as a base64 string. Prefers
-* `node:crypto` for native speed when available; falls back to a pure-JS
-* implementation in browser / edge runtimes because WebCrypto's
-* `crypto.subtle.digest` deliberately does not support MD5.
-*
-* MD5 is used here only for SSE-C key integrity (matching the B2 wire
-* protocol). It is **not** a security boundary; the customer key itself is
-* the secret. Bundling a pure-JS fallback keeps `EncryptionKey.fromBytes`
-* isomorphic.
-*
-* @param bytes - The bytes to digest.
-*
-* @returns The base64-encoded MD5 digest.
-*/
-async function md5Base64(bytes) {
-	try {
-		const { createHash } = await Promise.resolve(/* import() */).then(__nccwpck_require__.t.bind(__nccwpck_require__, 7598, 19));
-		if (typeof createHash !== "function") throw new Error("createHash unavailable");
-		return createHash("md5").update(bytes).digest("base64");
-	} catch {
-		return bytesToBase64(md5Bytes(bytes));
-	}
-}
-/**
-* Pure-JS MD5 implementation per RFC 1321. Returns the 16-byte digest of the
-* input. Used as a browser fallback for SSE-C key MD5 computation; not
-* intended for security-sensitive purposes (MD5 is broken cryptographically).
-*
-* @param data - The bytes to hash.
-*
-* @returns The 16-byte MD5 digest.
-*/
-function md5Bytes(data) {
-	const originalBitLength = data.byteLength * 8;
-	const padLength = (data.byteLength + 8 >>> 6) + 1;
-	const padded = new Uint8Array(padLength * 64);
-	padded.set(data);
-	padded[data.byteLength] = 128;
-	const lowBits = originalBitLength >>> 0;
-	const highBits = Math.floor(originalBitLength / 4294967296) >>> 0;
-	const lengthView = new DataView(padded.buffer, padded.byteLength - 8, 8);
-	lengthView.setUint32(0, lowBits, true);
-	lengthView.setUint32(4, highBits, true);
-	const s = [
-		7,
-		12,
-		17,
-		22,
-		7,
-		12,
-		17,
-		22,
-		7,
-		12,
-		17,
-		22,
-		7,
-		12,
-		17,
-		22,
-		5,
-		9,
-		14,
-		20,
-		5,
-		9,
-		14,
-		20,
-		5,
-		9,
-		14,
-		20,
-		5,
-		9,
-		14,
-		20,
-		4,
-		11,
-		16,
-		23,
-		4,
-		11,
-		16,
-		23,
-		4,
-		11,
-		16,
-		23,
-		4,
-		11,
-		16,
-		23,
-		6,
-		10,
-		15,
-		21,
-		6,
-		10,
-		15,
-		21,
-		6,
-		10,
-		15,
-		21,
-		6,
-		10,
-		15,
-		21
-	];
-	const k = new Uint32Array([
-		3614090360,
-		3905402710,
-		606105819,
-		3250441966,
-		4118548399,
-		1200080426,
-		2821735955,
-		4249261313,
-		1770035416,
-		2336552879,
-		4294925233,
-		2304563134,
-		1804603682,
-		4254626195,
-		2792965006,
-		1236535329,
-		4129170786,
-		3225465664,
-		643717713,
-		3921069994,
-		3593408605,
-		38016083,
-		3634488961,
-		3889429448,
-		568446438,
-		3275163606,
-		4107603335,
-		1163531501,
-		2850285829,
-		4243563512,
-		1735328473,
-		2368359562,
-		4294588738,
-		2272392833,
-		1839030562,
-		4259657740,
-		2763975236,
-		1272893353,
-		4139469664,
-		3200236656,
-		681279174,
-		3936430074,
-		3572445317,
-		76029189,
-		3654602809,
-		3873151461,
-		530742520,
-		3299628645,
-		4096336452,
-		1126891415,
-		2878612391,
-		4237533241,
-		1700485571,
-		2399980690,
-		4293915773,
-		2240044497,
-		1873313359,
-		4264355552,
-		2734768916,
-		1309151649,
-		4149444226,
-		3174756917,
-		718787259,
-		3951481745
-	]);
-	let a0 = 1732584193;
-	let b0 = 4023233417;
-	let c0 = 2562383102;
-	let d0 = 271733878;
-	const m = /* @__PURE__ */ new Uint32Array(16);
-	const view = new DataView(padded.buffer);
-	for (let block = 0; block < padded.byteLength; block += 64) {
-		for (let i = 0; i < 16; i++) m[i] = view.getUint32(block + i * 4, true);
-		let A = a0;
-		let B = b0;
-		let C = c0;
-		let D = d0;
-		for (let i = 0; i < 64; i++) {
-			let f;
-			let g;
-			if (i < 16) {
-				f = B & C | ~B & D;
-				g = i;
-			} else if (i < 32) {
-				f = D & B | ~D & C;
-				g = (5 * i + 1) % 16;
-			} else if (i < 48) {
-				f = B ^ C ^ D;
-				g = (3 * i + 5) % 16;
-			} else {
-				f = C ^ (B | ~D);
-				g = 7 * i % 16;
-			}
-			const temp = D;
-			D = C;
-			C = B;
-			const sum = A + f + (k[i] ?? 0) + (m[g] ?? 0) >>> 0;
-			const shift = s[i] ?? 0;
-			const rotated = (sum << shift | sum >>> 32 - shift) >>> 0;
-			B = B + rotated >>> 0;
-			A = temp;
-		}
-		a0 = a0 + A >>> 0;
-		b0 = b0 + B >>> 0;
-		c0 = c0 + C >>> 0;
-		d0 = d0 + D >>> 0;
-	}
-	const out = /* @__PURE__ */ new Uint8Array(16);
-	const outView = new DataView(out.buffer);
-	outView.setUint32(0, a0, true);
-	outView.setUint32(4, b0, true);
-	outView.setUint32(8, c0, true);
-	outView.setUint32(12, d0, true);
-	return out;
-}
-var KEY_REDACTED = "[redacted SSE-C key]";
-/**
-* Safe wrapper around an SSE-C customer key. Hides the key bytes from
-* `JSON.stringify`, `console.log`, and Node's `util.inspect`. Use {@link EncryptionKey.fromBytes}
-* to construct one from a raw 32-byte key; the MD5 digest is computed internally.
-*/
-var EncryptionKey = class EncryptionKey {
-	/** Encryption mode discriminant. Always `'SSE-C'` for this class. */
-	mode = "SSE-C";
-	/** Encryption algorithm. B2's S3-compatible API only supports AES-256. */
-	algorithm = "AES256";
-	/** Base64-encoded 256-bit customer key. Logged as `[redacted SSE-C key]` via `toJSON` / `toString`. */
-	customerKey;
-	/** Base64-encoded MD5 digest of the customer key. Required by B2 for integrity verification. */
-	customerKeyMd5;
-	/**
-	* Internal constructor. Use {@link EncryptionKey.fromBytes} or
-	* {@link EncryptionKey.fromBase64} instead.
-	*
-	* @param customerKey - Base64-encoded 256-bit encryption key.
-	* @param customerKeyMd5 - Base64-encoded MD5 digest of the key.
-	*
-	* @internal
-	*/
-	constructor(customerKey, customerKeyMd5) {
-		this.customerKey = customerKey;
-		this.customerKeyMd5 = customerKeyMd5;
-	}
-	/**
-	* Builds an EncryptionKey from a raw 32-byte (256-bit) key. Computes the
-	* required base64 MD5 digest internally.
-	*
-	* @param rawKey - The raw 256-bit key as bytes. Must be exactly 32 bytes.
-	*
-	* @returns A safely-wrapped EncryptionKey ready for upload/download.
-	*
-	* @throws If the key is not exactly 32 bytes.
-	*/
-	static async fromBytes(rawKey) {
-		if (rawKey.byteLength !== 32) throw new Error(`SSE-C key must be exactly 32 bytes (256 bits); got ${rawKey.byteLength}.`);
-		const customerKey = bytesToBase64(rawKey);
-		const customerKeyMd5 = await md5Base64(rawKey);
-		return new EncryptionKey(customerKey, customerKeyMd5);
-	}
-	/**
-	* Builds an EncryptionKey from precomputed base64 strings. Use this in
-	* environments where MD5 must be computed externally (e.g., browsers).
-	*
-	* @param customerKey - Base64-encoded 256-bit encryption key.
-	* @param customerKeyMd5 - Base64-encoded MD5 digest of the key.
-	*
-	* @returns A safely-wrapped EncryptionKey ready for upload/download.
-	*/
-	static fromBase64(customerKey, customerKeyMd5) {
-		return new EncryptionKey(customerKey, customerKeyMd5);
-	}
-	/**
-	* Hides the key bytes from `JSON.stringify`.
-	*
-	* @returns A redacted shape: same mode and algorithm, but the key and MD5
-	*   replaced with a placeholder string.
-	*/
-	toJSON() {
-		return {
-			mode: this.mode,
-			algorithm: this.algorithm,
-			customerKey: KEY_REDACTED,
-			customerKeyMd5: KEY_REDACTED
-		};
-	}
-	/**
-	* Hides the key bytes from default `toString()`.
-	*
-	* @returns A short opaque label indicating this is an SSE-C key.
-	*/
-	toString() {
-		return `[EncryptionKey SSE-C ${KEY_REDACTED}]`;
-	}
-	/**
-	* Hides the key bytes from Node's `util.inspect` (and therefore `console.log`).
-	*
-	* @returns A short opaque label indicating this is an SSE-C key.
-	*/
-	[Symbol.for("nodejs.util.inspect.custom")]() {
-		return this.toString();
-	}
-};
-//#endregion
-
-
-//# sourceMappingURL=encryption.js.map
-;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.2.0/node_modules/@backblaze-labs/b2-sdk/dist/upload/resume.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.3.0/node_modules/@backblaze-labs/b2-sdk/dist/upload/resume.js
 
 
 
@@ -34901,6 +35230,7 @@ function candidateMetadataRejectReason(candidate, fileName, criteria) {
 	if (!recordEquals(candidateInfo.fileInfo, criteria.fileInfo)) return "file-info-mismatch";
 	if (candidateInfo.sourceSize !== void 0 && candidateInfo.sourceSize !== String(criteria.sourceSize)) return "source-size-mismatch";
 	if (candidateInfo.partSize !== void 0 && candidateInfo.partSize !== String(criteria.partSize)) return "part-size-mismatch";
+	if (criteria.customUploadTimestamp !== void 0 && candidate.uploadTimestamp !== criteria.customUploadTimestamp) return "upload-timestamp-mismatch";
 	const encryptionRejectReason = serverSideEncryptionRejectReason(candidate.serverSideEncryption, criteria.serverSideEncryption);
 	if (encryptionRejectReason !== null) return encryptionRejectReason;
 	if (!fileRetentionMatches(candidate.fileRetention, criteria.fileRetention, criteria.defaultFileRetention, criteria.defaultFileRetentionUnreadable === true, candidate.uploadTimestamp)) return "retention-mismatch";
@@ -35078,7 +35408,7 @@ function assertAdvancingPartCursor(fileId, previous, next) {
 
 
 //# sourceMappingURL=resume.js.map
-;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.2.0/node_modules/@backblaze-labs/b2-sdk/dist/upload/retry.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.3.0/node_modules/@backblaze-labs/b2-sdk/dist/upload/retry.js
 
 
 //#region src/upload/retry.ts
@@ -35200,8 +35530,10 @@ async function withFreshUploadUrlRetry(options) {
 			return result;
 		} catch (err) {
 			const retryError = normalizeUploadRetryError(err, options);
-			if (uploadEntry !== void 0) if (isUploadRateLimitError(retryError)) options.returnEntry(uploadEntry);
-			else options.evictEntry(uploadEntry);
+			if (uploadEntry !== void 0) {
+				if (isUploadRateLimitError(retryError)) options.returnEntry(uploadEntry);
+				else options.evictEntry(uploadEntry);
+			}
 			if (options.signal?.aborted) throw err;
 			if (isUploadRateLimitError(retryError) && uploadEntry !== void 0) throw retryError;
 			if (!isUploadRetryable(retryError, {
@@ -35250,7 +35582,10 @@ function normalizeUploadRetryError(err, options) {
 		return new NetworkError(err.message, err);
 	}
 	if (err instanceof DOMException && err.name === "AbortError") return err;
-	if (err instanceof TypeError || err instanceof SyntaxError || err instanceof DOMException) return new NetworkError(err instanceof Error ? err.message : "Upload response read failed", err);
+	if (err instanceof TypeError || err instanceof SyntaxError || err instanceof DOMException) {
+		const message = err instanceof Error ? err.message : "Upload response read failed";
+		return new NetworkError(message, err);
+	}
 	return err;
 }
 function isUploadUrlInvalidationError(err) {
@@ -35261,7 +35596,8 @@ function isUploadUrlInvalidationError(err) {
 
 
 //# sourceMappingURL=retry.js.map
-;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.2.0/node_modules/@backblaze-labs/b2-sdk/dist/upload/large.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.3.0/node_modules/@backblaze-labs/b2-sdk/dist/upload/large.js
+
 
 
 
@@ -35283,6 +35619,7 @@ function createResumeCandidateCriteria(options, request, totalSize, partSize, pa
 		sourceSize: totalSize,
 		partSize,
 		parts,
+		...options.customUploadTimestamp !== void 0 ? { customUploadTimestamp: options.customUploadTimestamp } : {},
 		...options.signal !== void 0 ? { signal: options.signal } : {},
 		...request.serverSideEncryption !== void 0 ? { serverSideEncryption: request.serverSideEncryption } : options.bucketDefaultServerSideEncryption !== void 0 ? { serverSideEncryption: options.bucketDefaultServerSideEncryption } : {},
 		...request.fileRetention !== void 0 ? { fileRetention: request.fileRetention } : options.bucketDefaultRetention !== void 0 ? { defaultFileRetention: options.bucketDefaultRetention } : options.bucketDefaultRetentionUnreadable === true ? { defaultFileRetentionUnreadable: true } : {},
@@ -35319,11 +35656,13 @@ async function uploadLargeFile(raw, accountInfo, options) {
 	const parts = planRanges(totalSize, partSize);
 	const fileInfo = Object.create(null);
 	if (options.fileInfo !== void 0) for (const [key, value] of Object.entries(options.fileInfo)) fileInfo[key] = value;
+	if (options.lastModifiedMillis !== void 0) fileInfo["src_last_modified_millis"] = String(options.lastModifiedMillis);
 	const startLargeFileRequest = {
 		bucketId: options.bucketId,
 		fileName: options.fileName,
 		contentType: options.contentType ?? "b2/x-auto",
 		fileInfo,
+		...options.customUploadTimestamp !== void 0 ? { customUploadTimestamp: String(options.customUploadTimestamp) } : {},
 		...options.serverSideEncryption !== void 0 ? { serverSideEncryption: options.serverSideEncryption } : {},
 		...options.fileRetention !== void 0 ? { fileRetention: options.fileRetention } : {},
 		...options.legalHold !== void 0 ? { legalHold: options.legalHold } : {}
@@ -35567,7 +35906,7 @@ function notifyResumePartReused(listener, event) {
 
 
 //# sourceMappingURL=large.js.map
-;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.2.0/node_modules/@backblaze-labs/b2-sdk/dist/upload/options.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.3.0/node_modules/@backblaze-labs/b2-sdk/dist/upload/options.js
 //#region src/upload/options.ts
 /**
 * Explicit resume targets are multipart-only and must fail closed on small uploads.
@@ -35595,7 +35934,7 @@ function stripResumeOnlyOptions(options) {
 
 
 //# sourceMappingURL=options.js.map
-;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.2.0/node_modules/@backblaze-labs/b2-sdk/dist/upload/single.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.3.0/node_modules/@backblaze-labs/b2-sdk/dist/upload/single.js
 
 
 
@@ -35646,7 +35985,8 @@ async function uploadSmallFile(raw, accountInfo, options) {
 			...options.serverSideEncryption !== void 0 ? { serverSideEncryption: options.serverSideEncryption } : {},
 			...options.fileRetention !== void 0 ? { fileRetention: options.fileRetention } : {},
 			...options.legalHold !== void 0 ? { legalHold: options.legalHold } : {},
-			...options.lastModifiedMillis !== void 0 ? { lastModifiedMillis: options.lastModifiedMillis } : {}
+			...options.lastModifiedMillis !== void 0 ? { lastModifiedMillis: options.lastModifiedMillis } : {},
+			...options.customUploadTimestamp !== void 0 ? { customUploadTimestamp: options.customUploadTimestamp } : {}
 		}, data, {
 			...options.signal !== void 0 ? { signal: options.signal } : {},
 			...options.retry !== void 0 ? { retry: options.retry } : {}
@@ -35667,7 +36007,7 @@ async function readSmallFileSource(source, signal) {
 
 
 //# sourceMappingURL=single.js.map
-;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.2.0/node_modules/@backblaze-labs/b2-sdk/dist/util/to-error.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.3.0/node_modules/@backblaze-labs/b2-sdk/dist/util/to-error.js
 //#region src/util/to-error.ts
 /**
 * Coerce an unknown caught value to a real error instance.
@@ -35689,7 +36029,7 @@ function toError(value) {
 
 
 //# sourceMappingURL=to-error.js.map
-;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.2.0/node_modules/@backblaze-labs/b2-sdk/dist/streams/collect.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.3.0/node_modules/@backblaze-labs/b2-sdk/dist/streams/collect.js
 //#region src/streams/collect.ts
 /**
 * Drain a `ReadableStream<Uint8Array>` into a single contiguous
@@ -35765,7 +36105,9 @@ function collect_abortReason(signal) {
 
 
 //# sourceMappingURL=collect.js.map
-;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.2.0/node_modules/@backblaze-labs/b2-sdk/dist/download/parallel.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.3.0/node_modules/@backblaze-labs/b2-sdk/dist/download/parallel.js
+
+
 
 
 
@@ -35799,14 +36141,26 @@ function collect_abortReason(signal) {
 * @returns A `ReadableStream` that yields file bytes in order.
 */
 function createParallelDownloadStream(raw, accountInfo, options) {
-	const rangeSize = options.rangeSize ?? 10 * 1024 * 1024;
+	const rangeSize = options.rangeSize ?? 10485760;
 	const concurrency = options.concurrency ?? 4;
 	const totalSize = options.totalSize;
+	const serverSideEncryption = options.serverSideEncryption !== void 0 ? redactSseCKeyMaterial(options.serverSideEncryption, { label: "SseCDownloadKey" }) : void 0;
 	const retryOptions = {
 		...DEFAULT_RETRY_OPTIONS,
 		maxRetries: options.maxRetries ?? 0
 	};
-	const abort = options.signal;
+	const internalAbort = new AbortController();
+	const abort = internalAbort.signal;
+	let removeCallerAbortListener;
+	if (options.signal !== void 0) {
+		if (options.signal.aborted) internalAbort.abort(options.signal.reason);
+		else {
+			const callerSignal = options.signal;
+			const abortFromCaller = () => internalAbort.abort(callerSignal.reason);
+			callerSignal.addEventListener("abort", abortFromCaller, { once: true });
+			removeCallerAbortListener = () => callerSignal.removeEventListener("abort", abortFromCaller);
+		}
+	}
 	const ranges = planRanges(totalSize, rangeSize);
 	const windowSize = concurrency * 2;
 	const inflight = /* @__PURE__ */ new Map();
@@ -35816,6 +36170,13 @@ function createParallelDownloadStream(raw, accountInfo, options) {
 	let nextToEmit = 0;
 	let expectedSha1;
 	let firstError = null;
+	function abortInflight(reason) {
+		if (!abort.aborted) internalAbort.abort(reason);
+	}
+	function cleanupCallerAbortListener() {
+		removeCallerAbortListener?.();
+		removeCallerAbortListener = void 0;
+	}
 	function scheduleNext() {
 		while (firstError === null && abort?.aborted !== true && nextToSchedule < ranges.length && inflight.size + buffer.size < windowSize) {
 			const range = ranges[nextToSchedule];
@@ -35824,10 +36185,23 @@ function createParallelDownloadStream(raw, accountInfo, options) {
 			nextToSchedule++;
 			const task = (async () => {
 				try {
-					const result = await fetchRangeWithRetry(raw, accountInfo, options.fileId, range.start, range.end, totalSize, retryOptions, abort);
+					const result = await fetchRangeWithRetry({
+						raw,
+						accountInfo,
+						fileId: options.fileId,
+						start: range.start,
+						end: range.end,
+						totalSize,
+						serverSideEncryption,
+						retryOptions,
+						signal: abort
+					});
 					buffer.set(idx, result);
 				} catch (err) {
-					if (firstError === null) firstError = err;
+					if (firstError === null) {
+						firstError = err;
+						abortInflight(err);
+					}
 				} finally {
 					inflight.delete(idx);
 				}
@@ -35841,6 +36215,7 @@ function createParallelDownloadStream(raw, accountInfo, options) {
 				abort?.throwIfAborted();
 				scheduleNext();
 			} catch (err) {
+				cleanupCallerAbortListener();
 				controller.error(err);
 			}
 		},
@@ -35850,6 +36225,7 @@ function createParallelDownloadStream(raw, accountInfo, options) {
 					abort?.throwIfAborted();
 					if (firstError !== null) throw firstError;
 					if (inflight.size === 0) {
+						cleanupCallerAbortListener();
 						controller.close();
 						return;
 					}
@@ -35871,41 +36247,42 @@ function createParallelDownloadStream(raw, accountInfo, options) {
 				scheduleNext();
 				if (nextToEmit >= ranges.length && buffer.size === 0 && inflight.size === 0 && firstError === null) {
 					if (expectedSha1 !== void 0 && expectedSha1 !== null && assembledSha1 !== null) assertDownloadSha1(expectedSha1, await assembledSha1.digest());
+					cleanupCallerAbortListener();
 					controller.close();
 				}
 			} catch (err) {
+				abortInflight(err);
+				cleanupCallerAbortListener();
 				controller.error(err);
 			}
 		},
-		cancel() {
+		cancel(reason) {
+			abortInflight(reason);
+			cleanupCallerAbortListener();
 			buffer.clear();
 		}
 	});
 }
 /**
 * Fetches a single byte range with bounded retry on transient failures.
-* @param raw - Low-level B2 API client.
-* @param accountInfo - Authorized account state.
-* @param fileId - ID of the file being downloaded.
-* @param start - Inclusive byte offset where the range begins.
-* @param end - Inclusive byte offset where the range ends.
-* @param totalSize - Expected complete file size.
-* @param retryOptions - Retry settings controlling attempts and backoff.
-* @param signal - Optional abort signal that cancels the range and any pending retry.
+* @param params - Range request parameters, retry settings, and cancellation.
 *
 * @returns The range's bytes, or throws after exhausting all retry attempts.
 */
-async function fetchRangeWithRetry(raw, accountInfo, fileId, start, end, totalSize, retryOptions, signal) {
+async function fetchRangeWithRetry(params) {
+	const { raw, accountInfo, fileId, start, end, totalSize, serverSideEncryption, retryOptions, signal } = params;
 	let lastError;
 	for (let attempt = 0; attempt <= retryOptions.maxRetries; attempt++) {
 		if (attempt > 0) {
 			const retryAfter = lastError instanceof B2Error && lastError.retryAfter !== void 0 ? lastError.retryAfter : void 0;
-			await sleep(computeBackoff(attempt - 1, retryOptions, retryAfter), signal);
+			const delay = computeBackoff(attempt - 1, retryOptions, retryAfter);
+			await sleep(delay, signal);
 		}
 		try {
 			signal?.throwIfAborted();
 			const resp = await raw.downloadFileById(accountInfo.getDownloadUrl(), accountInfo.getAuthToken(), fileId, {
 				range: byteRangeHeader(start, end),
+				...serverSideEncryption !== void 0 ? { serverSideEncryption } : {},
 				...signal !== void 0 ? { signal } : {}
 			});
 			if (resp.status < 200 || resp.status >= 300) throw await classifyDownloadResponseError(resp);
@@ -35984,7 +36361,8 @@ function hasRetryableFlag(err) {
 
 
 //# sourceMappingURL=parallel.js.map
-;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.2.0/node_modules/@backblaze-labs/b2-sdk/dist/upload/stream.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.3.0/node_modules/@backblaze-labs/b2-sdk/dist/upload/stream.js
+
 
 
 
@@ -36037,6 +36415,7 @@ function createWriteStream(raw, accountInfo, options) {
 			fileName: options.fileName,
 			contentType: options.contentType ?? "b2/x-auto",
 			fileInfo: options.fileInfo ?? {},
+			...options.customUploadTimestamp !== void 0 ? { customUploadTimestamp: String(options.customUploadTimestamp) } : {},
 			...options.serverSideEncryption !== void 0 ? { serverSideEncryption: options.serverSideEncryption } : {}
 		}, {
 			signal: abortScope.signal,
@@ -36307,7 +36686,7 @@ function waitForAbort(signal) {
 
 
 //# sourceMappingURL=stream.js.map
-;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.2.0/node_modules/@backblaze-labs/b2-sdk/dist/object.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.3.0/node_modules/@backblaze-labs/b2-sdk/dist/object.js
 
 
 
@@ -36465,7 +36844,7 @@ var B2Object = class {
 	* Creates a parallel-download ReadableStream that fetches the file in concurrent ranged chunks.
 	* @param fileId - The file version ID to download.
 	* @param totalSize - Total file size in bytes (needed to compute range boundaries).
-	* @param options - Concurrency, range size, and abort signal.
+	* @param options - Concurrency, range size, SSE-C decryption, and abort signal.
 	*
 	* @returns A Web ReadableStream of file data in sequential order.
 	*/
@@ -36563,7 +36942,7 @@ var B2Object = class {
 
 
 //# sourceMappingURL=object.js.map
-;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.2.0/node_modules/@backblaze-labs/b2-sdk/dist/bucket.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.3.0/node_modules/@backblaze-labs/b2-sdk/dist/bucket.js
 
 
 
@@ -36968,7 +37347,8 @@ var Bucket = class {
 	* @returns A summary of successes and per-target errors.
 	*/
 	async deleteMany(targets, options) {
-		const sem = new Semaphore(options?.concurrency ?? 10);
+		const concurrency = options?.concurrency ?? 10;
+		const sem = new Semaphore(concurrency);
 		const signal = options?.signal;
 		let deleted = 0;
 		const errors = [];
@@ -37351,7 +37731,7 @@ var Bucket = class {
 
 
 //# sourceMappingURL=bucket.js.map
-;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.2.0/node_modules/@backblaze-labs/b2-sdk/dist/auth/realms.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.3.0/node_modules/@backblaze-labs/b2-sdk/dist/auth/realms.js
 
 
 //#region src/auth/realms.ts
@@ -37435,7 +37815,7 @@ function getRealmUrl(realm) {
 
 
 //# sourceMappingURL=realms.js.map
-;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.2.0/node_modules/@backblaze-labs/b2-sdk/dist/http/url-guard.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.3.0/node_modules/@backblaze-labs/b2-sdk/dist/http/url-guard.js
 
 //#region src/http/url-guard.ts
 /**
@@ -37595,13 +37975,13 @@ function isInternalHostname(host) {
 
 
 //# sourceMappingURL=url-guard.js.map
-;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.2.0/node_modules/@backblaze-labs/b2-sdk/dist/_virtual/_b2-sdk-version-json.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.3.0/node_modules/@backblaze-labs/b2-sdk/dist/_virtual/_b2-sdk-version-json.js
 //#region \0b2-sdk-version-json
-var _b2_sdk_version_json_default = { "version": "0.2.0" };
+var _b2_sdk_version_json_default = { "version": "0.3.0" };
 //#endregion
 
 
-;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.2.0/node_modules/@backblaze-labs/b2-sdk/dist/version.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.3.0/node_modules/@backblaze-labs/b2-sdk/dist/version.js
 
 //#region src/version.ts
 /**
@@ -37621,7 +38001,7 @@ var VERSION = _b2_sdk_version_json_default.version;
 
 
 //# sourceMappingURL=version.js.map
-;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.2.0/node_modules/@backblaze-labs/b2-sdk/dist/http/user-agent.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.3.0/node_modules/@backblaze-labs/b2-sdk/dist/http/user-agent.js
 
 //#region src/http/user-agent.ts
 /**
@@ -37711,7 +38091,8 @@ function getUserAgent(custom) {
 
 
 //# sourceMappingURL=user-agent.js.map
-;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.2.0/node_modules/@backblaze-labs/b2-sdk/dist/http/transport.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.3.0/node_modules/@backblaze-labs/b2-sdk/dist/http/transport.js
+
 
 
 
@@ -37725,6 +38106,18 @@ var REDIRECT_STATUSES = /* @__PURE__ */ new Set([
 	308
 ]);
 var MAX_SAME_ORIGIN_REDIRECTS = 5;
+/**
+* Returns the URL guard exposed by `transport`, if it implements
+* {@link UrlGuardedTransport}.
+*
+* @param transport - Transport to inspect.
+*
+* @returns The exposed URL guard, or undefined for unguarded transports.
+*/
+function getTransportUrlGuard(transport) {
+	const candidate = transport;
+	return candidate.urlGuard instanceof UrlGuard ? candidate.urlGuard : void 0;
+}
 /**
 * Default transport implementation using the global `fetch` API.
 * Automatically sets the User-Agent header on each request and applies the
@@ -37932,17 +38325,16 @@ function createTimedResponseBody(body, timeoutScope) {
 async function raceBodyReadWithAbort(timeoutScope, read, abortCleanup) {
 	const signal = timeoutScope.signal;
 	if (signal === void 0) return read;
-	const abortReason = () => signal.reason ?? new DOMException("Aborted", "AbortError");
 	if (signal.aborted) {
 		read.catch(() => {});
-		const reason = abortReason();
+		const reason = abortReason(signal);
 		await runAbortCleanup(abortCleanup, reason);
 		throw reason;
 	}
 	let removeAbortListener;
 	const abort = new Promise((_, reject) => {
 		const onAbort = () => {
-			const reason = abortReason();
+			const reason = abortReason(signal);
 			read.catch(() => {});
 			reject(reason);
 			runAbortCleanup(abortCleanup, reason);
@@ -37991,16 +38383,38 @@ function isUploadEndpoint(url) {
 function isFinishLargeFileEndpoint(url) {
 	return b2ApiEndpointName(url) === "b2_finish_large_file";
 }
+function isAuthorizeEndpoint(url) {
+	return b2ApiEndpointName(url) === "b2_authorize_account";
+}
 function isStartLargeFileEndpoint(url) {
 	return b2ApiEndpointName(url) === "b2_start_large_file";
 }
-function b2ApiEndpointName(url) {
-	const [, root, , endpoint] = new URL(url).pathname.split("/");
-	if (root !== "b2api") return void 0;
-	return endpoint;
+function isPartnerMutationEndpoint(url) {
+	const endpoint = b2ApiEndpointName(url);
+	return endpoint === "b2_create_group_member" || endpoint === "b2_eject_group_member" || endpoint === "b2_reserve_trial_create_account";
 }
-function isReplayUnsafePostEndpoint(url) {
-	return isUploadEndpoint(url) || isStartLargeFileEndpoint(url) || isFinishLargeFileEndpoint(url);
+function isBackupMutationEndpoint(url) {
+	return backupApiEndpointName(url) === "bz_delete_computer";
+}
+function isNonIdempotentMutationRequest(request) {
+	return request.method === "POST" && (isPartnerMutationEndpoint(request.url) || isBackupMutationEndpoint(request.url));
+}
+function b2ApiEndpointName(url) {
+	const segments = new URL(url).pathname.split("/").filter((segment) => segment.length > 0);
+	const apiRootIndex = segments.lastIndexOf("b2api");
+	if (apiRootIndex === -1) return void 0;
+	return segments[apiRootIndex + 2];
+}
+function backupApiEndpointName(url) {
+	const segments = new URL(url).pathname.split("/").filter((segment) => segment.length > 0);
+	const apiRootIndex = segments.lastIndexOf("api");
+	if (apiRootIndex === -1 || segments[apiRootIndex + 1] !== "backup") return void 0;
+	if (!/^v\d+$/.test(segments[apiRootIndex + 2] ?? "")) return void 0;
+	return segments[apiRootIndex + 3];
+}
+function isReplayUnsafePostRequest(request) {
+	if (request.method !== "POST") return false;
+	return isUploadEndpoint(request.url) || isStartLargeFileEndpoint(request.url) || isFinishLargeFileEndpoint(request.url) || isNonIdempotentMutationRequest(request);
 }
 /**
 * Decide whether a classified error should be retried in place for `url`.
@@ -38009,15 +38423,17 @@ function isReplayUnsafePostEndpoint(url) {
 * upload URL only amplifies the rate limit.
 *
 * @param error - The classified, retryability-tagged error.
-* @param url - The request URL (used to detect upload endpoints).
+* @param request - The request being considered for in-place retry.
 *
 * @returns Whether to retry the request in place.
 */
-function shouldRetryInPlace(error, url) {
+function shouldRetryInPlace(error, request) {
 	if (!error.retryable) return false;
-	if (isStartLargeFileEndpoint(url) || isFinishLargeFileEndpoint(url)) return false;
-	if (isUploadEndpoint(url) && error.status === 429) return true;
-	if (isUploadEndpoint(url)) return false;
+	if (isAuthorizeEndpoint(request.url) && error instanceof ExpiredAuthTokenError) return false;
+	if (isNonIdempotentMutationRequest(request)) return false;
+	if (isStartLargeFileEndpoint(request.url) || isFinishLargeFileEndpoint(request.url)) return false;
+	if (isUploadEndpoint(request.url) && error.status === 429) return true;
+	if (isUploadEndpoint(request.url)) return false;
 	return true;
 }
 function isRequestTimeoutError(err) {
@@ -38038,6 +38454,8 @@ function isTerminalTransportError(err) {
 * retry so account-level throttling does not trigger extra upload URL fetches.
 */
 var RetryTransport = class {
+	/** URL guard from the wrapped transport, when the transport exposes one. */
+	urlGuard;
 	/** The wrapped transport that performs actual HTTP requests. */
 	inner;
 	/** Resolved retry options (defaults merged with user overrides). */
@@ -38052,6 +38470,7 @@ var RetryTransport = class {
 	*/
 	constructor(opts) {
 		this.inner = opts.transport;
+		this.urlGuard = getTransportUrlGuard(opts.transport);
 		this.options = {
 			...DEFAULT_RETRY_OPTIONS,
 			...opts.retry
@@ -38109,8 +38528,9 @@ var RetryTransport = class {
 					...retryAfterSec !== void 0 ? { retryAfter: retryAfterSec } : {},
 					...requestId !== void 0 ? { requestId } : {}
 				});
-				if (error instanceof ExpiredAuthTokenError && this.onReauth && !isUploadEndpoint(request.url) && !didReauth) {
-					const freshToken = await this.onReauth();
+				if (error instanceof ExpiredAuthTokenError && this.onReauth && !isAuthorizeEndpoint(request.url) && !isUploadEndpoint(request.url) && !isNonIdempotentMutationRequest(request) && !didReauth) {
+					const freshToken = await raceWithAbort(this.onReauth(request.signal), request.signal);
+					throwIfSignalAborted(request.signal);
 					request = {
 						...request,
 						headers: {
@@ -38122,14 +38542,14 @@ var RetryTransport = class {
 					lastError = void 0;
 					continue;
 				}
-				if (!shouldRetryInPlace(error, request.url) || attempt === retryOptions.maxRetries) throw error;
+				if (!shouldRetryInPlace(error, request) || attempt === retryOptions.maxRetries) throw error;
 				lastError = error;
 				attempt += 1;
 			} catch (err) {
 				throwIfSignalAborted(request.signal);
 				if (isTerminalTransportError(err)) throw err;
 				const networkErr = new NetworkError(err instanceof Error ? err.message : "Network error", err);
-				if (isReplayUnsafePostEndpoint(request.url) || attempt === retryOptions.maxRetries) throw networkErr;
+				if (isReplayUnsafePostRequest(request) || attempt === retryOptions.maxRetries) throw networkErr;
 				lastError = networkErr;
 				attempt += 1;
 			}
@@ -38137,12 +38557,9 @@ var RetryTransport = class {
 		throw lastError ?? new NetworkError("Max retries exceeded");
 	}
 };
-function throwIfSignalAborted(signal) {
-	if (signal?.aborted === true) throw signal.reason ?? new DOMException("Aborted", "AbortError");
-}
 async function throwIfSignalAbortedAfterResponse(signal, response) {
 	if (signal?.aborted !== true) return;
-	const reason = signal.reason ?? new DOMException("Aborted", "AbortError");
+	const reason = abortReason(signal);
 	try {
 		await response.body?.cancel(reason);
 	} catch {}
@@ -38152,7 +38569,119 @@ async function throwIfSignalAbortedAfterResponse(signal, response) {
 
 
 //# sourceMappingURL=transport.js.map
-;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.2.0/node_modules/@backblaze-labs/b2-sdk/dist/raw/index.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.3.0/node_modules/@backblaze-labs/b2-sdk/dist/raw/url.js
+//#region src/raw/url.ts
+var SLASH = "/";
+var BACKSLASH = "\\";
+var VERSION_PREFIX = "v";
+var VERSION_DIGITS = "0123456789";
+var URL_DELIMITERS = ["?", "#"];
+/**
+* Returns true when `value` is a B2 API version segment of the form `vN`.
+*
+* @param value - Candidate API version segment.
+*
+* @returns Whether the value is a valid B2 API version segment.
+*/
+function isB2ApiVersion(value) {
+	if (!value.startsWith(VERSION_PREFIX) || value.length === 1) return false;
+	for (let index = 1; index < value.length; index += 1) {
+		const digit = value[index];
+		if (digit === void 0 || !VERSION_DIGITS.includes(digit)) return false;
+	}
+	return true;
+}
+function assertB2ApiVersion(value) {
+	if (!isB2ApiVersion(value)) throw new TypeError("Invalid version: expected a B2 API version segment like \"v3\"");
+}
+function trimSlashes(value, { leading, trailing }) {
+	let start = 0;
+	let end = value.length;
+	while (leading && start < end && value[start] === SLASH) start += 1;
+	while (trailing && end > start && value[end - 1] === SLASH) end -= 1;
+	return start === 0 && end === value.length ? value : value.slice(start, end);
+}
+function hasUrlDelimiter(value) {
+	return URL_DELIMITERS.some((delimiter) => value.includes(delimiter));
+}
+function hasEncodedPathDelimiter(value) {
+	const lowerValue = value.toLowerCase();
+	return lowerValue.includes("%2f") || lowerValue.includes("%3f") || lowerValue.includes("%23") || lowerValue.includes("%5c");
+}
+function withDotEscapesDecoded(value) {
+	let decoded = "";
+	let index = 0;
+	while (index < value.length) if (value.slice(index, index + 3).toLowerCase() === "%2e") {
+		decoded += ".";
+		index += 3;
+	} else {
+		decoded += value[index];
+		index += 1;
+	}
+	return decoded;
+}
+function isTraversalComponent(value) {
+	const decoded = withDotEscapesDecoded(value);
+	return decoded === "." || decoded === "..";
+}
+function validatePathComponent(component, optionName) {
+	if (component.length === 0) throw new TypeError(`Invalid ${optionName}: path components must not be empty`);
+	if (hasUrlDelimiter(component)) throw new TypeError(`Invalid ${optionName}: path components must not contain "?" or "#"`);
+	if (component.includes(BACKSLASH)) throw new TypeError(`Invalid ${optionName}: path components must not contain "\\"`);
+	if (hasEncodedPathDelimiter(component)) throw new TypeError(`Invalid ${optionName}: path components must not contain encoded "/", "\\", "?", or "#"`);
+	if (isTraversalComponent(component)) throw new TypeError(`Invalid ${optionName}: path components must not be "." or ".."`);
+}
+function preparePathPrefix(prefix) {
+	const trimmed = trimSlashes(prefix, {
+		leading: true,
+		trailing: true
+	});
+	if (trimmed.length === 0) return "";
+	for (const component of trimmed.split(SLASH)) validatePathComponent(component, "prefix");
+	return trimmed;
+}
+function preparePathSegment(segment, optionName) {
+	const trimmed = trimSlashes(segment, {
+		leading: true,
+		trailing: true
+	});
+	if (trimmed.length === 0) return "";
+	if (trimmed.includes(SLASH)) throw new TypeError(`Invalid ${optionName}: expected a single path segment`);
+	validatePathComponent(trimmed, optionName);
+	return trimmed;
+}
+function prepareVersionSegment(version) {
+	const trimmed = preparePathSegment(version, "version");
+	assertB2ApiVersion(trimmed);
+	return trimmed;
+}
+/**
+* Builds a B2 API endpoint URL from a base URL, path prefix, optional version,
+* and endpoint name.
+*
+* @param baseUrl - API or download base URL.
+* @param options - Path prefix, optional version, and endpoint name.
+*
+* @returns The absolute endpoint URL.
+*/
+function b2Url(baseUrl, { prefix = "b2api", version, endpoint }) {
+	const base = trimSlashes(baseUrl, {
+		leading: false,
+		trailing: true
+	});
+	const path = [
+		preparePathPrefix(prefix),
+		version === void 0 ? void 0 : prepareVersionSegment(version),
+		preparePathSegment(endpoint, "endpoint")
+	].filter((segment) => segment !== void 0).filter((segment) => segment.length > 0).join(SLASH);
+	return path.length === 0 ? base : `${base}/${path}`;
+}
+//#endregion
+
+
+//# sourceMappingURL=url.js.map
+;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.3.0/node_modules/@backblaze-labs/b2-sdk/dist/raw/index.js
+
 
 
 
@@ -38169,6 +38698,14 @@ async function throwIfSignalAbortedAfterResponse(signal, response) {
 *
 * @packageDocumentation
 */
+var B2_NATIVE_API_V3 = {
+	prefix: "b2api",
+	version: "v3"
+};
+var B2_NATIVE_API_V4 = {
+	prefix: "b2api",
+	version: "v4"
+};
 function normalizeRawRequestOptions(optionsOrSignal, retry) {
 	if (optionsOrSignal === void 0) return retry === void 0 ? void 0 : { retry };
 	if (isAbortSignal(optionsOrSignal)) return {
@@ -38182,6 +38719,19 @@ function normalizeRawRequestOptions(optionsOrSignal, retry) {
 }
 function isAbortSignal(value) {
 	return typeof value === "object" && value !== null && "aborted" in value && typeof value.addEventListener === "function";
+}
+function assertCustomUploadTimestamp(value) {
+	if (value === void 0) return;
+	if (typeof value === "number" && Number.isSafeInteger(value) && value >= 0) return;
+	throw new TypeError("customUploadTimestamp must be a non-negative safe integer");
+}
+function assertRawCustomUploadTimestamp(value) {
+	if (value === void 0 || value === null) return;
+	if (typeof value === "string" && /^\d+$/.test(value)) {
+		const timestamp = Number(value);
+		if (Number.isSafeInteger(timestamp)) return;
+	}
+	throw new TypeError("customUploadTimestamp must be a non-negative safe integer string or null");
 }
 function normalizeCreateKeyRequest(request) {
 	const { bucketId, ...withoutDeprecatedBucketId } = request;
@@ -38246,7 +38796,8 @@ function normalizeAuthorizeAccountResponse(response) {
 }
 function uploadResponseBodyError(err, signal) {
 	if (signal?.aborted === true) throw signal.reason ?? new DOMException("Aborted", "AbortError");
-	return new UploadResponseBodyError(err instanceof Error ? err.message : "Upload response body could not be read", { cause: err });
+	const message = err instanceof Error ? err.message : "Upload response body could not be read";
+	return new UploadResponseBodyError(message, { cause: err });
 }
 /**
 * Low-level client providing 1:1 bindings to all B2 native API endpoints.
@@ -38276,7 +38827,10 @@ var RawClient = class {
 	async authorizeAccount(applicationKeyId, applicationKey, realmUrl = "https://api.backblazeb2.com") {
 		assertSecureRealmUrl(realmUrl);
 		return normalizeAuthorizeAccountResponse(await (await this.transport.send({
-			url: `${realmUrl}/b2api/v4/b2_authorize_account`,
+			url: b2Url(realmUrl, {
+				...B2_NATIVE_API_V4,
+				endpoint: "b2_authorize_account"
+			}),
 			method: "GET",
 			headers: { Authorization: `Basic ${btoa(`${applicationKeyId}:${applicationKey}`)}` }
 		})).json());
@@ -38359,6 +38913,10 @@ var RawClient = class {
 			...buildFileInfoHeaders(headers.fileInfo)
 		};
 		if (headers.lastModifiedMillis !== void 0) reqHeaders["X-Bz-Info-src_last_modified_millis"] = String(headers.lastModifiedMillis);
+		if (headers.customUploadTimestamp !== void 0) {
+			assertCustomUploadTimestamp(headers.customUploadTimestamp);
+			reqHeaders["X-Bz-Custom-Upload-Timestamp"] = String(headers.customUploadTimestamp);
+		}
 		if (headers.contentDisposition) reqHeaders["X-Bz-Info-b2-content-disposition"] = headers.contentDisposition;
 		if (headers.contentLanguage) reqHeaders["X-Bz-Info-b2-content-language"] = headers.contentLanguage;
 		if (headers.expires) reqHeaders["X-Bz-Info-b2-expires"] = headers.expires;
@@ -38450,7 +39008,7 @@ var RawClient = class {
 	* @returns The copied file version metadata.
 	*/
 	async copyFile(apiUrl, authToken, request, options) {
-		return normalizeFileVersionSha1(await this.postJson(apiUrl, authToken, "b2_copy_file", request, options));
+		return normalizeFileVersionSha1(await this.postJson(apiUrl, authToken, "b2_copy_file", withJsonBodyWireSseC(request), options));
 	}
 	/**
 	* Calls {@link https://www.backblaze.com/apidocs/b2-copy-part | b2_copy_part}.
@@ -38462,7 +39020,7 @@ var RawClient = class {
 	* @returns The copied part metadata.
 	*/
 	async copyPart(apiUrl, authToken, request, options) {
-		return this.postJson(apiUrl, authToken, "b2_copy_part", request, options);
+		return this.postJson(apiUrl, authToken, "b2_copy_part", withJsonBodyWireSseC(request), options);
 	}
 	/**
 	* Calls {@link https://www.backblaze.com/apidocs/b2-start-large-file | b2_start_large_file}.
@@ -38474,7 +39032,8 @@ var RawClient = class {
 	* @returns The started large file metadata with file ID.
 	*/
 	async startLargeFile(apiUrl, authToken, request, options) {
-		return this.postJson(apiUrl, authToken, "b2_start_large_file", request, options);
+		assertRawCustomUploadTimestamp(request.customUploadTimestamp);
+		return normalizeFileVersionSha1(await this.postJson(apiUrl, authToken, "b2_start_large_file", withJsonBodyWireSseC(request), options));
 	}
 	/**
 	* Implementation for both upload part URL request-control signatures.
@@ -38533,7 +39092,10 @@ var RawClient = class {
 	*/
 	async finishLargeFile(apiUrl, authToken, request, options) {
 		const response = await this.transport.send({
-			url: `${apiUrl}/b2api/v3/b2_finish_large_file`,
+			url: b2Url(apiUrl, {
+				...B2_NATIVE_API_V3,
+				endpoint: "b2_finish_large_file"
+			}),
 			method: "POST",
 			headers: {
 				Authorization: authToken,
@@ -38576,7 +39138,7 @@ var RawClient = class {
 	* @returns The list of unfinished large files and optional continuation token.
 	*/
 	async listUnfinishedLargeFiles(apiUrl, authToken, request, options) {
-		return this.postJson(apiUrl, authToken, "b2_list_unfinished_large_files", request, options);
+		return normalizeFileVersionListSha1(await this.postJson(apiUrl, authToken, "b2_list_unfinished_large_files", request, options));
 	}
 	/**
 	* Calls {@link https://www.backblaze.com/apidocs/b2-list-parts | b2_list_parts}.
@@ -38601,7 +39163,10 @@ var RawClient = class {
 	*/
 	async downloadFileById(downloadUrl, authToken, fileId, options) {
 		const headers = buildDownloadRequestHeaders(authToken, options);
-		const url = appendDownloadOverrides(`${downloadUrl}/b2api/v3/b2_download_file_by_id?fileId=${encodeURIComponent(fileId)}`, options);
+		const url = appendDownloadOverrides(`${b2Url(downloadUrl, {
+			...B2_NATIVE_API_V3,
+			endpoint: "b2_download_file_by_id"
+		})}?fileId=${encodeURIComponent(fileId)}`, options);
 		const response = await this.transport.send({
 			url,
 			method: options?.method ?? "GET",
@@ -38659,7 +39224,7 @@ var RawClient = class {
 	* @returns The newly created application key with secret.
 	*/
 	async createKey(apiUrl, authToken, request) {
-		return normalizeKeyResponse(await this.postJson(apiUrl, authToken, "b2_create_key", normalizeCreateKeyRequest(request), void 0, "v4"));
+		return normalizeKeyResponse(await this.postJson(apiUrl, authToken, "b2_create_key", normalizeCreateKeyRequest(request), void 0, B2_NATIVE_API_V4));
 	}
 	/**
 	* Calls {@link https://www.backblaze.com/apidocs/b2-list-keys | b2_list_keys}.
@@ -38670,7 +39235,7 @@ var RawClient = class {
 	* @returns The list of application keys and optional continuation token.
 	*/
 	async listKeys(apiUrl, authToken, request) {
-		const response = await this.postJson(apiUrl, authToken, "b2_list_keys", request, void 0, "v4");
+		const response = await this.postJson(apiUrl, authToken, "b2_list_keys", request, void 0, B2_NATIVE_API_V4);
 		return {
 			...response,
 			keys: response.keys.map((key) => normalizeKeyResponse(key))
@@ -38685,7 +39250,7 @@ var RawClient = class {
 	* @returns The deleted application key metadata.
 	*/
 	async deleteKey(apiUrl, authToken, request) {
-		return normalizeKeyResponse(await this.postJson(apiUrl, authToken, "b2_delete_key", request, void 0, "v4"));
+		return normalizeKeyResponse(await this.postJson(apiUrl, authToken, "b2_delete_key", request, void 0, B2_NATIVE_API_V4));
 	}
 	/**
 	* Calls {@link https://www.backblaze.com/apidocs/b2-update-file-retention | b2_update_file_retention}.
@@ -38738,13 +39303,16 @@ var RawClient = class {
 	* @param endpoint - The B2 API endpoint name.
 	* @param body - The JSON request body.
 	* @param options - Optional abort and per-request retry settings.
-	* @param apiVersion - B2 Native API version segment for this endpoint.
+	* @param urlOptions - B2 endpoint path prefix and version settings.
 	*
 	* @returns The parsed JSON response.
 	*/
-	async postJson(apiUrl, authToken, endpoint, body, options, apiVersion = "v3") {
+	async postJson(apiUrl, authToken, endpoint, body, options, urlOptions = B2_NATIVE_API_V3) {
 		return (await this.transport.send({
-			url: `${apiUrl}/b2api/${apiVersion}/${endpoint}`,
+			url: b2Url(apiUrl, {
+				...urlOptions,
+				endpoint
+			}),
 			method: "POST",
 			headers: {
 				Authorization: authToken,
@@ -38756,6 +39324,23 @@ var RawClient = class {
 		})).json();
 	}
 };
+function withJsonBodyWireSseC(request) {
+	return {
+		...request,
+		...request.serverSideEncryption !== void 0 ? { serverSideEncryption: toWireSseC(request.serverSideEncryption) } : {},
+		...request.sourceServerSideEncryption !== void 0 ? { sourceServerSideEncryption: toWireSseC(request.sourceServerSideEncryption) } : {},
+		...request.destinationServerSideEncryption !== void 0 ? { destinationServerSideEncryption: toWireSseC(request.destinationServerSideEncryption) } : {}
+	};
+}
+function toWireSseC(setting) {
+	if (setting.mode !== EncryptionMode.SseC) return setting;
+	return {
+		mode: EncryptionMode.SseC,
+		algorithm: setting.algorithm,
+		customerKey: setting.customerKey,
+		customerKeyMd5: setting.customerKeyMd5
+	};
+}
 /**
 * Applies server-side encryption headers to the request.
 * @param headers - The mutable headers object to populate.
@@ -38790,10 +39375,15 @@ var DOWNLOAD_OVERRIDE_PARAMS = [
 function buildDownloadRequestHeaders(authToken, options) {
 	const headers = { Authorization: authToken };
 	if (options?.range) headers["Range"] = options.range;
-	if (options?.serverSideEncryption) applyEncryptionHeaders(headers, {
-		mode: EncryptionMode.SseC,
-		...options.serverSideEncryption
-	});
+	if (options?.serverSideEncryption) {
+		const encryption = options.serverSideEncryption;
+		applyEncryptionHeaders(headers, {
+			mode: EncryptionMode.SseC,
+			algorithm: encryption.algorithm,
+			customerKey: encryption.customerKey,
+			customerKeyMd5: encryption.customerKeyMd5
+		});
+	}
 	return headers;
 }
 /**
@@ -38839,7 +39429,7 @@ function applyLegalHoldHeader(headers, legalHold) {
 
 
 //# sourceMappingURL=index.js.map
-;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.2.0/node_modules/@backblaze-labs/b2-sdk/dist/client.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.3.0/node_modules/@backblaze-labs/b2-sdk/dist/client.js
 
 
 
@@ -40469,7 +41059,7 @@ async function hasVisibleUploadAfter(bucket, prefix, startFileName) {
     return false;
 }
 
-;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.2.0/node_modules/@backblaze-labs/b2-sdk/dist/s3/index.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.3.0/node_modules/@backblaze-labs/b2-sdk/dist/s3/index.js
 
 
 
@@ -41064,9 +41654,9 @@ async function retentionCommand(bucket, inputs) {
     }
 }
 
-;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.2.0/node_modules/@backblaze-labs/b2-sdk/dist/streams/file-source.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.3.0/node_modules/@backblaze-labs/b2-sdk/dist/streams/file-source.js
 //#region src/streams/file-source.ts
-var FILE_STREAM_CHUNK_SIZE = 16 * 1024 * 1024;
+var FILE_STREAM_CHUNK_SIZE = 16777216;
 var FILE_SOURCE_INTERNAL = Symbol("FileSource.internal");
 /** @internal */
 var fileSourceTestHooks = {};
@@ -41351,7 +41941,7 @@ function constructFileSourceFromIdentity(path, identity) {
 
 
 //# sourceMappingURL=file-source.js.map
-;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.2.0/node_modules/@backblaze-labs/b2-sdk/dist/sync/actions/index.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.3.0/node_modules/@backblaze-labs/b2-sdk/dist/sync/actions/index.js
 //#region src/sync/actions/index.ts
 /** Uploads a local file to B2. */
 var UploadAction = class {
@@ -41589,7 +42179,7 @@ var SkipAction = class {
 
 
 //# sourceMappingURL=index.js.map
-;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.2.0/node_modules/@backblaze-labs/b2-sdk/dist/sync/regexp-safety.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.3.0/node_modules/@backblaze-labs/b2-sdk/dist/sync/regexp-safety.js
 //#region src/sync/regexp-safety.ts
 var MAX_REGEXP_SOURCE_LENGTH = 512;
 var MAX_REGEXP_INPUT_LENGTH = 1024;
@@ -41780,7 +42370,7 @@ function parseQuantifier(source, index) {
 
 
 //# sourceMappingURL=regexp-safety.js.map
-;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.2.0/node_modules/@backblaze-labs/b2-sdk/dist/sync/scan-events.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.3.0/node_modules/@backblaze-labs/b2-sdk/dist/sync/scan-events.js
 //#region src/sync/scan-events.ts
 /**
 * Emits a scanner skip event without letting observer failures abort the scan.
@@ -41813,7 +42403,7 @@ function regexpInputTooLongSkip(relativePath) {
 
 
 //# sourceMappingURL=scan-events.js.map
-;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.2.0/node_modules/@backblaze-labs/b2-sdk/dist/sync/filters.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.3.0/node_modules/@backblaze-labs/b2-sdk/dist/sync/filters.js
 
 
 //#region src/sync/filters.ts
@@ -42027,7 +42617,7 @@ function normalizePath(path) {
 
 
 //# sourceMappingURL=filters.js.map
-;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.2.0/node_modules/@backblaze-labs/b2-sdk/dist/sync/path-order.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.3.0/node_modules/@backblaze-labs/b2-sdk/dist/sync/path-order.js
 //#region src/sync/path-order.ts
 /**
 * Compares sync-relative paths using the same code-unit order everywhere sorted scans are consumed.
@@ -42057,7 +42647,7 @@ function compareCodeUnits(left, right) {
 
 
 //# sourceMappingURL=path-order.js.map
-;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.2.0/node_modules/@backblaze-labs/b2-sdk/dist/sync/scan-limit.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.3.0/node_modules/@backblaze-labs/b2-sdk/dist/sync/scan-limit.js
 //#region src/sync/scan-limit.ts
 /** Default maximum number of entries a sync scanner may retain before failing. */
 var DEFAULT_MAX_SCAN_ENTRIES = 1e6;
@@ -42089,7 +42679,7 @@ function assertScanEntryLimit(count, limit) {
 
 
 //# sourceMappingURL=scan-limit.js.map
-;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.2.0/node_modules/@backblaze-labs/b2-sdk/dist/sync/pairing.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.3.0/node_modules/@backblaze-labs/b2-sdk/dist/sync/pairing.js
 
 
 
@@ -42210,7 +42800,7 @@ function frozenPatterns(patterns) {
 
 
 //# sourceMappingURL=pairing.js.map
-;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.2.0/node_modules/@backblaze-labs/b2-sdk/dist/util/error-reason.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.3.0/node_modules/@backblaze-labs/b2-sdk/dist/util/error-reason.js
 
 //#region src/util/error-reason.ts
 /**
@@ -42252,7 +42842,7 @@ function cleanReason(value) {
 
 
 //# sourceMappingURL=error-reason.js.map
-;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.2.0/node_modules/@backblaze-labs/b2-sdk/dist/sync/sha1-options.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.3.0/node_modules/@backblaze-labs/b2-sdk/dist/sync/sha1-options.js
 //#region src/sync/sha1-options.ts
 /** Default idle/no-progress timeout for SHA-1 reads. */
 var DEFAULT_SHA1_IDLE_TIMEOUT_MILLIS = 3e4;
@@ -42274,7 +42864,7 @@ function normalizeSha1TimeoutMillis(value, defaultValue = DEFAULT_SHA1_IDLE_TIME
 
 
 //# sourceMappingURL=sha1-options.js.map
-;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.2.0/node_modules/@backblaze-labs/b2-sdk/dist/sync/local-file-identity.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.3.0/node_modules/@backblaze-labs/b2-sdk/dist/sync/local-file-identity.js
 //#region src/sync/local-file-identity.ts
 /**
 * Converts Node file stats into the sync scanner's persisted identity shape.
@@ -42335,8 +42925,7 @@ function currentPlatform() {
 
 
 //# sourceMappingURL=local-file-identity.js.map
-;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.2.0/node_modules/@backblaze-labs/b2-sdk/dist/sync/local-sha1.js
-
+;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.3.0/node_modules/@backblaze-labs/b2-sdk/dist/sync/local-sha1.js
 
 
 
@@ -42351,16 +42940,6 @@ function currentPlatform() {
 */
 function formatHashError(error) {
 	return sanitizeErrorReason(error);
-}
-/**
-* Returns whether an error represents an abort.
-*
-* @param err - Unknown thrown value.
-*
-* @returns True for AbortError values.
-*/
-function local_sha1_isAbortError(err) {
-	return toError(err).name === "AbortError";
 }
 /**
 * Reads a local file and computes its SHA-1 digest with non-regular-file rejection,
@@ -42387,10 +42966,13 @@ async function readLocalSha1File(path, signal, options = {}) {
 	}
 	try {
 		signal?.throwIfAborted();
-		assertSameScannedRegularFile(await withTimeout(lstat(path.absolutePath), timeoutMillis, "sha1 file status"), path, "sha1 comparison");
+		const preOpenStat = await withTimeout(lstat(path.absolutePath), timeoutMillis, "sha1 file status");
+		assertSameScannedRegularFile(preOpenStat, path, "sha1 comparison");
 		file = await openWithTimeout(open(path.absolutePath, flags), timeoutMillis);
-		assertSameScannedRegularFile(await withTimeout(lstat(path.absolutePath), timeoutMillis, "sha1 file status"), path, "sha1 comparison");
-		assertSameScannedRegularFile(await withTimeout(file.stat(), timeoutMillis, "sha1 file status"), path, "sha1 comparison");
+		const postOpenStat = await withTimeout(lstat(path.absolutePath), timeoutMillis, "sha1 file status");
+		assertSameScannedRegularFile(postOpenStat, path, "sha1 comparison");
+		const stat = await withTimeout(file.stat(), timeoutMillis, "sha1 file status");
+		assertSameScannedRegularFile(stat, path, "sha1 comparison");
 		stream = file.createReadStream({
 			...path.size > 0 ? {
 				start: 0,
@@ -42453,7 +43035,7 @@ async function openWithTimeout(promise, timeoutMillis) {
 
 
 //# sourceMappingURL=local-sha1.js.map
-;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.2.0/node_modules/@backblaze-labs/b2-sdk/dist/sync/sha1-metadata.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.3.0/node_modules/@backblaze-labs/b2-sdk/dist/sync/sha1-metadata.js
 
 //#region src/sync/sha1-metadata.ts
 /** Prefix used to mark SHA-1 metadata that must not prove equality without byte verification. */
@@ -42543,7 +43125,8 @@ function syncSha1StateOf(path) {
 
 
 //# sourceMappingURL=sha1-metadata.js.map
-;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.2.0/node_modules/@backblaze-labs/b2-sdk/dist/sync/policies/compare.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.3.0/node_modules/@backblaze-labs/b2-sdk/dist/sync/policies/compare.js
+
 
 
 
@@ -42655,7 +43238,8 @@ async function preparePairsForCompare(pairs, compareMode, options = {}) {
 		originalPair: pair,
 		prepared: readyComparePair(pair)
 	}));
-	return mapConcurrent(pairs, normalizeConcurrency(options.concurrency), async (pair) => {
+	const concurrency = normalizeConcurrency(options.concurrency);
+	return mapConcurrent(pairs, concurrency, async (pair) => {
 		if (options.signal?.aborted) return {
 			originalPair: pair,
 			prepared: aborted(pair)
@@ -42720,7 +43304,7 @@ async function prepareLocalPathSha1(path, options) {
 			aborted: false
 		};
 	} catch (err) {
-		if (options.signal?.aborted || local_sha1_isAbortError(err)) return {
+		if (isSignalAbortError(options.signal, err)) return {
 			path,
 			bytesHashed: 0,
 			bytesVerified: 0,
@@ -42797,7 +43381,7 @@ async function prepareB2PathSha1(path, options) {
 			aborted: false
 		};
 	} catch (err) {
-		if (options.signal?.aborted || local_sha1_isAbortError(err)) return {
+		if (isSignalAbortError(options.signal, err)) return {
 			path,
 			bytesHashed: 0,
 			bytesVerified: 0,
@@ -42932,7 +43516,7 @@ function normalizeConcurrency(value) {
 
 
 //# sourceMappingURL=compare.js.map
-;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.2.0/node_modules/@backblaze-labs/b2-sdk/dist/sync/policies/index.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.3.0/node_modules/@backblaze-labs/b2-sdk/dist/sync/policies/index.js
 
 
 //#region src/sync/policies/index.ts
@@ -42968,9 +43552,7 @@ function* actionsForSourceOnly(source, direction, factory) {
 		case "b2-to-local":
 			yield factory.download(source, null);
 			break;
-		case "b2-to-b2":
-			yield factory.copy(source, source.relativePath);
-			break;
+		case "b2-to-b2": yield factory.copy(source, source.relativePath);
 	}
 }
 function* actionsForDestOnly(dest, direction, keepMode, keepDays, nowMillis, factory) {
@@ -42979,7 +43561,7 @@ function* actionsForDestOnly(dest, direction, keepMode, keepDays, nowMillis, fac
 		return;
 	}
 	if (keepMode === "keep-days") {
-		const ageDays = (nowMillis - dest.modTimeMillis) / (1440 * 60 * 1e3);
+		const ageDays = (nowMillis - dest.modTimeMillis) / 864e5;
 		if (ageDays < keepDays) {
 			yield new SkipAction(dest.relativePath, `not in source, keeping for ${Math.ceil(keepDays - ageDays)} more days`);
 			return;
@@ -42992,9 +43574,7 @@ function* actionsForDestOnly(dest, direction, keepMode, keepDays, nowMillis, fac
 		case "b2-to-local":
 			yield factory.deleteLocal(dest);
 			break;
-		case "b2-to-b2":
-			yield factory.removeOrphan(dest);
-			break;
+		case "b2-to-b2": yield factory.removeOrphan(dest);
 	}
 }
 function* actionsForBoth(source, dest, direction, compareMode, compareThreshold, factory) {
@@ -43009,16 +43589,14 @@ function* actionsForBoth(source, dest, direction, compareMode, compareThreshold,
 		case "b2-to-local":
 			yield factory.download(source, dest);
 			break;
-		case "b2-to-b2":
-			yield factory.copyB2Path?.(source, dest) ?? factory.copy(source, dest.relativePath);
-			break;
+		case "b2-to-b2": yield factory.copyB2Path?.(source, dest) ?? factory.copy(source, dest.relativePath);
 	}
 }
 //#endregion
 
 
 //# sourceMappingURL=index.js.map
-;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.2.0/node_modules/@backblaze-labs/b2-sdk/dist/sync/path-safety.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.3.0/node_modules/@backblaze-labs/b2-sdk/dist/sync/path-safety.js
 //#region src/sync/path-safety.ts
 var RESERVED_SYNC_TEMP_FILE_RE = /^\.b2sdk-[0-9a-f]{24}-[^/\\]+-[0-9a-f]{32}\.partial$/i;
 var UUID_HEX_RE = /^[0-9a-f]{32}$/i;
@@ -43124,7 +43702,7 @@ function hasErrorCode(err, code) {
 
 
 //# sourceMappingURL=path-safety.js.map
-;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.2.0/node_modules/@backblaze-labs/b2-sdk/dist/sync/download-staging.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.3.0/node_modules/@backblaze-labs/b2-sdk/dist/sync/download-staging.js
 
 //#region src/sync/download-staging.ts
 /** @internal */
@@ -43133,7 +43711,7 @@ var DOWNLOAD_STAGING_DIRECTORY_NAME = ".b2sdk-download-staging";
 var DOWNLOAD_STAGING_MARKER_NAME = ".b2sdk-staging-marker.partial";
 var CANONICAL_DOWNLOAD_STAGING_DIRECTORY_NAME = canonicalLocalFilesystemSegment(DOWNLOAD_STAGING_DIRECTORY_NAME);
 var DOWNLOAD_STAGING_ENTRY_SUFFIX = ".download";
-var STALE_DOWNLOAD_STAGING_AGE_MS = 1440 * 60 * 1e3;
+var STALE_DOWNLOAD_STAGING_AGE_MS = 864e5;
 var MAX_STAGING_CLEANUP_CONCURRENCY = 8;
 var MAX_CLEANUP_WARNING_ENTRIES = 3;
 /** @internal */
@@ -43158,12 +43736,13 @@ function isDownloadStagingDirectorySegment(segment) {
 * @param randomUUID - UUID provider used to create unique staging entries.
 * @param statForDeviceCheck - Stat function used to verify filesystem devices.
 * @param beforeStagingMarkerWrite - Test hook called before marker creation.
+* @param activityEntryLimit - Maximum entry count inspected for stale staging activity.
 *
 * @returns The resolved staging directory path.
 *
 * @internal
 */
-async function createDownloadStagingDirectory(rootRealPath, path, randomUUID, statForDeviceCheck, beforeStagingMarkerWrite) {
+async function createDownloadStagingDirectory(rootRealPath, path, randomUUID, statForDeviceCheck, beforeStagingMarkerWrite, activityEntryLimit = DOWNLOAD_STAGING_ACTIVITY_ENTRY_LIMIT) {
 	const { chmod, lstat, mkdir, readdir, realpath, rm } = await Promise.resolve(/* import() */).then(__nccwpck_require__.t.bind(__nccwpck_require__, 1455, 19));
 	const managedDirectory = path.join(rootRealPath, DOWNLOAD_STAGING_DIRECTORY_NAME);
 	try {
@@ -43182,7 +43761,7 @@ async function createDownloadStagingDirectory(rootRealPath, path, randomUUID, st
 	await writeStagingMarker(realManagedDirectory, path);
 	/* v8 ignore next -- best-effort chmod */
 	await chmod(realManagedDirectory, PRIVATE_DOWNLOAD_DIRECTORY_MODE).catch(() => {});
-	await reapStaleDownloadStagingDirectoriesOnce(realManagedDirectory, path, Date.now());
+	await reapStaleDownloadStagingDirectoriesOnce(realManagedDirectory, path, Date.now(), activityEntryLimit);
 	const stagingDirectory = path.join(realManagedDirectory, `${Date.now()}-${randomUUID()}${DOWNLOAD_STAGING_ENTRY_SUFFIX}`);
 	await mkdir(stagingDirectory, { mode: PRIVATE_DOWNLOAD_DIRECTORY_MODE });
 	/* v8 ignore next -- best-effort chmod */
@@ -43268,19 +43847,19 @@ async function assertDownloadPathSameDevice(rootRealPath, candidateRealPath, sta
 	const [rootStats, candidateStats] = await Promise.all([statForDeviceCheck(rootRealPath), statForDeviceCheck(candidateRealPath)]);
 	if (rootStats.dev !== candidateStats.dev) throw new Error(message);
 }
-async function reapStaleDownloadStagingDirectoriesOnce(managedDirectory, path, nowMillis) {
+async function reapStaleDownloadStagingDirectoriesOnce(managedDirectory, path, nowMillis, activityEntryLimit) {
 	const previous = reapedManagedDirectories.get(managedDirectory);
 	if (previous !== void 0) {
 		await previous;
 		return;
 	}
-	const next = reapStaleDownloadStagingDirectories(managedDirectory, path, nowMillis).finally(() => {
+	const next = reapStaleDownloadStagingDirectories(managedDirectory, path, nowMillis, activityEntryLimit).finally(() => {
 		if (reapedManagedDirectories.get(managedDirectory) === next) reapedManagedDirectories.delete(managedDirectory);
 	});
 	reapedManagedDirectories.set(managedDirectory, next);
 	await next;
 }
-async function reapStaleDownloadStagingDirectories(managedDirectory, path, nowMillis) {
+async function reapStaleDownloadStagingDirectories(managedDirectory, path, nowMillis, activityEntryLimit) {
 	const { readdir, realpath, rm } = await Promise.resolve(/* import() */).then(__nccwpck_require__.t.bind(__nccwpck_require__, 1455, 19));
 	let entries;
 	try {
@@ -43294,7 +43873,7 @@ async function reapStaleDownloadStagingDirectories(managedDirectory, path, nowMi
 	await forEachWithConcurrency(entries, MAX_STAGING_CLEANUP_CONCURRENCY, async (entry) => {
 		if (!entry.isDirectory() || !entry.name.endsWith(DOWNLOAD_STAGING_ENTRY_SUFFIX)) return;
 		const candidate = path.join(managedDirectory, entry.name);
-		const activity = await readManagedStagingEntryActivity(candidate, path);
+		const activity = await readManagedStagingEntryActivity(candidate, path, activityEntryLimit);
 		if (activity === void 0 || !stagingActivityIsStale(activity, nowMillis)) return;
 		const realCandidate = await realpath(candidate).catch(() => {
 			cleanupErrors.push({
@@ -43305,7 +43884,7 @@ async function reapStaleDownloadStagingDirectories(managedDirectory, path, nowMi
 		if (realCandidate === void 0) return;
 		try {
 			assertPathInsideRoot(managedDirectory, realCandidate, path);
-			const latestActivity = await readManagedStagingEntryActivity(candidate, path);
+			const latestActivity = await readManagedStagingEntryActivity(candidate, path, activityEntryLimit);
 			if (latestActivity === void 0 || latestActivity.signature !== activity.signature || !stagingActivityIsStale(latestActivity, nowMillis)) return;
 			await rm(realCandidate, {
 				recursive: true,
@@ -43323,13 +43902,13 @@ async function reapStaleDownloadStagingDirectories(managedDirectory, path, nowMi
 		emitCleanupWarning(`failed to reap ${cleanupErrors.length} stale B2 SDK download staging ${noun}: ${cleanupErrors.slice(0, MAX_CLEANUP_WARNING_ENTRIES).map(formatCleanupWarning).join("; ")}`);
 	}
 }
-async function readManagedStagingEntryActivity(candidate, path) {
+async function readManagedStagingEntryActivity(candidate, path, activityEntryLimit) {
 	const { lstat, readdir } = await Promise.resolve(/* import() */).then(__nccwpck_require__.t.bind(__nccwpck_require__, 1455, 19));
 	try {
 		const [directoryStats, markerStats] = await Promise.all([lstat(candidate), lstat(path.join(candidate, DOWNLOAD_STAGING_MARKER_NAME))]);
 		if (!directoryStats.isDirectory() || !markerStats.isFile()) return void 0;
 		const entries = await readdir(candidate, { withFileTypes: true });
-		if (entries.length > 1024) return void 0;
+		if (entries.length > activityEntryLimit) return void 0;
 		const statsParts = [`.:${stagingStatsSignature(directoryStats)}`, `${DOWNLOAD_STAGING_MARKER_NAME}:${stagingStatsSignature(markerStats)}`];
 		let newestActivityMs = Math.max(stagingStatsActivityMs(directoryStats), stagingStatsActivityMs(markerStats));
 		for (const entry of [...entries].sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0)) {
@@ -43384,7 +43963,7 @@ function emitCleanupWarning(message) {
 
 
 //# sourceMappingURL=download-staging.js.map
-;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.2.0/node_modules/@backblaze-labs/b2-sdk/dist/sync/prefix.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.3.0/node_modules/@backblaze-labs/b2-sdk/dist/sync/prefix.js
 
 //#region src/sync/prefix.ts
 /**
@@ -43477,7 +44056,7 @@ function stripSingleLeadingSlash(path) {
 
 
 //# sourceMappingURL=prefix.js.map
-;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.2.0/node_modules/@backblaze-labs/b2-sdk/dist/sync/filesystem-errors.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.3.0/node_modules/@backblaze-labs/b2-sdk/dist/sync/filesystem-errors.js
 
 //#region src/sync/filesystem-errors.ts
 /**
@@ -43510,7 +44089,7 @@ function cleanFilesystemErrorPart(value) {
 
 
 //# sourceMappingURL=filesystem-errors.js.map
-;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.2.0/node_modules/@backblaze-labs/b2-sdk/dist/sync/local-filesystem-root.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.3.0/node_modules/@backblaze-labs/b2-sdk/dist/sync/local-filesystem-root.js
 //#region src/sync/local-filesystem-root.ts
 var localFilesystemRoots = /* @__PURE__ */ new WeakSet();
 /**
@@ -43537,7 +44116,8 @@ function isLocalFilesystemRoot(folder) {
 
 
 //# sourceMappingURL=local-filesystem-root.js.map
-;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.2.0/node_modules/@backblaze-labs/b2-sdk/dist/sync/b2-sha1-reader.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.3.0/node_modules/@backblaze-labs/b2-sdk/dist/sync/b2-sha1-reader.js
+
 
 
 //#region src/sync/b2-sha1-reader.ts
@@ -43566,7 +44146,7 @@ async function readStreamChunkWithTimeout(reader, timeoutMillis, stalledMessage,
 	}
 }
 async function readRawStreamChunkWithTimeout(reader, timeoutMillis, stalledMessage, signal) {
-	signal?.throwIfAborted();
+	throwIfSignalAborted(signal);
 	let timeout;
 	let removeAbortListener;
 	const readPromise = reader.read();
@@ -43576,9 +44156,12 @@ async function readRawStreamChunkWithTimeout(reader, timeoutMillis, stalledMessa
 		}, timeoutMillis);
 	});
 	const abortPromise = signal === void 0 ? void 0 : new Promise((_, reject) => {
-		const onAbort = () => reject(signal.reason ?? /* @__PURE__ */ new Error("aborted"));
+		const onAbort = () => {
+			reject(abortReason(signal));
+		};
 		signal.addEventListener("abort", onAbort, { once: true });
 		removeAbortListener = () => signal.removeEventListener("abort", onAbort);
+		if (signal.aborted) onAbort();
 	});
 	try {
 		if (timeoutPromise === void 0 && abortPromise === void 0) return await readPromise;
@@ -43683,7 +44266,7 @@ function normalizeSha1VerificationMaxBytes(contentLength, ceiling) {
 
 
 //# sourceMappingURL=b2-sha1-reader.js.map
-;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.2.0/node_modules/@backblaze-labs/b2-sdk/dist/sync/local-file-io.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.3.0/node_modules/@backblaze-labs/b2-sdk/dist/sync/local-file-io.js
 
 
 
@@ -43711,7 +44294,8 @@ async function openValidatedScannedLocalFile(path) {
 		throw new Error(`local file changed before upload: could not open scanned file: ${sanitizeErrorReason(err)}`);
 	});
 	try {
-		assertSameScannedRegularFile(await handle.stat(), path, "upload", { platform: localFileIoTestHooks.platform });
+		const stats = await handle.stat();
+		assertSameScannedRegularFile(stats, path, "upload", { platform: localFileIoTestHooks.platform });
 		return handle;
 	} catch (err) {
 		await handle.close().catch(() => {});
@@ -43785,7 +44369,7 @@ async function writeLocalStreamInsideRoot(root, relPath, body, options) {
 	}
 	let stagingDirectory;
 	try {
-		stagingDirectory = await createDownloadStagingDirectory(rootRealPath, path, randomUUID, statForDeviceCheck, localFileIoTestHooks.beforeStagingMarkerWrite);
+		stagingDirectory = await createDownloadStagingDirectory(rootRealPath, path, randomUUID, statForDeviceCheck, localFileIoTestHooks.beforeStagingMarkerWrite, localFileIoTestHooks.downloadStagingActivityEntryLimit);
 	} catch (err) {
 		/* v8 ignore next -- best-effort close during setup failure */
 		await parentHandle?.close().catch(() => {});
@@ -43843,7 +44427,8 @@ async function writeLocalStreamInsideRoot(root, relPath, body, options) {
 		await writeHandle.close();
 		handle = void 0;
 		const [parentRealPathBeforeRename, parentStatsBeforeRename] = await Promise.all([realpath(path.dirname(destPath)), stat(path.dirname(destPath))]);
-		assertPathInsideRoot(rootRealPath, path.join(parentRealPathBeforeRename, path.basename(destPath)), path);
+		const finalPathBeforeRename = path.join(parentRealPathBeforeRename, path.basename(destPath));
+		assertPathInsideRoot(rootRealPath, finalPathBeforeRename, path);
 		await localFileIoTestHooks.beforeFinalRename?.(parentRealPathBeforeRename);
 		let publishPath = finalWritePath;
 		if (anchoredParentPath === void 0) {
@@ -43920,7 +44505,8 @@ async function publishDownload(lstat, link, path, randomUUID, rename, rm, tmpPat
 			if (hasErrorCode(err, "ENOENT")) throw new Error("local file changed before download: file missing");
 			throw err;
 		}
-		assertSameScannedRegularFile(await lstat(backupPath), {
+		const backupStats = await lstat(backupPath);
+		assertSameScannedRegularFile(backupStats, {
 			...expectedDestination,
 			absolutePath: backupPath
 		}, "download", {
@@ -44008,7 +44594,8 @@ async function deleteLocalFileInsideRoot(root, scannedPath) {
 	/* v8 ignore stop */
 	try {
 		const unlinkPath = anchoredParentPath === void 0 ? finalPath : path.join(anchoredParentPath, path.basename(expectedPath));
-		assertSameScannedRegularFile(await lstat(unlinkPath), {
+		const stats = await lstat(unlinkPath);
+		assertSameScannedRegularFile(stats, {
 			...scannedPath,
 			absolutePath: unlinkPath
 		}, "delete", { platform: localFileIoTestHooks.platform });
@@ -44018,7 +44605,8 @@ async function deleteLocalFileInsideRoot(root, scannedPath) {
 			const [parentRealPathBeforeUnlink, parentStatsBeforeUnlink] = await Promise.all([realpath(path.dirname(expectedPath)), stat(path.dirname(expectedPath))]);
 			if (parentRealPathBeforeUnlink !== parentRealPath || !sameParentIdentity(parentStatsBeforeUnlink, parentStats)) throw new Error("unsafe local delete path: parent changed before unlink");
 		}
-		assertSameScannedRegularFile(await lstat(unlinkPath), {
+		const finalStats = await lstat(unlinkPath);
+		assertSameScannedRegularFile(finalStats, {
 			...scannedPath,
 			absolutePath: unlinkPath
 		}, "delete", { platform: localFileIoTestHooks.platform });
@@ -44044,7 +44632,7 @@ async function writeAll(handle, data, position) {
 
 
 //# sourceMappingURL=local-file-io.js.map
-;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.2.0/node_modules/@backblaze-labs/b2-sdk/dist/sync/synchronizer.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.3.0/node_modules/@backblaze-labs/b2-sdk/dist/sync/synchronizer.js
 
 
 
@@ -44375,10 +44963,11 @@ function createB2Sha1Reader(config) {
 			if (maxBytes < expectedBytes) throw new Error(`sha1 B2 verification skipped because contentLength ${expectedBytes} exceeds ${maxBytes} byte verification budget`);
 			const serverSideEncryption = toSseCDownloadKey(config.options.encryptionProvider?.getSettingForDownload(path.selectedVersion));
 			const fileName = validateB2SyncPathInAnyPrefix(readablePrefixes, path, "read");
-			const verified = await hashReadableStreamSha1((await bucket.file(fileName).downloadById(path.selectedVersion.fileId, {
+			const result = await bucket.file(fileName).downloadById(path.selectedVersion.fileId, {
 				...serverSideEncryption !== void 0 ? { serverSideEncryption } : {},
 				signal: deadlineSignal
-			})).body, deadlineSignal, {
+			});
+			const verified = await hashReadableStreamSha1(result.body, deadlineSignal, {
 				idleTimeoutMillis,
 				maxBytes,
 				expectedBytes
@@ -44832,7 +45421,7 @@ function isNotFoundError(error) {
 
 
 //# sourceMappingURL=synchronizer.js.map
-;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.2.0/node_modules/@backblaze-labs/b2-sdk/dist/sync/scanners/local.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.3.0/node_modules/@backblaze-labs/b2-sdk/dist/sync/scanners/local.js
 
 
 
@@ -45050,7 +45639,7 @@ function throwIfScanAborted(options) {
 
 
 //# sourceMappingURL=local.js.map
-;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.2.0/node_modules/@backblaze-labs/b2-sdk/dist/sync/scanners/b2.js
+;// CONCATENATED MODULE: ./node_modules/.pnpm/@backblaze-labs+b2-sdk@0.3.0/node_modules/@backblaze-labs/b2-sdk/dist/sync/scanners/b2.js
 
 
 
@@ -45115,7 +45704,7 @@ var B2Folder = class {
 					...options.signal !== void 0 ? { signal: options.signal } : {}
 				});
 			} catch (err) {
-				if (scanIsAborted(options) || local_sha1_isAbortError(err)) return;
+				if (isSignalAbortError(options.signal, err)) return;
 				throw emitScanError(options, "failed to scan B2 file versions", err);
 			}
 			if (scanIsAborted(options)) return;

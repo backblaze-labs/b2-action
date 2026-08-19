@@ -57,7 +57,6 @@ function makeUploadFileVersion(options: UploadCall, fileInfo: Record<string, str
     fileName: options.fileName,
     fileRetention: { isClientAuthorizedToRead: true, value: null },
     legalHold: { isClientAuthorizedToRead: true, value: null },
-    replicationStatus: null,
     serverSideEncryption: { mode: 'none' },
     uploadTimestamp: Date.now(),
   }

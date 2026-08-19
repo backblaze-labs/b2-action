@@ -28,8 +28,8 @@ importers:
         specifier: ^0.7.0
         version: 0.7.0
       '@backblaze-labs/b2-sdk':
-        specifier: ^0.2.0
-        version: 0.2.0
+        specifier: ^0.3.0
+        version: 0.3.0
     devDependencies:
       '@biomejs/biome':
         specifier: ^2.5.3
@@ -261,8 +261,8 @@ packages:
     resolution: {integrity: sha512-4zBIxpPzowiZpusoFkyGVwakdRJUyuH5PxQ/PrqghfdFWWasvnCdPfQXHrenDai+gyLARulZjZowCOj6fjT4pA==}
     engines: {node: '>=6.9.0'}
 
-  '@backblaze-labs/b2-sdk@0.2.0':
-    resolution: {integrity: sha512-qYjCVtFuiHp54R8okZbuG7oVU0U0Xj9A/Yn4VBLeMKp5JxVKFp3+M3Ywry+aB6ZKX24P3NTh8JURZMGuayFWDQ==}
+  '@backblaze-labs/b2-sdk@0.3.0':
+    resolution: {integrity: sha512-ABfrCTV0uN3ADXBgOC6hmMm2n3Mcnz2mnFafC1z1/Hvijv9GKlhaNBmfkY3UiRuVyjgWFCm8f5uiuQyNWFwFAg==}
     engines: {node: '>=22.3.0'}
     peerDependencies:
       '@aws-sdk/client-s3': ^3.0.0
@@ -2443,7 +2443,7 @@ snapshots:
       '@babel/helper-string-parser': 7.29.7
       '@babel/helper-validator-identifier': 7.29.7
 
-  '@backblaze-labs/b2-sdk@0.2.0': {}
+  '@backblaze-labs/b2-sdk@0.3.0': {}
 
   '@bcoe/v8-coverage@1.0.2': {}
 

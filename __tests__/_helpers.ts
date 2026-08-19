@@ -84,6 +84,7 @@ export interface TestFixture {
 export async function makeFixture(
   bucketName = DEFAULT_TEST_BUCKET,
   simOptions: { minimumPartSize?: number; recommendedPartSize?: number } = {},
+  bucketOptions: { fileLockEnabled?: boolean } = {},
 ): Promise<TestFixture> {
   const sim = new B2Simulator(simOptions)
   const client = new B2Client({
@@ -94,7 +95,12 @@ export async function makeFixture(
     retry: { maxRetries: 0 },
   })
   await client.authorize()
-  const bucket = await client.createBucket({ bucketName, bucketType: 'allPrivate' })
+  // Object Lock must be enabled at creation before retention/legal-hold ops.
+  const bucket = await client.createBucket({
+    bucketName,
+    bucketType: 'allPrivate',
+    ...(bucketOptions.fileLockEnabled ? { fileLockEnabled: true } : {}),
+  })
   const workDir = await mkdtemp(join(tmpdir(), 'b2-test-'))
   return { workDir, bucket, client, sim }
 }

@@ -24,7 +24,7 @@ describe('delete command', () => {
   let fx: TestFixture
 
   beforeEach(async () => {
-    fx = await makeFixture('gh-action-misc')
+    fx = await makeFixture('gh-action-misc', {}, { fileLockEnabled: true })
   })
   afterEach(async () => {
     await rm(fx.workDir, { recursive: true, force: true })
