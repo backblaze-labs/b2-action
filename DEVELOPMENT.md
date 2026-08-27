@@ -321,6 +321,10 @@ Once those are in place, the example workflows trigger on every PR (other than f
 
 The redundancy is deliberate: the simulator suite is what guarantees a contributor's fork PR gets validated end-to-end before secrets-gated workflows run.
 
+### Documentation structure gate
+
+[`__tests__/docs-structure.test.ts`](./__tests__/docs-structure.test.ts) enforces the harness-doc invariants mechanically: [`AGENTS.md`](./AGENTS.md) stays a short map (line cap), [`CLAUDE.md`](./CLAUDE.md) and [`GEMINI.md`](./GEMINI.md) point to it, no `docs/**` file is orphaned (every doc is linked from another doc), the [design-doc index](./docs/design-docs/index.md) lists every design doc, and tech-debt ids stay unique. It runs in the normal `test` / `coverage` jobs, so a doc that drifts out of the structure fails CI like any other test.
+
 ## Coverage
 
 Coverage runs about **98 % statements / 96 % branches / 100 % functions / 99 % lines**, comfortably above the `vitest.config.ts` gate of 95 % / 85 % / 100 % / 95 %, across roughly 30 test files. If you add a new code path, add a real test for it; do not introduce a `v8 ignore` without a documented external reason.

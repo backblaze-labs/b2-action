@@ -10,7 +10,7 @@ increments instead of rotting. Add a row when you defer something on purpose; cl
 | TD-0002 | Low | 2026-08-27 | Open | The `resume` input is reserved and not yet honored. |
 | TD-0003 | Low | 2026-08-27 | Open | No pinned lychee binary for Intel macOS (`darwin-x64`). |
 | TD-0004 | Low | 2026-08-27 | Open | No automated layer/dependency linter enforcing the architecture edges. |
-| TD-0005 | Low | 2026-08-27 | Open | No scheduled doc-staleness / gardening scan; doc freshness relies on manual review. |
+| TD-0005 | Low | 2026-08-27 | Open | No scheduled doc-staleness / gardening scan (structural drift is test-enforced; freshness is not). |
 
 ## Details
 
@@ -35,7 +35,9 @@ increments instead of rotting. Add a row when you defer something on purpose; cl
   structural tests, not a custom linter that fails the build with a remediation message. A small
   import-direction check would make the boundary self-enforcing.
 
-- **TD-0005 — No doc-gardening scan.** Design-doc freshness relies on the manual `Last reviewed`
-  dates in [the design-doc index](../design-docs/index.md) and [quality score](../QUALITY_SCORE.md);
-  there is no scheduled job that flags stale docs or opens fix-up PRs (the blueprint's continuous
-  garbage collection). A periodic drift scan would keep this system of record honest without polling.
+- **TD-0005 — No doc-gardening scan.** Structural drift (orphan docs, a missing harness pointer,
+  an over-long `AGENTS.md`, an incomplete index) is now caught by
+  [`__tests__/docs-structure.test.ts`](../../__tests__/docs-structure.test.ts). The remaining gap is
+  *freshness*: the manual `Last reviewed` dates in [the design-doc index](../design-docs/index.md)
+  and [quality score](../QUALITY_SCORE.md) have no scheduled job flagging stale docs or opening
+  fix-up PRs (the blueprint's continuous garbage collection). A periodic staleness scan would close it.
