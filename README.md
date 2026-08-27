@@ -493,7 +493,7 @@ If this Action doesn't fit your workflow, here are other community-maintained op
 
 ## Development & contributing
 
-The internal architecture (dispatcher flow, source layout, conventions, CI gates) and local commands live in [DEVELOPMENT.md](./DEVELOPMENT.md). The PR process is in [CONTRIBUTING.md](./CONTRIBUTING.md); the release runbook is in [RELEASE.md](./RELEASE.md).
+Contributors and AI assistants start at [AGENTS.md](./AGENTS.md) (the repository map) and [ARCHITECTURE.md](./ARCHITECTURE.md) (layers and boundary invariants); the system of record lives under [docs/](./docs/README.md). The internal architecture (dispatcher flow, source layout, conventions, CI gates) and local commands live in [DEVELOPMENT.md](./DEVELOPMENT.md). The PR process is in [CONTRIBUTING.md](./CONTRIBUTING.md); the release runbook is in [RELEASE.md](./RELEASE.md).
 
 Security reports: see [SECURITY.md](./SECURITY.md).
 

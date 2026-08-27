@@ -14,6 +14,17 @@
     // Permit first-line non-h1 headings (CHANGELOG.md leads with frontmatter-ish bullets).
     "MD041": false
   },
-  "ignores": ["node_modules/**", "dist/**", "docs/**", "**/oss2/**", "**/oss3/**"],
+  // api-docs/ is the TypeDoc-generated API site; docs/ is hand-written and IS linted.
+  // Non-source output dirs mirror the cspell/biome ignore sets so local runs match CI.
+  "ignores": [
+    "node_modules/**",
+    "dist/**",
+    "api-docs/**",
+    "coverage/**",
+    "reports/**",
+    ".stryker-tmp/**",
+    "**/oss2/**",
+    "**/oss3/**"
+  ],
   "globs": ["**/*.md"]
 }

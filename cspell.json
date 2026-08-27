@@ -16,7 +16,7 @@
   ],
   "ignorePaths": [
     "dist/**",
-    "docs/**",
+    "api-docs/**",
     "node_modules/**",
     "coverage/**",
     "reports/**",

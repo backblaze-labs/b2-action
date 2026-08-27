@@ -1,6 +1,6 @@
 # Development
 
-This document covers the internal architecture and local development workflow for the Action. If you're just using the action in your own workflows, the [README](./README.md) has everything you need. If you want to contribute, read this first, then jump to [CONTRIBUTING.md](./CONTRIBUTING.md) for the PR process and [RELEASE.md](./RELEASE.md) for the release process.
+This document covers the internal architecture and local development workflow for the Action. If you're just using the action in your own workflows, the [README](./README.md) has everything you need. Start at [AGENTS.md](./AGENTS.md) for the repository map and [ARCHITECTURE.md](./ARCHITECTURE.md) for the layering rules and boundary invariants. If you want to contribute, read this first, then jump to [CONTRIBUTING.md](./CONTRIBUTING.md) for the PR process and [RELEASE.md](./RELEASE.md) for the release process.
 
 ## How it works
 
@@ -34,7 +34,7 @@ flowchart LR
     style B2 fill:#EE3232,stroke:#fff,color:#fff
 ```
 
-The action is a thin dispatcher. Every verb lands in [`@backblaze-labs/b2-sdk`](https://github.com/backblaze-labs/b2-sdk-typescript); we add input parsing, credential masking (`::add-mask::`), throttled progress logging, and step-summary rendering on top.
+The action is a thin dispatcher. Every verb lands in [`@backblaze-labs/b2-sdk`](https://github.com/backblaze-labs/b2-sdk-typescript); we add input parsing, credential masking (`::add-mask::`), throttled progress logging, and step-summary rendering on top. For the layers, allowed dependency edges, and boundary invariants, see [ARCHITECTURE.md](./ARCHITECTURE.md).
 
 ## Source layout
 
@@ -59,7 +59,7 @@ __tests__/
   ci.yml                # lint, typecheck, test, coverage, build, dist freshness, smoke
   security.yml          # shared GitHub Actions workflow security checks
   codeql.yml            # CodeQL (SAST) static analysis of the TypeScript source
-  docs.yml              # TypeDoc build + GitHub Pages deploy
+  docs.yml              # TypeDoc build (api-docs/) + GitHub Pages deploy
   docs-lint.yml         # action.yml<>README sync, markdownlint, link check, cspell
   full-lockfile-audit.yml            # full-lockfile pnpm audit (dev/build tooling)
   full-lockfile-audit-heartbeat.yml  # ensures the full audit fires on schedule
@@ -70,6 +70,10 @@ __tests__/
   example-*.yml         # 13 copy-paste workflows that double as integration tests
 action.yml         # Marketplace manifest (inputs, outputs, branding)
 dist/index.js      # ncc-bundled entrypoint (committed; CI fails if stale)
+AGENTS.md          # repository map: read this first (canonical, multi-harness)
+ARCHITECTURE.md    # layers + boundary invariants
+docs/              # system of record: design docs, plans, quality grades
+api-docs/          # generated TypeDoc API site (git-ignored; built in CI)
 ```
 
 ## Local commands
@@ -88,10 +92,10 @@ pnpm run audit      # pnpm audit --prod --audit-level high (CI gate; needs netwo
 pnpm spellcheck     # cspell across src/, __tests__/, *.md, *.yml, action.yml
 pnpm all            # lint + release policy + typecheck + test + build + spellcheck
 pnpm verify-dist    # build, then `git diff --exit-code dist/` (must be clean)
-pnpm run docs       # typedoc (strict): generates docs/ for GitHub Pages
+pnpm run docs       # typedoc (strict): generates api-docs/ for GitHub Pages
 pnpm docs:watch     # typedoc in watch mode for local authoring
 pnpm docs:lint      # markdownlint-cli2 against **/*.md
-pnpm docs:links     # runs pinned lychee in offline + fragment-aware mode, excluding docs/ and node_modules
+pnpm docs:links     # runs pinned lychee in offline + fragment-aware mode, excluding api-docs/ and node_modules
 pnpm docs:check-action-yml  # action.yml <> README sync check
 pnpm check:release-provenance  # release.yml provenance isolation policy
 ```
@@ -256,7 +260,7 @@ listed in the same table and called out explicitly.
 | `heartbeat` ([full-lockfile-audit-heartbeat.yml](./.github/workflows/full-lockfile-audit-heartbeat.yml)) | Daily check that a scheduled, manual, or main-push full-lockfile audit has fired in the last 10 days; opens or updates one labeled tracking issue when a transient cron drop leaves the audit stale, and closes it once the audit recovers. It stays silent before the first audit run has ever been observed. Because it is also scheduled, this heartbeat does not protect against GitHub's 60-day inactivity auto-disable or a broader GitHub Actions scheduling outage; after long repository inactivity, maintainers should verify scheduled workflows in the Actions UI or manually dispatch `full-lockfile-audit.yml` on `main`. |
 | `sync-check` ([docs-lint.yml](./.github/workflows/docs-lint.yml)) | every input/output in `action.yml` also appears in the README reference tables. Drift fails CI. |
 | `markdownlint` ([docs-lint.yml](./.github/workflows/docs-lint.yml)) | prose-style consistency across `**/*.md`. Config in [`.markdownlint-cli2.jsonc`](./.markdownlint-cli2.jsonc). |
-| `link-check` ([docs-lint.yml](./.github/workflows/docs-lint.yml)) | `pnpm docs:links` runs pinned lychee in `--offline` mode against source markdown and excludes generated `docs/`; catches broken relative paths and anchor fragments. External URLs are not pinged. |
+| `link-check` ([docs-lint.yml](./.github/workflows/docs-lint.yml)) | `pnpm docs:links` runs pinned lychee in `--offline` mode against source markdown and excludes the generated `api-docs/`; catches broken relative paths and anchor fragments. External URLs are not pinged. |
 | `spellcheck` ([docs-lint.yml](./.github/workflows/docs-lint.yml)) | cspell across `**/*.ts`, `**/*.md`, `**/*.yml`, `action.yml`. Config in [`cspell.json`](./cspell.json); domain-specific words live in [`.cspell/project-words.txt`](./.cspell/project-words.txt). Add a word there when cspell flags a deliberate identifier. |
 | `docs` ([docs.yml](./.github/workflows/docs.yml)) | TypeDoc with `treatWarningsAsErrors: true`; every export must have JSDoc. Published to GitHub Pages on push to `main`. |
 
@@ -312,7 +316,7 @@ Once those are in place, the example workflows trigger on every PR (other than f
 
 ### Simulator vs real bucket: what each layer catches
 
-- **Vitest + `B2Simulator`** (`pnpm test`): instant, deterministic, runs on every PR including forks. Validates the dispatcher, input parsing, error paths, and the SDK contract. Doesn't touch the network.
+- **Vitest + `B2Simulator`** (`pnpm test`): instant, deterministic, runs on every PR including forks. Validates the dispatcher, input parsing, error paths, and the SDK contract. Doesn't touch the network. Input tests set `INPUT_*` / `B2_*` env vars directly; clear them in `beforeEach` (see `resetInputEnv` in [`__tests__/inputs.test.ts`](./__tests__/inputs.test.ts)) to avoid cross-test bleed.
 - **Example workflows** (`.github/workflows/example-*.yml`): real wire-protocol. Catches B2 API drift, auth quirks, and integration-layer regressions that the simulator can't see. Skips on forks (secrets-gated).
 
 The redundancy is deliberate: the simulator suite is what guarantees a contributor's fork PR gets validated end-to-end before secrets-gated workflows run.
@@ -356,4 +360,4 @@ The SDK builds a User-Agent of the form:
 b2-sdk-typescript/<sdk-version> (typescript; @backblaze-labs/b2-sdk; <runtime>; <os>; <arch>) b2-github-action/<action-version>
 ```
 
-We append the `b2-github-action/<v>` suffix so Backblaze's server-side logs can identify CI traffic originating from this Action. **Do not rename either the SDK's `b2-sdk-typescript/` token or our `b2-github-action/` token**: both are stable product identifiers used for traffic analytics. The version constant is in [`src/version.ts`](./src/version.ts) and must be bumped in lockstep with `package.json` `version`.
+We append the `b2-github-action/<v>` suffix so Backblaze's server-side logs can identify CI traffic originating from this Action. **Do not rename either the SDK's `b2-sdk-typescript/` token or our `b2-github-action/` token**: both are stable product identifiers used for traffic analytics. The version constant in [`src/version.ts`](./src/version.ts) is read directly from `package.json`, so bumping `package.json` `version` propagates automatically to the User-Agent and the bundled `dist/`; never hardcode a version literal.

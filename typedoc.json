@@ -23,7 +23,7 @@
     "src/commands/upload.ts",
     "src/commands/verify.ts"
   ],
-  "out": "docs",
+  "out": "api-docs",
   "name": "backblaze-labs/b2-action",
   "includeVersion": true,
   "readme": "README.md",
