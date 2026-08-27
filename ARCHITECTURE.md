@@ -40,6 +40,9 @@ reviews exist to catch.
 - **`dist/` is generated, never authored.** `src/` is the source of truth; `dist/index.js` is the
   `ncc` bundle GitHub runs directly. See [DEVELOPMENT.md](DEVELOPMENT.md#why-dist-is-committed).
 
+The SDK-boundary, dispatcher-owns-outputs, and forward-only dependency edges above are enforced by
+[`__tests__/architecture.test.ts`](__tests__/architecture.test.ts); a violation fails CI.
+
 ## Taste invariants
 
 Encoded once, applied everywhere. Most are enforced in CI (see

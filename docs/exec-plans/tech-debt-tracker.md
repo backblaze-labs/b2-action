@@ -9,7 +9,7 @@ increments instead of rotting. Add a row when you defer something on purpose; cl
 | TD-0001 | Medium | 2026-08-27 | Open | Mutation testing runs weekly/manual only, not as a per-PR gate, while survivors are triaged. |
 | TD-0002 | Low | 2026-08-27 | Open | The `resume` input is reserved and not yet honored. |
 | TD-0003 | Low | 2026-08-27 | Open | No pinned lychee binary for Intel macOS (`darwin-x64`). |
-| TD-0004 | Low | 2026-08-27 | Open | No automated layer/dependency linter enforcing the architecture edges. |
+| TD-0004 | Low | 2026-08-27 | Open | Key architecture edges are test-enforced; a full layer-graph linter is not yet in place. |
 | TD-0005 | Low | 2026-08-27 | Open | No scheduled doc-staleness / gardening scan (structural drift is test-enforced; freshness is not). |
 
 ## Details
@@ -30,10 +30,11 @@ increments instead of rotting. Add a row when you defer something on purpose; cl
   `link-check` job. Revisit when lychee ships an Intel asset or the pin moves. See
   [DEVELOPMENT.md → Managed lychee binary](../../DEVELOPMENT.md#managed-lychee-binary).
 
-- **TD-0004 — No mechanical layer linter.** The dependency edges in
-  [ARCHITECTURE.md](../../ARCHITECTURE.md#boundary-invariants) are currently enforced by review and
-  structural tests, not a custom linter that fails the build with a remediation message. A small
-  import-direction check would make the boundary self-enforcing.
+- **TD-0004 — Layer/dependency enforcement.** [`__tests__/architecture.test.ts`](../../__tests__/architecture.test.ts)
+  now enforces the key edges in [ARCHITECTURE.md](../../ARCHITECTURE.md#boundary-invariants): all B2
+  I/O goes through the SDK (no raw transport or `fetch`), the dispatcher (not commands) owns outputs,
+  and commands never depend upward. The residual gap is a full layer-graph linter that checks every
+  allowed edge with a remediation message; the current test covers the highest-risk boundaries.
 
 - **TD-0005 — No doc-gardening scan.** Structural drift (orphan docs, a missing harness pointer,
   an over-long `AGENTS.md`, an incomplete index) is now caught by

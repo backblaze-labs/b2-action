@@ -325,6 +325,10 @@ The redundancy is deliberate: the simulator suite is what guarantees a contribut
 
 [`__tests__/docs-structure.test.ts`](./__tests__/docs-structure.test.ts) enforces the harness-doc invariants mechanically: [`AGENTS.md`](./AGENTS.md) stays a short map (line cap), [`CLAUDE.md`](./CLAUDE.md) and [`GEMINI.md`](./GEMINI.md) point to it, no `docs/**` file is orphaned (every doc is linked from another doc), the [design-doc index](./docs/design-docs/index.md) lists every design doc, and tech-debt ids stay unique. It runs in the normal `test` / `coverage` jobs, so a doc that drifts out of the structure fails CI like any other test.
 
+### Architecture invariant gate
+
+[`__tests__/architecture.test.ts`](./__tests__/architecture.test.ts) enforces the [boundary invariants](./ARCHITECTURE.md#boundary-invariants): all B2 I/O goes through the SDK (no raw transport or `fetch` in `src/`), the dispatcher owns outputs (no `setOutput` in a command), and commands never depend upward on the entrypoint or output layer.
+
 ## Coverage
 
 Coverage runs about **98 % statements / 96 % branches / 100 % functions / 99 % lines**, comfortably above the `vitest.config.ts` gate of 95 % / 85 % / 100 % / 95 %, across roughly 30 test files. If you add a new code path, add a real test for it; do not introduce a `v8 ignore` without a documented external reason.

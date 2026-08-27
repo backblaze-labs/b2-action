@@ -11,7 +11,7 @@ Grades: **A** solid, **B** good with a known gap, **C** works but needs investme
 | --- | --- | --- | --- |
 | Unit-test coverage | A | ~98% statements / 96% branches / 100% functions / 99% lines, above the 95/85/100/95 gate ([DEVELOPMENT.md](../DEVELOPMENT.md#coverage)) | None material |
 | Mutation coverage | C | 72.83% aggregate against a `break: 65` gate; command targets at 62.59% ([DEVELOPMENT.md](../DEVELOPMENT.md#mutation-testing)) | Survivors not yet triaged; gate is scheduled-only (TD-0001) |
-| Architecture legibility | B | One SDK provider boundary, forward-only layers, one verb per file ([ARCHITECTURE.md](../ARCHITECTURE.md)) | Edges enforced by review, not a linter (TD-0004) |
+| Architecture legibility | A | One SDK provider boundary, forward-only layers, one verb per file, with the key edges test-enforced ([ARCHITECTURE.md](../ARCHITECTURE.md), `__tests__/architecture.test.ts`) | Full layer graph not yet mechanically checked (TD-0004) |
 | Docs & legibility | A | `action.yml` ↔ README sync, strict TypeDoc, markdown/link/spell lints, a docs-structure test, and the AGENTS.md map over this system of record ([DEVELOPMENT.md](../DEVELOPMENT.md#ci-gates)) | Structure is test-enforced; freshness still relies on review, with no scheduled gardening scan (TD-0005) |
 | Supply chain & release | A | SHA-pinned actions, prod + full-lockfile audits, release-provenance policy, attested `dist/` ([DEVELOPMENT.md](../DEVELOPMENT.md#ci-gates), [RELEASE.md](../RELEASE.md)) | None material |
 | Reliability & smoke | A | Daily and weekly real-B2 smoke plus example workflows that double as an integration suite ([.github/workflows/README.md](../.github/workflows/README.md)) | None material |
