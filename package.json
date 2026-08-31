@@ -39,18 +39,18 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.3",
-    "@stryker-mutator/core": "9.6.1",
-    "@stryker-mutator/vitest-runner": "9.6.1",
+    "@stryker-mutator/core": "10.0.0",
+    "@stryker-mutator/vitest-runner": "10.0.0",
     "@types/node": "^26.1.1",
     "@vercel/ncc": "^0.44.1",
-    "@vitest/coverage-v8": "^4.1.10",
+    "@vitest/coverage-v8": "^4.1.11",
     "cspell": "^10.0.1",
     "fast-check": "^4.9.0",
     "husky": "^9.1.7",
     "markdownlint-cli2": "^0.23.2",
     "typedoc": "^0.28.20",
     "typescript": "^6.0.3",
-    "vitest": "^4.1.10",
+    "vitest": "^4.1.11",
     "yaml": "^2.9.0"
   },
   "keywords": [
