@@ -79,6 +79,10 @@ export interface TestFixture {
  * Use {@link MULTIPART_PART_SIZE} for tests that need to force multipart
  * control flow (null contentSha1, totalParts in progress events).
  *
+ * Pass `bucketOptions` with `{ fileLockEnabled: true }` for retention or
+ * governance tests: SDK >= 0.3.0 enforces that Object Lock is enabled at
+ * bucket creation before any retention/governance operation, matching real B2.
+ *
  * The caller is responsible for `rm`-ing `workDir` in their `afterEach`.
  */
 export async function makeFixture(
