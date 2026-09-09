@@ -496,9 +496,9 @@ If this Action doesn't fit your workflow, here are other community-maintained op
 
 Part of [Backblaze Labs](https://github.com/backblaze-labs):
 
-- **[b2-mcp](https://github.com/backblaze-labs/b2-mcp)** — MCP server for Backblaze B2 Cloud Storage: a focused, safe 40-tool surface for any MCP-compatible AI client.
-- **[Genblaze](https://github.com/backblaze-labs/genblaze)** — Python SDK for orchestrating generative-AI media pipelines across video, audio, and image providers, with built-in provenance for every output.
-- **[b2-sdk-typescript](https://github.com/backblaze-labs/b2-sdk-typescript)** — Backblaze-maintained TypeScript / JavaScript SDK for B2 Cloud Storage.
+1. [`backblaze-labs/b2-mcp`](https://github.com/backblaze-labs/b2-mcp): MCP server for Backblaze B2 Cloud Storage — a focused, safe 40-tool surface for any MCP-compatible AI client.
+2. [`backblaze-labs/genblaze`](https://github.com/backblaze-labs/genblaze): Python SDK for orchestrating generative-AI media pipelines across video, audio, and image providers, with built-in provenance for every output.
+3. [`backblaze-labs/b2-sdk-typescript`](https://github.com/backblaze-labs/b2-sdk-typescript): Backblaze-maintained TypeScript / JavaScript SDK for B2 Cloud Storage.
 
 ---
 
