@@ -15,7 +15,7 @@ A Backblaze-maintained B2 GitHub Action. TypeScript-native, built on [@backblaze
 - **Step-summary tables** rendered on every run via `$GITHUB_STEP_SUMMARY`, capped at 100 per-file rows with an omitted-row notice.
 - **Secret-safe.** App keys, auth tokens, and presigned URLs are auto-masked with `::add-mask::`.
 
-> **Live test suite = the examples.** Every workflow under [.github/workflows/example-*.yml](./.github/workflows/README.md) is both a copy-paste-runnable example and a live integration test. All but one run on every PR; [the ML cache round-trip](./.github/workflows/example-ml-cache-sync.yml) is push-only because it runs `uses: ./` with B2 secrets.
+> **Live test suite = the examples.** Every workflow under [.github/workflows/example-*.yml](./.github/workflows/README.md) is both a copy-paste-runnable example and a live integration test. All but one run on every PR; [the ML cache round-trip](./.github/workflows/example-ml-cache-sync.yml) is push-only because it runs `uses: ./` with B2 secrets. For a full walkthrough of that pattern, see the [AI/ML pipelines guide](https://www.backblaze.com/docs/en/cloud-storage-automate-b2-storage-in-ai-ml-pipelines-with-b2-github-action).
 
 ## Table of contents
 
@@ -42,6 +42,7 @@ A Backblaze-maintained B2 GitHub Action. TypeScript-native, built on [@backblaze
   - [Inputs (full reference)](#inputs-full-reference)
   - [Outputs (full reference)](#outputs-full-reference)
   - [Other Backblaze B2 Actions on the Marketplace](#other-backblaze-b2-actions-on-the-marketplace)
+  - [Guides](#guides)
   - [Backblaze Labs ecosystem](#backblaze-labs-ecosystem)
   - [Development \& contributing](#development--contributing)
   - [Running locally from the CLI](#running-locally-from-the-cli)
@@ -489,6 +490,12 @@ If this Action doesn't fit your workflow, here are other community-maintained op
 3. [`sksat/b2-upload-action`](https://github.com/sksat/b2-upload-action): uploads a single file to a B2 bucket.
 4. [`sylwit/install-b2-cli-action`](https://github.com/sylwit/install-b2-cli-action): installs the Backblaze `b2` CLI binary on the runner.
 5. [`andromidasj/install-b2-cli-action`](https://github.com/andromidasj/install-b2-cli-action): installs and authorizes the Backblaze `b2` CLI.
+
+---
+
+## Guides
+
+- [Automate B2 Storage in AI/ML Pipelines with the Backblaze B2 GitHub Action](https://www.backblaze.com/docs/en/cloud-storage-automate-b2-storage-in-ai-ml-pipelines-with-b2-github-action) — upload, download, sync, and manage ML artifacts (model checkpoints, datasets) from CI/CD.
 
 ---
 
