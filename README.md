@@ -42,6 +42,7 @@ A Backblaze-maintained B2 GitHub Action. TypeScript-native, built on [@backblaze
   - [Inputs (full reference)](#inputs-full-reference)
   - [Outputs (full reference)](#outputs-full-reference)
   - [Other Backblaze B2 Actions on the Marketplace](#other-backblaze-b2-actions-on-the-marketplace)
+  - [Backblaze Labs ecosystem](#backblaze-labs-ecosystem)
   - [Development \& contributing](#development--contributing)
   - [Running locally from the CLI](#running-locally-from-the-cli)
   - [License](#license)
@@ -488,6 +489,16 @@ If this Action doesn't fit your workflow, here are other community-maintained op
 3. [`sksat/b2-upload-action`](https://github.com/sksat/b2-upload-action): uploads a single file to a B2 bucket.
 4. [`sylwit/install-b2-cli-action`](https://github.com/sylwit/install-b2-cli-action): installs the Backblaze `b2` CLI binary on the runner.
 5. [`andromidasj/install-b2-cli-action`](https://github.com/andromidasj/install-b2-cli-action): installs and authorizes the Backblaze `b2` CLI.
+
+---
+
+## Backblaze Labs ecosystem
+
+Part of [Backblaze Labs](https://github.com/backblaze-labs):
+
+1. [`backblaze-labs/b2-mcp`](https://github.com/backblaze-labs/b2-mcp): MCP server for Backblaze B2 Cloud Storage — a focused, safe 40-tool surface for any MCP-compatible AI client.
+2. [`backblaze-labs/genblaze`](https://github.com/backblaze-labs/genblaze): Python SDK for orchestrating generative-AI media pipelines across video, audio, and image providers, with built-in provenance for every output.
+3. [`backblaze-labs/b2-sdk-typescript`](https://github.com/backblaze-labs/b2-sdk-typescript): Backblaze-maintained TypeScript / JavaScript SDK for B2 Cloud Storage.
 
 ---
 
