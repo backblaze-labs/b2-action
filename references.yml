@@ -11,9 +11,7 @@ updated: "2026-09-08"
 canonical:
   repo: https://github.com/backblaze-labs/b2-action
   homepage: https://backblaze-labs.github.io/b2-action/
-  # display_name mirrors the GitHub Marketplace listing title, so it is
-  # intentionally distinct from project/backlink_anchor.
-  display_name: Backblaze B2 Cloud Storage Action
+  display_name: Backblaze B2 GitHub Action
   backlink_anchor: Backblaze B2 GitHub Action
 
 references:
