@@ -168,6 +168,8 @@ export interface ParsedInputs {
   syncDirection: SyncDirection
   /** Cap on listed/presigned entries for `list` and prefix `presign`. */
   maxResults: number
+  /** Delimiter for virtual-prefix grouping in `list`. Undefined keeps the flat listing. */
+  delimiter: string | undefined
   /** Literal SHA-1 to compare against in `verify` (when set, no local read). */
   expectedSha1: string | undefined
   /** Object Lock retention mode to apply (`retention` verb). */
@@ -246,6 +248,7 @@ export function parseInputs(): ParsedInputs {
 
   const presignTtlSeconds = parsePositiveInt('presign-ttl', core.getInput('presign-ttl') || '3600')
   const maxResults = parsePositiveInt('max-results', core.getInput('max-results') || '1000')
+  const delimiter = optional('delimiter')
 
   const endpoint = optional('endpoint')
   const sse = optional('sse')
@@ -334,6 +337,7 @@ export function parseInputs(): ParsedInputs {
     keepDays,
     syncDirection,
     maxResults,
+    delimiter,
     expectedSha1,
     retentionMode,
     retentionUntil,

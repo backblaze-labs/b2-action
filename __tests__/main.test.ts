@@ -144,7 +144,7 @@ describe('main dispatcher', () => {
       }),
     ]
     ctx.parseInputs.mockReturnValue(inputs('list', { endpoint: TEST_ENDPOINT }))
-    ctx.commands.listCommand.mockResolvedValue({ files, truncated: false })
+    ctx.commands.listCommand.mockResolvedValue({ files, prefixes: [], truncated: false })
 
     await ctx.run()
 
@@ -610,7 +610,7 @@ describe('main dispatcher', () => {
       }),
     )
     ctx.parseInputs.mockReturnValue(inputs('list', { maxResults: 25 }))
-    ctx.commands.listCommand.mockResolvedValue({ files, truncated: true })
+    ctx.commands.listCommand.mockResolvedValue({ files, prefixes: [], truncated: true })
 
     await ctx.run()
 
@@ -636,6 +636,40 @@ describe('main dispatcher', () => {
     })
   })
 
+  it('emits distinguishable file and prefix entries for delimiter-grouped lists', async () => {
+    const ctx = await loadMain()
+    const file = listedFile({
+      fileName: 'logs/a.txt',
+      fileId: 'id-a',
+      size: 4,
+      contentType: 'text/plain',
+    })
+    ctx.parseInputs.mockReturnValue(inputs('list', { delimiter: '/' }))
+    ctx.commands.listCommand.mockResolvedValue({
+      files: [file],
+      prefixes: [{ prefix: 'logs/z/' }],
+      truncated: false,
+    })
+
+    await ctx.run()
+
+    const out = outputs(ctx)
+    expect(out['files-listed']).toBe('2')
+    expect(out['file-count']).toBe('2')
+    expect(JSON.parse(out['summary-json'] ?? '[]')).toEqual([
+      { entryType: 'file', ...file },
+      { entryType: 'prefix', prefix: 'logs/z/' },
+    ])
+    expect(firstSummary(ctx)).toMatchObject({
+      title: 'Backblaze B2: list (2)',
+      totals: { files: 1, bytes: 4 },
+      rows: [
+        { fileName: 'logs/a.txt', status: 'file (text/plain)' },
+        { fileName: 'logs/z/', status: 'prefix' },
+      ],
+    })
+  })
+
   it('keeps successful results over the preview count non-fatal when summary-json fits', async () => {
     const ctx = await loadMain()
     const files = Array.from({ length: SUMMARY_JSON_PREVIEW_MAX_ENTRIES + 5 }, (_, i) =>
@@ -646,7 +680,7 @@ describe('main dispatcher', () => {
       }),
     )
     ctx.parseInputs.mockReturnValue(inputs('list'))
-    ctx.commands.listCommand.mockResolvedValue({ files, truncated: false })
+    ctx.commands.listCommand.mockResolvedValue({ files, prefixes: [], truncated: false })
 
     await ctx.run()
 
@@ -670,7 +704,7 @@ describe('main dispatcher', () => {
       }),
     )
     ctx.parseInputs.mockReturnValue(inputs('list'))
-    ctx.commands.listCommand.mockResolvedValue({ files, truncated: false })
+    ctx.commands.listCommand.mockResolvedValue({ files, prefixes: [], truncated: false })
 
     await ctx.run()
 
@@ -699,7 +733,7 @@ describe('main dispatcher', () => {
       }),
     ]
     ctx.parseInputs.mockReturnValue(inputs('list'))
-    ctx.commands.listCommand.mockResolvedValue({ files, truncated: false })
+    ctx.commands.listCommand.mockResolvedValue({ files, prefixes: [], truncated: false })
 
     await ctx.run()
 
@@ -821,7 +855,7 @@ describe('main dispatcher', () => {
     const rawAuthToken = ` ${TEST_AUTH_TOKEN} `
     ctx.parseInputs.mockReturnValue(inputs('list'))
     ctx.authorized.client.accountInfo.getAuthToken.mockReturnValue(rawAuthToken)
-    ctx.commands.listCommand.mockResolvedValue({ files: [], truncated: false })
+    ctx.commands.listCommand.mockResolvedValue({ files: [], prefixes: [], truncated: false })
 
     await ctx.run()
 
@@ -1405,7 +1439,7 @@ function setupSuccessfulAction(ctx: LoadedMain, action: ActionName): Record<stri
           contentType: 'text/plain',
         }),
       ]
-      ctx.commands.listCommand.mockResolvedValue({ files, truncated: true })
+      ctx.commands.listCommand.mockResolvedValue({ files, prefixes: [], truncated: true })
       return completeSummaryOutput({
         'files-listed': '1',
         'file-count': '1',

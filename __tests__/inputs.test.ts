@@ -225,6 +225,19 @@ describe('parseInputs', () => {
     expect(r.dryRun).toBe(true)
   })
 
+  it('parses an optional list delimiter', () => {
+    setInput('action', 'list')
+    setInput('application-key-id', 'k')
+    setInput('application-key', 's')
+    setInput('bucket', 'b')
+    setInput('delimiter', '/')
+
+    expect(parseInputs().delimiter).toBe('/')
+
+    setInput('delimiter', '')
+    expect(parseInputs().delimiter).toBeUndefined()
+  })
+
   it('keeps an empty purge source only when whole-bucket purge is confirmed', () => {
     setInput('action', 'purge')
     setInput('application-key-id', 'k')
