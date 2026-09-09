@@ -79,11 +79,16 @@ export interface TestFixture {
  * Use {@link MULTIPART_PART_SIZE} for tests that need to force multipart
  * control flow (null contentSha1, totalParts in progress events).
  *
+ * Pass `bucketOptions` with `{ fileLockEnabled: true }` for retention or
+ * governance tests: SDK >= 0.3.0 enforces that Object Lock is enabled at
+ * bucket creation before any retention/governance operation, matching real B2.
+ *
  * The caller is responsible for `rm`-ing `workDir` in their `afterEach`.
  */
 export async function makeFixture(
   bucketName = DEFAULT_TEST_BUCKET,
   simOptions: { minimumPartSize?: number; recommendedPartSize?: number } = {},
+  bucketOptions: { fileLockEnabled?: boolean } = {},
 ): Promise<TestFixture> {
   const sim = new B2Simulator(simOptions)
   const client = new B2Client({
@@ -94,7 +99,13 @@ export async function makeFixture(
     retry: { maxRetries: 0 },
   })
   await client.authorize()
-  const bucket = await client.createBucket({ bucketName, bucketType: 'allPrivate' })
+  const bucket = await client.createBucket({
+    bucketName,
+    bucketType: 'allPrivate',
+    // Object Lock must be enabled at creation for retention/governance ops
+    // (SDK >= 0.3.0 enforces this in the simulator, matching real B2).
+    ...(bucketOptions.fileLockEnabled ? { fileLockEnabled: true } : {}),
+  })
   const workDir = await mkdtemp(join(tmpdir(), 'b2-test-'))
   return { workDir, bucket, client, sim }
 }
