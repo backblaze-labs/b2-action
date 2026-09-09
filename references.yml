@@ -1,0 +1,47 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/backblaze-labs/.github/main/schemas/references.schema.json
+#
+# External references for this repository — docs and the registries/directories
+# where the Backblaze B2 GitHub Action is listed. Machine-parseable source of
+# truth for internal tooling; standard defined in backblaze-labs/.github.
+schema_version: 1
+project: Backblaze B2 GitHub Action
+slug: b2-action
+updated: "2026-09-08"
+
+canonical:
+  repo: https://github.com/backblaze-labs/b2-action
+  homepage: https://backblaze-labs.github.io/b2-action/
+  display_name: Backblaze B2 Cloud Storage Action
+  backlink_anchor: Backblaze B2 GitHub Action
+
+references:
+  # --- First-party ---
+  - id: repo
+    title: Backblaze B2 GitHub Action on GitHub
+    url: https://github.com/backblaze-labs/b2-action
+    type: repo
+    source: GitHub
+    official: true
+    added: "2026-09-08"
+    status: live
+
+  - id: docs
+    title: Backblaze B2 GitHub Action documentation
+    url: https://backblaze-labs.github.io/b2-action/
+    type: docs
+    source: GitHub Pages
+    official: true
+    added: "2026-09-08"
+    status: live
+    summary: Generated documentation for the Action's inputs, outputs, and usage.
+
+  # --- Directories / registries where we are listed ---
+  - id: marketplace
+    title: Backblaze B2 Cloud Storage Action on the GitHub Marketplace
+    url: https://github.com/marketplace/actions/backblaze-b2-cloud-storage-action
+    type: registry
+    source: GitHub Marketplace
+    canonical_for: marketplace
+    official: true
+    added: "2026-09-08"
+    status: live
