@@ -35,6 +35,18 @@ references:
     status: live
     summary: Generated documentation for the Action's inputs, outputs, and usage.
 
+  # --- Guides / tutorials ---
+  - id: ai-ml-pipelines-guide
+    title: Automate B2 Storage in AI/ML Pipelines with the Backblaze B2 GitHub Action
+    url: https://www.backblaze.com/docs/en/cloud-storage-automate-b2-storage-in-ai-ml-pipelines-with-b2-github-action
+    type: tutorial
+    source: Backblaze Docs
+    official: true
+    published: "2026-08-26"
+    added: "2026-09-08"
+    status: live
+    summary: Guide to integrating the Action into CI/CD pipelines to upload, download, sync, and manage ML artifacts like model checkpoints and datasets.
+
   # --- Directories / registries where we are listed ---
   - id: marketplace
     title: Backblaze B2 Cloud Storage Action on the GitHub Marketplace
