@@ -12,6 +12,7 @@ base64
 biome
 biomejs
 boto
+browserslist
 checkout
 checksum
 checksums

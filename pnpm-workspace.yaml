@@ -33,9 +33,15 @@ overrides:
   # Vite pulls PostCSS; keep it above the <=8.5.22 source-map disclosure ranges.
   # Drop when Vite's PostCSS floor is >=8.5.23.
   postcss: 8.5.25
-  # Stryker pulls Ajv, which pulls fast-uri; keep it above the <3.1.5 host
-  # confusion ranges. Drop when Ajv resolves fast-uri >=3.1.5 directly.
-  fast-uri: 3.1.5
+  # PostCSS pulls nanoid; keep it above the <3.3.18 custom-generator DoS range.
+  # Drop when PostCSS resolves nanoid >=3.3.18 directly.
+  nanoid: 3.3.18
+  # Babel tooling pulls Browserslist; keep it above the <=4.28.6 custom stats
+  # crash/prototype-write range. Drop when it resolves browserslist >=4.28.7.
+  browserslist: 4.28.7
+  # Stryker pulls Ajv, which pulls fast-uri; keep it above the <3.1.6 host
+  # confusion and SSRF ranges. Drop when Ajv resolves fast-uri >=3.1.6 directly.
+  fast-uri: 3.1.6
   # Stryker depends on @inquirer/prompts for interactive init. Keep the
   # non-interactive mutation runner on the latest 7.x line so the lockfile uses
   # @inquirer/core's wrap-ansi/string-width-family tree and does not pull the
