@@ -11,8 +11,8 @@ minimumReleaseAgeExclude:
 # Keep lockfile/install resolution on patched dev/build tooling versions, with
 # explicit current-major ceilings so future major upgrades stay reviewed.
 overrides:
-  # markdownlint-cli2 pulls js-yaml; keep it above the <4.3.0 parser DoS range.
-  # Drop when markdownlint-cli2 resolves a patched js-yaml directly.
+  # markdownlint-cli2 pulls js-yaml; keep it above the <5.4.1 merge-key parser
+  # DoS range. Drop when markdownlint-cli2 resolves js-yaml >=5.4.1 directly.
   js-yaml: 5.4.1
   # markdownlint-cli2 and TypeDoc pull markdown-it/linkify-it; keep the tree
   # above the linkify-it <=5.0.1 mailto parser DoS range.
@@ -51,4 +51,4 @@ overrides:
   # for GHSA-q8mj-m7cp-5q26.
   qs: 6.15.2
   # Keep the TOML parser above the <=1.7.0 malformed-document DoS range.
-  smol-toml: '>=1.7.1'
+  smol-toml: '>=1.7.1 <2.0.0'
