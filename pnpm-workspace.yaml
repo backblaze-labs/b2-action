@@ -11,19 +11,19 @@ minimumReleaseAgeExclude:
 # Keep lockfile/install resolution on patched dev/build tooling versions, with
 # explicit current-major ceilings so future major upgrades stay reviewed.
 overrides:
-  # markdownlint-cli2 pulls js-yaml; keep it above the <4.3.0 parser DoS range.
-  # Drop when markdownlint-cli2 resolves a patched js-yaml directly.
-  js-yaml: 5.2.3
+  # markdownlint-cli2 pulls js-yaml; keep it above the <5.4.1 merge-key parser
+  # DoS range. Drop when markdownlint-cli2 resolves js-yaml >=5.4.1 directly.
+  js-yaml: 5.4.1
   # markdownlint-cli2 and TypeDoc pull markdown-it/linkify-it; keep the tree
   # above the linkify-it <=5.0.1 mailto parser DoS range.
-  markdown-it: 14.3.0
+  markdown-it: 14.3.1
   linkify-it: 5.0.2
   # @actions/http-client pulls undici; keep production action deps above the
-  # <6.28.0 HTTP parser ranges. Drop when it resolves undici >=6.28.0 directly.
-  undici: 6.28.0
+  # <6.28.1 HTTP parser and WebSocket ranges. Drop when it resolves undici >=6.28.1 directly.
+  undici: 6.28.1
   # @actions/glob pulls minimatch, which pulls brace-expansion. Keep production
-  # action deps above the <5.0.9 brace expansion DoS range.
-  brace-expansion: '>=5.0.9 <6.0.0'
+  # action deps above the <5.0.12 brace expansion DoS ranges.
+  brace-expansion: '>=5.0.12 <6.0.0'
   # Vitest can resolve Vite below 7.3.5; keep the build/test toolchain on the
   # patched minor. Drop when Vitest's Vite floor is >=7.3.5.
   vite: '>=7.3.5 <8.0.0'
@@ -39,9 +39,9 @@ overrides:
   # Babel tooling pulls Browserslist; keep it above the <=4.28.6 custom stats
   # crash/prototype-write range. Drop when it resolves browserslist >=4.28.7.
   browserslist: 4.28.7
-  # Stryker pulls Ajv, which pulls fast-uri; keep it above the <3.1.6 host
-  # confusion and SSRF ranges. Drop when Ajv resolves fast-uri >=3.1.6 directly.
-  fast-uri: 3.1.6
+  # Stryker pulls Ajv, which pulls fast-uri; keep it above the <3.1.7 host
+  # confusion and SSRF ranges. Drop when Ajv resolves fast-uri >=3.1.7 directly.
+  fast-uri: 3.1.7
   # Stryker depends on @inquirer/prompts for interactive init. Keep the
   # non-interactive mutation runner on the latest 7.x line so the lockfile uses
   # @inquirer/core's wrap-ansi/string-width-family tree and does not pull the
@@ -50,3 +50,5 @@ overrides:
   # typed-rest-client pulls qs; keep the dev toolchain on the patched release
   # for GHSA-q8mj-m7cp-5q26.
   qs: 6.15.2
+  # Keep the TOML parser above the <=1.7.0 malformed-document DoS range.
+  smol-toml: '>=1.7.1 <2.0.0'
