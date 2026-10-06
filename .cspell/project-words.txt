@@ -109,3 +109,4 @@ workflow_dispatch
 xcopy
 yamatt
 zizmor
+smol
