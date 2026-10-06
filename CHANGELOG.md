@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Security
 
-- Raised pinned dev/build tooling overrides (`js-yaml`, `markdown-it`, `linkify-it`, `undici`, `brace-expansion`, `vite`, `esbuild`, `postcss`, `nanoid`, `browserslist`, `fast-uri`, `qs`, `smol-toml`) to clear GitHub Dependabot security alerts, including the `undici` and `brace-expansion` ranges in the shipped bundle.
+- Raised pinned dependency overrides (`js-yaml`, `markdown-it`, `fast-uri`, `smol-toml`) for dev/build tooling and (`undici`, `brace-expansion`) for production dependencies to clear GitHub Dependabot security alerts. The shipped `dist/` bundle was rebuilt to pick up the `undici` and `brace-expansion` fixes.
 
 ## [1.2.0] - 2026-08-04
 

@@ -82,6 +82,7 @@ sha1
 sha256
 sigstore
 sksat
+smol
 softprops
 somedir
 spyon
@@ -109,4 +110,3 @@ workflow_dispatch
 xcopy
 yamatt
 zizmor
-smol
