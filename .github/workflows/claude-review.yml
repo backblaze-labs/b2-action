@@ -58,10 +58,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           PR: ${{ github.event.pull_request.number }}
+          # GraphQL variables, not shell ones; kept in env so the shell never sees them.
+          QUERY: >-
+            query($owner:String!,$name:String!,$n:Int!,$endCursor:String){repository(owner:$owner,name:$name){pullRequest(number:$n){reviewThreads(first:100,after:$endCursor){pageInfo{hasNextPage endCursor}
+            nodes{isResolved isOutdated path line originalLine comments(first:100){nodes{author{login} body createdAt originalCommit{oid}}}}}}}}
         run: |
           set -euo pipefail
           mkdir -p .review-context
-          gh api graphql --paginate -F owner="${REPO%/*}" -F name="${REPO#*/}" -F n="$PR" -f query='query($owner:String!,$name:String!,$n:Int!,$endCursor:String){repository(owner:$owner,name:$name){pullRequest(number:$n){reviewThreads(first:100,after:$endCursor){pageInfo{hasNextPage endCursor} nodes{isResolved isOutdated path line originalLine comments(first:100){nodes{author{login} body createdAt originalCommit{oid}}}}}}}}' \
+          gh api graphql --paginate -F owner="${REPO%/*}" -F name="${REPO#*/}" -F n="$PR" -f query="$QUERY" \
             | jq -s '{threads: [.[].data.repository.pullRequest.reviewThreads.nodes[]]}' > .review-context/review-threads.json
           gh api --paginate "repos/$REPO/pulls/$PR/reviews" \
             | jq -s '[add[] | {author: .user.login, state, commit: .commit_id, submitted_at, body}]' > .review-context/reviews.json
@@ -127,10 +131,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           PR: ${{ github.event.pull_request.number }}
+          # GraphQL variables, not shell ones; kept in env so the shell never sees them.
+          QUERY: >-
+            query($owner:String!,$name:String!,$n:Int!,$endCursor:String){repository(owner:$owner,name:$name){pullRequest(number:$n){reviewThreads(first:100,after:$endCursor){pageInfo{hasNextPage endCursor}
+            nodes{isResolved isOutdated path line originalLine comments(first:100){nodes{author{login} body createdAt originalCommit{oid}}}}}}}}
         run: |
           set -euo pipefail
           mkdir -p .review-context
-          gh api graphql --paginate -F owner="${REPO%/*}" -F name="${REPO#*/}" -F n="$PR" -f query='query($owner:String!,$name:String!,$n:Int!,$endCursor:String){repository(owner:$owner,name:$name){pullRequest(number:$n){reviewThreads(first:100,after:$endCursor){pageInfo{hasNextPage endCursor} nodes{isResolved isOutdated path line originalLine comments(first:100){nodes{author{login} body createdAt originalCommit{oid}}}}}}}}' \
+          gh api graphql --paginate -F owner="${REPO%/*}" -F name="${REPO#*/}" -F n="$PR" -f query="$QUERY" \
             | jq -s '{threads: [.[].data.repository.pullRequest.reviewThreads.nodes[]]}' > .review-context/review-threads.json
           gh api --paginate "repos/$REPO/pulls/$PR/reviews" \
             | jq -s '[add[] | {author: .user.login, state, commit: .commit_id, submitted_at, body}]' > .review-context/reviews.json
