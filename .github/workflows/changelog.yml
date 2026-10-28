@@ -7,6 +7,10 @@ on:
 permissions:
   contents: read # check out the repository and diff it against the base branch
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   changelog:
     name: changelog fragment
