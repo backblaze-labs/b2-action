@@ -16,7 +16,7 @@ Status legend:
 | [core-beliefs.md](core-beliefs.md) | Current | 2026-08-27 | Agent-first operating principles for this repo |
 | [conventions.md](conventions.md) | Current | 2026-08-27 | Commit, code-style, CI-actor, and git-history policies |
 | [review-lessons.md](review-lessons.md) | Current | 2026-10-27 | Recurring review findings from all merged PRs, as a pre-PR checklist |
-| [review-process.md](review-process.md) | Proposal | 2026-10-27 | Risk-tiered review depth; awaiting a code-owner decision |
+| [review-process.md](review-process.md) | Proposal | 2026-10-27 | Review layers, risk tiers, approval rules, metrics, and required settings; awaiting a code-owner decision |
 
 Top-level structure lives outside this catalog by design, so it stays easy to find:
 [AGENTS.md](../../AGENTS.md) is the map, and [ARCHITECTURE.md](../../ARCHITECTURE.md) holds the

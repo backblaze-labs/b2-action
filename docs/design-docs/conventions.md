@@ -36,8 +36,9 @@ This is applied directly in
 [`ci.yml`](../../.github/workflows/ci.yml),
 [`docs-lint.yml`](../../.github/workflows/docs-lint.yml),
 [`security.yml`](../../.github/workflows/security.yml),
-[`full-lockfile-audit.yml`](../../.github/workflows/full-lockfile-audit.yml), and
-[`changelog.yml`](../../.github/workflows/changelog.yml) (which also skips PRs labeled
+[`full-lockfile-audit.yml`](../../.github/workflows/full-lockfile-audit.yml),
+[`claude-review.yml`](../../.github/workflows/claude-review.yml) (which also skips drafts and fork
+PRs), and [`changelog.yml`](../../.github/workflows/changelog.yml) (which also skips PRs labeled
 `skip-changelog`, and uses the two-clause guard that keeps a human re-run of a Dependabot PR
 skipped too), or folded into an
 existing condition that already excludes `dependabot[bot]` in
