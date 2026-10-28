@@ -106,9 +106,13 @@ That writes a small YAML file under `.changes/unreleased/`; commit it with your 
 
 The `build-and-check-dist` CI job also enforces a 4 MiB ceiling on `dist/index.js`. If you add a dependency that pushes it over, you'll need to justify the bump in the same PR.
 
-## Reporting bugs
+## Opening issues
 
-Please use the issue templates under `.github/ISSUE_TEMPLATE/`. Include the action version (`uses:` line with the resolved SHA), the workflow snippet, and the redacted log output.
+Please use the issue forms under `.github/ISSUE_TEMPLATE/`:
+
+- **Bug report** for a defect in the Action. Include the action version (`uses:` line with the resolved SHA), the workflow snippet, and the redacted log output.
+- **Feature request** for a new verb, input, output, or behavior.
+- **Task** for maintenance, tooling, CI, docs, release, or dependency work on the repository. State the outcome, "done when" conditions you can check, the area, and the risk tier from [review-process.md](./docs/design-docs/review-process.md).
 
 ## License
 
