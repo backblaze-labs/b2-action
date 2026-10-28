@@ -242,7 +242,8 @@ This repo mirrors the [`b2-sdk-typescript`](https://github.com/backblaze-labs/b2
 ## CI gates
 
 Pull requests run the core gates below. Scheduled and manual-only checks are
-listed in the same table and called out explicitly.
+listed in the same table and called out explicitly. Run the PR gates together
+locally with `pnpm ci:local` before pushing.
 
 | Job | What it checks |
 | --- | --- |
@@ -259,6 +260,8 @@ listed in the same table and called out explicitly.
 | `full-lockfile-audit` ([full-lockfile-audit.yml](./.github/workflows/full-lockfile-audit.yml)) | `pnpm audit --audit-level high` across the full lockfile, including dev/build tooling used to produce committed `dist/`. Runs on PRs and pushes that touch dependency/audit policy files, plus weekly and manually. PR findings are informational (`continue-on-error`) so unrelated feature work is not blocked; push/scheduled/manual default-branch failures open or update one labeled tracking issue, with infrastructure failures separated from dependency advisories. A later passing default-branch run closes open tracking issues. |
 | `heartbeat` ([full-lockfile-audit-heartbeat.yml](./.github/workflows/full-lockfile-audit-heartbeat.yml)) | Daily check that a scheduled, manual, or main-push full-lockfile audit has fired in the last 10 days; opens or updates one labeled tracking issue when a transient cron drop leaves the audit stale, and closes it once the audit recovers. It stays silent before the first audit run has ever been observed. Because it is also scheduled, this heartbeat does not protect against GitHub's 60-day inactivity auto-disable or a broader GitHub Actions scheduling outage; after long repository inactivity, maintainers should verify scheduled workflows in the Actions UI or manually dispatch `full-lockfile-audit.yml` on `main`. |
 | `sync-check` ([docs-lint.yml](./.github/workflows/docs-lint.yml)) | every input/output in `action.yml` also appears in the README reference tables. Drift fails CI. |
+| `review`, `security` ([claude-review.yml](./.github/workflows/claude-review.yml)) | Two separate Claude review passes on every ready, non-fork PR: the [REVIEW.md](./REVIEW.md) passes and a security pass. Findings are inline comments tagged Important / Nit / Pre-existing; the jobs never approve. Inactive (a notice, then skip) until the `ANTHROPIC_API_KEY` repository secret is added, and skipped the same way when a bot or app rather than a person triggered the run, since the action only accepts human actors. |
+| `changelog` ([changelog.yml](./.github/workflows/changelog.yml)) | `pnpm changelog:check`: a PR that changes `src/`, `dist/`, `action.yml`, dependencies, `.github/workflows/`, or `.github/actions/` must add a changie fragment with a non-empty kind and body (a release PR may instead add the batched `.changes/v<version>.md` for the `package.json` version, with at least one entry), and every fragment must batch cleanly. Skipped for PRs labeled `skip-changelog` and for Dependabot. |
 | `markdownlint` ([docs-lint.yml](./.github/workflows/docs-lint.yml)) | prose-style consistency across `**/*.md`. Config in [`.markdownlint-cli2.jsonc`](./.markdownlint-cli2.jsonc). |
 | `link-check` ([docs-lint.yml](./.github/workflows/docs-lint.yml)) | `pnpm docs:links` runs pinned lychee in `--offline` mode against source markdown and excludes the generated `api-docs/`; catches broken relative paths and anchor fragments. External URLs are not pinged. |
 | `spellcheck` ([docs-lint.yml](./.github/workflows/docs-lint.yml)) | cspell across `**/*.ts`, `**/*.md`, `**/*.yml`, `action.yml`. Config in [`cspell.json`](./cspell.json); domain-specific words live in [`.cspell/project-words.txt`](./.cspell/project-words.txt). Add a word there when cspell flags a deliberate identifier. |
@@ -343,7 +346,7 @@ The pattern is the same every time:
 4. **Document** in `action.yml`: any new inputs and outputs the verb introduces.
 5. **Test** under `__tests__/commands/<verb>.test.ts`: use `makeInputs(action, override)` from `_helpers.ts` and the SDK's `B2Simulator`. Cover happy path + at least one error.
 6. **Example workflow** at `.github/workflows/example-<verb>.yml`: copy-paste-runnable AND acts as a live integration test against the project's test bucket.
-7. **README + CHANGELOG**: add a row to the verb table, a usage snippet, and an `[Unreleased]` CHANGELOG entry.
+7. **README + changelog**: add a row to the verb table, a usage snippet, and a changelog fragment (`pnpm changelog:new`).
 8. **Rebuild** `dist/index.js` with `pnpm build` and commit it.
 
 The deeper "how to contribute" workflow lives in [CONTRIBUTING.md](./CONTRIBUTING.md); the release runbook is in [RELEASE.md](./RELEASE.md).

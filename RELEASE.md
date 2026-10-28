@@ -12,24 +12,25 @@ The single source of truth for how releases of this Action are cut, automated, a
 
 ## Runbook: cut a release
 
-As you land PRs, accumulate notes under the `## [Unreleased]` heading in [`CHANGELOG.md`](./CHANGELOG.md), grouped Keep-a-Changelog style (`### Added`, `### Changed`, `### Fixed`, `### Removed`).
+Every PR that changes what ships adds a [changie](https://changie.dev) fragment under `.changes/unreleased/` (`pnpm changelog:new`; see [CONTRIBUTING.md](./CONTRIBUTING.md#changelog-entries)), and the `changelog` CI check enforces it. Fragments use the Keep a Changelog kinds (`Added`, `Changed`, `Deprecated`, `Removed`, `Fixed`, `Security`). [`CHANGELOG.md`](./CHANGELOG.md) is generated from them and is never edited by hand.
 
 ### Pre-release checklist
 
 The release workflow gates code and provenance, but a few coherence checks are not automated. Run through this on a clean, up-to-date `main` before `pnpm version`:
 
-- [ ] **CHANGELOG is complete.** Review `git log <last-tag>..HEAD` (or the merged-PR list for the milestone) and confirm every notable change has an `[Unreleased]` entry: new/changed `action.yml` inputs or outputs, behavior changes, deprecations, and dependency bumps (especially `@backblaze-labs/b2-sdk`).
+- [ ] **Changelog is complete.** Review `git log <last-tag>..HEAD` (or the merged-PR list for the milestone) and confirm every notable change has a fragment in `.changes/unreleased/`: new/changed `action.yml` inputs or outputs, behavior changes, deprecations, and dependency bumps (especially `@backblaze-labs/b2-sdk`). Preview the notes with `pnpm exec changie batch auto --dry-run`.
+- [ ] **The version is the one you expect.** `pnpm exec changie next auto` derives it from the fragment kinds. A `Removed` fragment forces a major (a new floating `vN` tag); if that is not intended, fix the fragment before releasing.
 - [ ] **Docs match code.** `pnpm docs:check-action-yml` passes (README inputs/outputs synced with `action.yml`), and the verb count, workflow inventory, and coverage claim in `README.md` / `DEVELOPMENT.md` / `CONTRIBUTING.md` still reflect reality. Prefer gate-backed wording (for example the `95+%` coverage badge) over hard-coded counts that silently drift.
-- [ ] **All gates green locally.** `pnpm all` (lint, release-provenance, typecheck, test, build, spellcheck), plus `pnpm test:coverage`, `pnpm docs:lint`, `pnpm docs:links`, and `pnpm audit`.
+- [ ] **All gates green locally.** `pnpm ci:local` (lint, release-provenance, typecheck, test, build, spellcheck, dist freshness, coverage, `action.yml` sync, changelog check, docs lint and links, prod audit).
 - [ ] **`dist/` is fresh.** `pnpm verify-dist` is clean (rebuild produces no diff).
 - [ ] **No stale version references** in prose or examples.
 
-Automating the CHANGELOG-completeness check (a PR-time gate requiring a `CHANGELOG.md` entry) is tracked separately; until then this checklist is the backstop.
+The `changelog` CI check (`pnpm changelog:check`) already requires a valid entry (a fragment with a kind and body, or on a release PR the batched notes for the package version) on every PR that changes `src/`, `dist/`, `action.yml`, dependencies, or `.github/workflows/` and `.github/actions/`, so this checklist item is about completeness and wording, not presence.
 
 From a clean, up-to-date `main`:
 
 ```bash
-pnpm version <patch|minor|major>   # or: pnpm version X.Y.Z
+pnpm version "$(pnpm --silent exec changie next auto | sed 's/^v//')"   # or: pnpm version X.Y.Z
 git push --follow-tags
 ```
 
@@ -37,14 +38,14 @@ git push --follow-tags
 
 ```jsonc
 "preversion": "pnpm lint && pnpm typecheck && pnpm test",
-"version":    "node scripts/cut-changelog.mjs && pnpm build && git add CHANGELOG.md dist"
+"version":    "node scripts/changelog-release.mjs && pnpm build && git add CHANGELOG.md .changes package.json dist"
 ```
 
 That is:
 
 1. **`preversion`** gates the release (lint, typecheck, tests).
 2. **`pnpm version`** bumps `package.json` `version`.
-3. **`version`** dates the `[Unreleased]` section via [`scripts/cut-changelog.mjs`](./scripts/cut-changelog.mjs), rebuilds `dist/` so the new version bakes into the bundle and User-Agent, and stages both into the version commit.
+3. **`version`** runs [`scripts/changelog-release.mjs`](./scripts/changelog-release.mjs): `changie batch v<version>` folds the unreleased fragments into `.changes/v<version>.md`, and `changie merge` regenerates `CHANGELOG.md` (a prerelease leaves the fragments for the next stable release). It then rebuilds `dist/` so the new version bakes into the bundle and User-Agent, and stages `CHANGELOG.md`, `.changes/`, `package.json`, and `dist/` into the version commit.
 4. **`pnpm version`** commits everything and creates the annotated `vX.Y.Z` tag (SSH-signed if `tag.gpgSign` is set; see [Signed tags](#signed-tags)).
 5. **`git push --follow-tags`** pushes the commit plus the new annotated tag. `--follow-tags` pushes only annotated tags, so a stale local `vN` cannot clobber the remote floating tag.
 
@@ -180,4 +181,4 @@ The listing lives at `github.com/marketplace/actions/backblaze-b2-cloud-storage-
 
 - **Marketplace name uniqueness.** `name:` in `action.yml` must be globally unique across the Marketplace (it is the listing title and URL slug). Independent of the repo path `backblaze-labs/b2-action`, which is what `uses:` references.
 - **`minimumReleaseAge` and first-party deps.** [`pnpm-workspace.yaml`](./pnpm-workspace.yaml) excludes `@backblaze-labs/*` from `minimumReleaseAge` so a freshly-published SDK release does not block `pnpm install --frozen-lockfile` in CI.
-- **CHANGELOG link references.** The `[Unreleased]` and `[X.Y.Z]` link references at the bottom of `CHANGELOG.md` are maintained alongside each release. `scripts/cut-changelog.mjs` updates them during `pnpm version`.
+- **CHANGELOG generation.** `CHANGELOG.md` is generated by [changie](https://changie.dev) (configured in [`.changie.yaml`](./.changie.yaml)) from `.changes/header.tpl.md` and the per-version files `.changes/vX.Y.Z.md`; each version file carries its own compare link. Edit those files or the fragments, never `CHANGELOG.md`. changie is pinned as a devDependency, so `pnpm exec changie` needs no separate install.

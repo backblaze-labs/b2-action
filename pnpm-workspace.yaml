@@ -19,8 +19,8 @@ overrides:
   markdown-it: 14.3.1
   linkify-it: 5.0.2
   # @actions/http-client pulls undici; keep production action deps above the
-  # <6.28.1 HTTP parser and WebSocket ranges. Drop when it resolves undici >=6.28.1 directly.
-  undici: 6.28.1
+  # <6.29.1 HTTP parser, TLS, and WebSocket ranges. Drop when it resolves undici >=6.29.1 directly.
+  undici: 6.29.1
   # @actions/glob pulls minimatch, which pulls brace-expansion. Keep production
   # action deps above the <5.0.12 brace expansion DoS ranges.
   brace-expansion: '>=5.0.12 <6.0.0'

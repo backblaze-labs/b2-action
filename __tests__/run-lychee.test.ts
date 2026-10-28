@@ -67,6 +67,8 @@ describe('run-lychee helper', () => {
       '(^|[\\\\/])api-docs[\\\\/]',
       '--exclude-path',
       '(^|[\\\\/])\\.stryker-tmp[\\\\/]',
+      '--exclude-path',
+      '(^|[\\\\/])\\.changes[\\\\/]',
       '**/*.md',
     ])
     expect(
@@ -86,6 +88,12 @@ describe('run-lychee helper', () => {
     const generatedDocsPath = new RegExp(generatedDocsExclude)
     expect(generatedDocsPath.test('api-docs/media/README.md')).toBe(true)
     expect(generatedDocsPath.test('api-docs\\media\\README.md')).toBe(true)
+    const changieExclude = excludePaths.find((pattern) => pattern?.includes('changes'))
+    if (changieExclude === undefined) throw new Error('missing changie sources exclude')
+    const changiePath = new RegExp(changieExclude)
+    expect(changiePath.test('.changes/header.tpl.md')).toBe(true)
+    expect(changiePath.test('.changes\\v1.2.0.md')).toBe(true)
+    expect(changiePath.test('CHANGELOG.md')).toBe(false)
   })
 
   it('preserves default lychee args when extra args are supplied', () => {

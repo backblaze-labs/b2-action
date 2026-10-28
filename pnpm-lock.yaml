@@ -8,7 +8,7 @@ overrides:
   js-yaml: 5.4.1
   markdown-it: 14.3.1
   linkify-it: 5.0.2
-  undici: 6.28.1
+  undici: 6.29.1
   brace-expansion: '>=5.0.12 <6.0.0'
   vite: '>=7.3.5 <8.0.0'
   esbuild: '>=0.28.1 <0.29.0'
@@ -52,6 +52,9 @@ importers:
       '@vitest/coverage-v8':
         specifier: ^4.1.11
         version: 4.1.11(vitest@4.1.11)
+      changie:
+        specifier: 1.26.0
+        version: 1.26.0
       cspell:
         specifier: ^10.2.2
         version: 10.2.2
@@ -1270,6 +1273,10 @@ packages:
     resolution: {integrity: sha512-2uNTXIuTTxk7ciZgAU1BQcgnchcG0xXnrs6jzkQfj9SsRa9M2s5zE8WT96hS6KmG4MzWHSrvH43DF1m4XRkrFg==}
     engines: {node: '>=22'}
 
+  changie@1.26.0:
+    resolution: {integrity: sha512-uxNt7qEj5K0m+OzESAABldgUVn3I+KkiMH2gYjDCPJmsr0Qpoc5F6R2udiQkc8SJNsc7vfJBUaoHW8a0emflmg==}
+    hasBin: true
+
   character-entities-legacy@3.0.0:
     resolution: {integrity: sha512-RpPp0asT/6ufRm//AJVwpViZbGM/MkjQFxJccQRHmISF/22NBtsHqAWmL+/pmkPWoIUJdWyeVleTl1wydHATVQ==}
 
@@ -2098,8 +2105,8 @@ packages:
   undici-types@8.9.0:
     resolution: {integrity: sha512-KTDyRTYX8sWmKXAikPHHSyc63CRPETMctyjKFupcC6OBLXT3xsN0e9aF7m+mIXutFWpUXuedtowG7iLOzp0kQg==}
 
-  undici@6.28.1:
-    resolution: {integrity: sha512-zWpdTVD54H48CIybL0rWQ3ukpb9d23wM7eH5RtfdmeP70cWHNjtfo7P4vZX+5CoDcO53J4Pu5uXp7lNfjc6DRA==}
+  undici@6.29.1:
+    resolution: {integrity: sha512-EvRlUt/QqAEvXdQeRMYUfwOQsfzpDztykrG2owGEE/rBOBoYv9uF39ZzsNDh4lTFHhTr2XOZjKkYgueD12ZmGA==}
     engines: {node: '>=18.17'}
 
   unicorn-magic@0.3.0:
@@ -2259,7 +2266,7 @@ snapshots:
   '@actions/http-client@4.0.1':
     dependencies:
       tunnel: 0.0.6
-      undici: 6.28.1
+      undici: 6.29.1
 
   '@actions/io@3.0.2': {}
 
@@ -3330,6 +3337,8 @@ snapshots:
 
   chalk@6.0.0: {}
 
+  changie@1.26.0: {}
+
   character-entities-legacy@3.0.0: {}
 
   character-entities@2.0.2: {}
@@ -4263,7 +4272,7 @@ snapshots:
 
   undici-types@8.9.0: {}
 
-  undici@6.28.1: {}
+  undici@6.29.1: {}
 
   unicorn-magic@0.3.0: {}
 

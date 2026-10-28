@@ -1,0 +1,3 @@
+kind: Changed
+body: 'Contributor workflow adopts the AI-native SDLC playbook on top of the existing `AGENTS.md` and `docs/` layout: `REVIEW.md` defines the review passes, `.claude/` ships shared skills, subagents, and edit-time hooks, `pnpm ci:local` runs the full PR gate, and a `CODE_OF_CONDUCT.md` is added. Changelog entries are now [changie](https://changie.dev) fragments under `.changes/unreleased/`, checked on every PR, so parallel PRs no longer conflict on `CHANGELOG.md`. ([#257](https://github.com/backblaze-labs/b2-action/issues/257))'
+time: 2026-10-27T21:47:00.235853-05:00
