@@ -75,7 +75,7 @@ About 45 findings, the largest group by volume. The security workflow (actionlin
 
 - [ ] Every workflow has a `concurrency` group, scoped to the ref so PR runs do not queue behind `main` (#56, #65, #258).
 - [ ] Jobs that need write scopes skip fork PRs, whose token is read-only (#56); every `pull_request` job carries the Dependabot guard (see [conventions.md](conventions.md)).
-- [ ] Least privilege, computed as GitHub does: job permissions inherit unspecified scopes from the workflow, and `write-all` is a string, not a mapping (#66). Grant read scopes the steps actually need, such as `attestations: read` for `gh attestation verify` (#66).
+- [ ] Least privilege, computed as GitHub does: a job with its own `permissions` key gets exactly the scopes it lists and every other scope is `none` (it does not inherit from the workflow), while a job without a `permissions` key uses the workflow-level block. So a job-level mapping must list every scope its steps need, `contents: read` included. `write-all` is a string, not a mapping (#66, #258). (#66 assumed jobs inherit unspecified scopes; the release-provenance policy built on that is stricter than needed, which is safe.) Grant read scopes the steps actually need, such as `attestations: read` for `gh attestation verify` (#66).
 - [ ] `on.push.tags` filters are globs, not regexes; validate strictly in a step (#66).
 - [ ] Outputs and step ids used with dot access are identifier-safe; `outputs.release-sha` parses as subtraction (#66).
 - [ ] A checkout by SHA does not fetch tags; fetch the tag before `git rev-parse` on it (#66).
