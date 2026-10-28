@@ -38,8 +38,9 @@ try {
   fail(`BASE_REF ${base} not found; run 'git fetch origin' or set BASE_REF.`)
 }
 
-const changed = git('diff', '--name-only', `${base}...HEAD`)
-const added = git('diff', '--name-only', '--diff-filter=A', `${base}...HEAD`)
+// --no-renames keeps the old path of a file moved out of a shipped directory.
+const changed = git('diff', '--name-only', '--no-renames', `${base}...HEAD`)
+const added = git('diff', '--name-only', '--no-renames', '--diff-filter=A', `${base}...HEAD`)
 const { version } = JSON.parse(readFileSync(join(repo, 'package.json'), 'utf8'))
 
 let validEntries = 0

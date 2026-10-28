@@ -186,6 +186,12 @@ describe.skipIf(!hasGit)('changelog-check script', () => {
     expect(runCheck().status).toBe(1)
   })
 
+  it('fails when a workflow is moved out of a shipped directory without an entry', () => {
+    git('mv', '.github/workflows/w.yml', 'docs-w.yml')
+    commit()
+    expect(runCheck().status).toBe(1)
+  })
+
   it('passes a docs-only change without an entry', () => {
     write('README.md', '# docs\n')
     commit()
