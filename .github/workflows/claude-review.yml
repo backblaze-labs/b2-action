@@ -27,16 +27,23 @@ jobs:
       contents: read # read the code under review
       pull-requests: write # post review comments; the action never approves
     steps:
-      - name: Check for the API key
+      # claude-code-action fails unless the triggering actor is a human (a `User` account), so a
+      # push by another bot or app (github-actions[bot], Copilot) skips cleanly instead of failing.
+      - name: Decide whether to review
         id: key
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GH_TOKEN: ${{ github.token }}
+          ACTOR: ${{ github.actor }}
         run: |
-          if [ -n "$ANTHROPIC_API_KEY" ]; then
-            echo "present=true" >> "$GITHUB_OUTPUT"
-          else
+          if [ -z "$ANTHROPIC_API_KEY" ]; then
             echo "present=false" >> "$GITHUB_OUTPUT"
             echo "::notice title=Claude review skipped::Add the ANTHROPIC_API_KEY repository secret to enable AI review (see REVIEW.md)."
+          elif [ "$(gh api "users/$ACTOR" --jq .type 2>/dev/null)" != "User" ]; then
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Claude review skipped::Triggered by a non-human actor; the review action only runs for human-triggered events."
+          else
+            echo "present=true" >> "$GITHUB_OUTPUT"
           fi
       - uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
         if: steps.key.outputs.present == 'true'
@@ -91,16 +98,21 @@ jobs:
       contents: read # read the code under review
       pull-requests: write # post review comments; the action never approves
     steps:
-      - name: Check for the API key
+      - name: Decide whether to review
         id: key
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GH_TOKEN: ${{ github.token }}
+          ACTOR: ${{ github.actor }}
         run: |
-          if [ -n "$ANTHROPIC_API_KEY" ]; then
-            echo "present=true" >> "$GITHUB_OUTPUT"
-          else
+          if [ -z "$ANTHROPIC_API_KEY" ]; then
             echo "present=false" >> "$GITHUB_OUTPUT"
             echo "::notice title=Claude security review skipped::Add the ANTHROPIC_API_KEY repository secret to enable the security pass (see REVIEW.md)."
+          elif [ "$(gh api "users/$ACTOR" --jq .type 2>/dev/null)" != "User" ]; then
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Claude security review skipped::Triggered by a non-human actor; the review action only runs for human-triggered events."
+          else
+            echo "present=true" >> "$GITHUB_OUTPUT"
           fi
       - uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
         if: steps.key.outputs.present == 'true'

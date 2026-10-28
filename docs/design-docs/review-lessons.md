@@ -91,6 +91,7 @@ About 45 findings, the largest group by volume. The security workflow (actionlin
 - [ ] Cache only runner-controlled paths (`${{ runner.temp }}`), with the architecture in the key (#73).
 - [ ] Installs in CI that do not need hooks skip lifecycle scripts (`--ignore-scripts`) (#75).
 - [ ] Prefer `gh ... -q` over shelling out to tools the job did not set up (#66).
+- [ ] Gate on a third-party action's own preconditions so a miss skips instead of failing. `claude-code-action` throws unless the triggering actor is a `User` account, and a job `if` that excludes only Dependabot still lets `github-actions[bot]` or `Copilot` (an actor with no `[bot]` suffix) fail it; check the actor type the way the action does (#258).
 
 ## 7. Concurrency, cancellation, and failure paths in `src/`
 
