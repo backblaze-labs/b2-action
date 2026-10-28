@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 // @ts-expect-error scripts are dependency-free JavaScript, not typed modules.
-const check = (await import('../scripts/changelog-check.mjs')) as {
+const check = (await import('../scripts/changelog-check-lib.mjs')) as {
   isShipped: (file: string) => boolean
   isFragment: (file: string) => boolean
   missingEntry: (changedFiles: string[], addedFiles: string[]) => boolean
