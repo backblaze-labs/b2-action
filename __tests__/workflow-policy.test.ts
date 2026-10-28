@@ -10,6 +10,7 @@ const protectedPullRequestWorkflows = [
   '.github/workflows/docs-lint.yml',
   '.github/workflows/security.yml',
   '.github/workflows/full-lockfile-audit.yml',
+  '.github/workflows/changelog.yml',
 ]
 const localActionSecretedExamples = ['.github/workflows/example-ml-cache-sync.yml']
 

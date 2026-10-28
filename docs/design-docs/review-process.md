@@ -13,7 +13,7 @@ Tie review depth to risk.
 | Tier | Touches | Review |
 | --- | --- | --- |
 | Low | Docs, comments, tests only, example workflows | One code owner; an AI review pass is optional |
-| Medium | `src/` behavior, inputs or outputs, dependencies | The [REVIEW.md](../../REVIEW.md) passes, then one code owner; a CHANGELOG entry is required |
+| Medium | `src/` behavior, inputs or outputs, dependencies | The [REVIEW.md](../../REVIEW.md) passes, then one code owner; a changelog fragment is required |
 | High | `release.yml`, `security.yml`, breaking `action.yml` changes, credential handling, `dist/` packaging, SDK major bumps | The REVIEW.md passes plus a security review, a plan in `docs/exec-plans/active/` first, then a code owner who did not author the change |
 
 Supporting settings, each a separate decision:

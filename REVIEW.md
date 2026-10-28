@@ -19,7 +19,7 @@ Run each pass over the full diff and tag every finding with its pass.
 - **Bugs**: logic errors, edge cases (empty prefix, trailing slash, `~` paths, Windows paths, zero files), regressions, and inputs parsed but not forwarded.
 - **Contract**: every `action.yml` input and output is still documented and emitted; failure paths set `retryable` and `retry-after` only when a retry is safe; `summary-json` caps and redaction still hold; the User-Agent tokens are untouched.
 - **Security**: secrets are masked at the boundary and never reach outputs, logs, or summaries; nothing replaces the SDK with raw HTTP or a subprocess; workflow changes keep SHA pins, least-privilege `permissions`, `persist-credentials: false`, and the Dependabot guard.
-- **Compliance**: the change does what its issue asks and, for larger work, follows its plan in `docs/exec-plans/active/`; the golden rules in [AGENTS.md](AGENTS.md) hold; user-visible changes carry a CHANGELOG `[Unreleased]` entry; a bug fix ships with a test that pins it.
+- **Compliance**: the change does what its issue asks and, for larger work, follows its plan in `docs/exec-plans/active/`; the golden rules in [AGENTS.md](AGENTS.md) hold; user-visible changes add a changie fragment under `.changes/unreleased/` whose wording a user would understand; a bug fix ships with a test that pins it.
 
 ## Severity
 

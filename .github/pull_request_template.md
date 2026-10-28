@@ -24,7 +24,7 @@ Thanks for sending a pull request! A few quick checks before submitting:
 - [ ] Test coverage for new logic added under `__tests__/` (and passes the 95%/85%/100%/95% coverage gate).
 - [ ] If a new `action:` verb was added: it's listed in `src/inputs.ts` `ActionName`, wired in `src/main.ts`, documented in `action.yml`, and has a usage entry in the [README](../README.md).
 - [ ] If a new input or output was added: documented in `action.yml` and the README table.
-- [ ] If user-visible behavior changed: a [`CHANGELOG.md`](../CHANGELOG.md) entry under `[Unreleased]`.
+- [ ] If user-visible behavior changed: a changelog fragment from `pnpm changelog:new` (see [CONTRIBUTING.md](../CONTRIBUTING.md#changelog-entries)); otherwise ask for the `skip-changelog` label.
 - [ ] If a new example workflow was added: listed in [`.github/workflows/README.md`](./workflows/README.md) and runs against the project's test bucket.
 
 ## How to test this

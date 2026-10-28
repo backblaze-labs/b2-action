@@ -35,8 +35,11 @@ if: ${{ github.actor != 'dependabot[bot]' }}
 This is applied directly in
 [`ci.yml`](../../.github/workflows/ci.yml),
 [`docs-lint.yml`](../../.github/workflows/docs-lint.yml),
-[`security.yml`](../../.github/workflows/security.yml), and
-[`full-lockfile-audit.yml`](../../.github/workflows/full-lockfile-audit.yml), or folded into an
+[`security.yml`](../../.github/workflows/security.yml),
+[`full-lockfile-audit.yml`](../../.github/workflows/full-lockfile-audit.yml), and
+[`changelog.yml`](../../.github/workflows/changelog.yml) (which also skips PRs labeled
+`skip-changelog`, and uses the two-clause guard that keeps a human re-run of a Dependabot PR
+skipped too), or folded into an
 existing condition that already excludes `dependabot[bot]` in
 [`codeql.yml`](../../.github/workflows/codeql.yml),
 [`docs.yml`](../../.github/workflows/docs.yml), and every `example-*.yml`. Schedule-only,
