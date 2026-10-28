@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 // Gate for the Claude review jobs (.github/workflows/claude-review.yml). Writes `present=true`
-// to GITHUB_OUTPUT only when the ANTHROPIC_API_KEY secret is set and the triggering actor is a
-// person. Skips with a notice for a missing key or a bot/app actor, and fails the job when the
+// to GITHUB_OUTPUT only when the ANTHROPIC_API_KEY secret is set (HAS_API_KEY=true; the key itself
+// never reaches this script) and the triggering actor is a person. Skips with a notice for a missing key or a bot/app actor, and fails the job when the
 // actor cannot be identified, so a lookup failure never passes as a successful skip.
-// Env: ANTHROPIC_API_KEY, ACTOR, GH_TOKEN, NOTICE_TITLE, GITHUB_OUTPUT, and optionally
+// Env: HAS_API_KEY, ACTOR, GH_TOKEN, NOTICE_TITLE, GITHUB_OUTPUT, and optionally
 // GITHUB_API_URL, GATE_ATTEMPTS, GATE_RETRY_DELAY_MS (the last three are for tests).
 
 import { appendFileSync } from 'node:fs'
@@ -42,7 +42,7 @@ async function lookup() {
   }
 }
 
-const hasApiKey = (process.env.ANTHROPIC_API_KEY ?? '') !== ''
+const hasApiKey = process.env.HAS_API_KEY === 'true'
 let actorClass = 'unknown'
 let last = null
 if (hasApiKey) {

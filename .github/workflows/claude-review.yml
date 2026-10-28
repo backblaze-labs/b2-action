@@ -2,8 +2,8 @@ name: Claude review
 
 # AI review on every ready PR, as two separate passes: the REVIEW.md passes and a security pass.
 # Findings are inline comments tagged Important / Nit / Pre-existing; the action never approves,
-# and approval stays a human code owner's. scripts/claude-review-gate.mjs decides whether each
-# job reviews: it skips with a notice when the ANTHROPIC_API_KEY secret is absent or a bot or app
+# and approval stays a human code owner's. scripts/claude-review-gate.mjs, run from the base
+# commit, decides whether each job reviews: it skips with a notice when the ANTHROPIC_API_KEY secret is absent or a bot or app
 # triggered the run, and fails when it cannot tell whether the actor is a person.
 
 on:
@@ -32,14 +32,28 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0 # the review reads the diff and the base-branch policy
+      # The gate runs from the base commit, not the PR, and sees only whether the key exists.
+      - uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: .trusted
+          sparse-checkout: scripts/claude-review-gate*.mjs
+          sparse-checkout-cone-mode: false
       - name: Decide whether to review
         id: key
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          HAS_API_KEY: ${{ secrets.ANTHROPIC_API_KEY != '' }}
           GH_TOKEN: ${{ github.token }}
           ACTOR: ${{ github.actor }}
           NOTICE_TITLE: Claude review skipped
-        run: node scripts/claude-review-gate.mjs
+        run: |
+          if [ -f .trusted/scripts/claude-review-gate.mjs ]; then
+            node .trusted/scripts/claude-review-gate.mjs
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=$NOTICE_TITLE::The review gate is not on the base branch yet; reviews start once it merges."
+          fi
       # `gh pr view` shows conversation comments, not inline review threads, so save every
       # thread (replies, resolution, the commit it was raised on), every review, and the
       # base-branch review policy that this PR is checked against.
@@ -107,14 +121,28 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0 # the review reads the diff and the base-branch policy
+      # The gate runs from the base commit, not the PR, and sees only whether the key exists.
+      - uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: .trusted
+          sparse-checkout: scripts/claude-review-gate*.mjs
+          sparse-checkout-cone-mode: false
       - name: Decide whether to review
         id: key
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          HAS_API_KEY: ${{ secrets.ANTHROPIC_API_KEY != '' }}
           GH_TOKEN: ${{ github.token }}
           ACTOR: ${{ github.actor }}
           NOTICE_TITLE: Claude security review skipped
-        run: node scripts/claude-review-gate.mjs
+        run: |
+          if [ -f .trusted/scripts/claude-review-gate.mjs ]; then
+            node .trusted/scripts/claude-review-gate.mjs
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=$NOTICE_TITLE::The review gate is not on the base branch yet; reviews start once it merges."
+          fi
       - name: Fetch prior review context
         if: steps.key.outputs.present == 'true'
         env:

@@ -96,21 +96,21 @@ describe('claude-review gate script', () => {
 
   it('reviews when a person triggered the run', async () => {
     const api = await fakeApi([{ status: 200, body: { type: 'User' } }])
-    const result = await run({ ANTHROPIC_API_KEY: 'k', GITHUB_API_URL: api.url })
+    const result = await run({ HAS_API_KEY: 'true', GITHUB_API_URL: api.url })
     expect(result.status).toBe(0)
     expect(result.output).toBe('present=true\n')
   })
 
   it('skips with a notice for a bot or an app actor', async () => {
     const bot = await fakeApi([{ status: 200, body: { type: 'Bot' } }])
-    const botResult = await run({ ANTHROPIC_API_KEY: 'k', GITHUB_API_URL: bot.url })
+    const botResult = await run({ HAS_API_KEY: 'true', GITHUB_API_URL: bot.url })
     expect(botResult.status).toBe(0)
     expect(botResult.output).toBe('present=false\n')
     expect(botResult.stdout).toContain('::notice')
     await new Promise<void>((done) => server?.close(() => done()))
 
     const app = await fakeApi([{ status: 404, body: { message: 'Not Found' } }])
-    const appResult = await run({ ANTHROPIC_API_KEY: 'k', GITHUB_API_URL: app.url })
+    const appResult = await run({ HAS_API_KEY: 'true', GITHUB_API_URL: app.url })
     expect(appResult.status).toBe(0)
     expect(appResult.output).toBe('present=false\n')
   })
@@ -118,7 +118,7 @@ describe('claude-review gate script', () => {
   it('fails instead of skipping when the lookup keeps failing', async () => {
     const api = await fakeApi([{ status: 503, body: { message: 'unavailable' } }])
     const result = await run({
-      ANTHROPIC_API_KEY: 'k',
+      HAS_API_KEY: 'true',
       GITHUB_API_URL: api.url,
       GATE_ATTEMPTS: '3',
     })
@@ -130,11 +130,11 @@ describe('claude-review gate script', () => {
 
   it('fails on an auth error or a malformed response', async () => {
     const auth = await fakeApi([{ status: 401, body: { message: 'Bad credentials' } }])
-    expect((await run({ ANTHROPIC_API_KEY: 'k', GITHUB_API_URL: auth.url })).status).toBe(1)
+    expect((await run({ HAS_API_KEY: 'true', GITHUB_API_URL: auth.url })).status).toBe(1)
     await new Promise<void>((done) => server?.close(() => done()))
 
     const malformed = await fakeApi([{ status: 200, body: 'not json' }])
-    expect((await run({ ANTHROPIC_API_KEY: 'k', GITHUB_API_URL: malformed.url })).status).toBe(1)
+    expect((await run({ HAS_API_KEY: 'true', GITHUB_API_URL: malformed.url })).status).toBe(1)
   })
 
   it('recovers when a transient failure is followed by a good answer', async () => {
@@ -142,7 +142,7 @@ describe('claude-review gate script', () => {
       { status: 502, body: { message: 'bad gateway' } },
       { status: 200, body: { type: 'User' } },
     ])
-    const result = await run({ ANTHROPIC_API_KEY: 'k', GITHUB_API_URL: api.url })
+    const result = await run({ HAS_API_KEY: 'true', GITHUB_API_URL: api.url })
     expect(result.status).toBe(0)
     expect(result.output).toBe('present=true\n')
     expect(api.seen.requests).toBe(2)
@@ -150,8 +150,15 @@ describe('claude-review gate script', () => {
 
   it('skips without any lookup when the API key is missing', async () => {
     const api = await fakeApi([{ status: 200, body: { type: 'User' } }])
-    const result = await run({ ANTHROPIC_API_KEY: '', GITHUB_API_URL: api.url })
+    const result = await run({ HAS_API_KEY: 'false', GITHUB_API_URL: api.url })
     expect(result.status).toBe(0)
+    expect(result.output).toBe('present=false\n')
+    expect(api.seen.requests).toBe(0)
+  })
+
+  it('reads only the HAS_API_KEY flag, never the key itself', async () => {
+    const api = await fakeApi([{ status: 200, body: { type: 'User' } }])
+    const result = await run({ ANTHROPIC_API_KEY: 'k', GITHUB_API_URL: api.url })
     expect(result.output).toBe('present=false\n')
     expect(api.seen.requests).toBe(0)
   })

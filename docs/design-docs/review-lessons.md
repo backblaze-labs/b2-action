@@ -96,6 +96,7 @@ About 45 findings, the largest group by volume. The security workflow (actionlin
 - [ ] Installs in CI that do not need hooks skip lifecycle scripts (`--ignore-scripts`) (#75).
 - [ ] Prefer `gh ... -q` over shelling out to tools the job did not set up (#66).
 - [ ] Gate on a third-party action's own preconditions so a miss skips instead of failing. `claude-code-action` throws unless the triggering actor is a `User` account, and a job `if` that excludes only Dependabot still lets `github-actions[bot]` or `Copilot` (an actor with no `[bot]` suffix) fail it; check the actor type the way the action does (#258).
+- [ ] A step that holds a secret or a write token never runs code from the PR checkout: a same-repo PR can rewrite that script to leak the secret or skip the job. Run it from a checkout of the base commit, and pass a derived flag (`secrets.X != ''`) instead of the secret itself (#258).
 
 ## 7. Concurrency, cancellation, and failure paths in `src/`
 
