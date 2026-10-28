@@ -2,6 +2,11 @@
 # PreToolUse approval gate template. Reads the tool call as JSON on stdin and prints a decision.
 # Per environment: dev allow, staging ask, production allow only with an approved change ticket.
 # Edit the case arms. The gate must read approvals the agent has no way to write to.
+# Fails closed: if jq is missing or a decision cannot be emitted, exit 2 so PreToolUse blocks.
+command -v jq >/dev/null 2>&1 || {
+  echo "gate: jq is required to evaluate this approval gate; blocking until it is installed." >&2
+  exit 2
+}
 input=$(cat)
 tool=$(jq -r '.tool_name // empty' <<<"$input")
 version=$(jq -r '.tool_input.version // empty' <<<"$input")
@@ -11,7 +16,10 @@ decide() {   # decide <allow|ask|deny> <reason>
   jq -n --arg decision "$1" --arg reason "$2" '{hookSpecificOutput: {
     hookEventName: "PreToolUse",
     permissionDecision: $decision,
-    permissionDecisionReason: $reason}}'
+    permissionDecisionReason: $reason}}' || {
+    echo "gate: could not emit a decision for '$tool'; blocking." >&2
+    exit 2
+  }
   exit 0
 }
 

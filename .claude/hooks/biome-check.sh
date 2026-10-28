@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # PostToolUse: reject an edit that leaves a source file failing Biome.
-# Exit 2 hands the message back to the agent; CI `lint` stays the real gate.
+# Exit 2 hands the message back to the agent; CI `lint` stays the real gate, so an
+# unreadable tool call is skipped rather than blocked.
 set -u
-command -v jq >/dev/null 2>&1 || exit 0
-file=$(jq -r '.tool_input.file_path // empty')
+file=$(node -e 'let d="";process.stdin.on("data",(c)=>{d+=c}).on("end",()=>{try{process.stdout.write(JSON.parse(d).tool_input?.file_path??"")}catch{}})') || exit 0
 [ -n "$file" ] && [ -f "$file" ] || exit 0
 
 case "$file" in
