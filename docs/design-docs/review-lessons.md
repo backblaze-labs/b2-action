@@ -68,6 +68,7 @@ About 11 findings, concentrated in error handling (#69).
 - [ ] Bound the work done per secret (derived encodings) and guard encoders that can throw (#69).
 - [ ] Percent-encode `%`, `\r`, and `\n` before echoing user input into a workflow command, or it can inject fake annotations (#70).
 - [ ] Verify downloaded binaries against a pinned SHA-256 before executing them (#73).
+- [ ] Approval gates fail closed. Check the approval lookup's own exit status, not the status of a pipeline it feeds (without `pipefail`, `lookup | jq` reports only `jq`), require a non-empty approver, and deny when the gate itself cannot run. A gate that allowed a production release on a failed lookup or an empty approver was caught on #258.
 
 ## 6. GitHub Actions workflows
 

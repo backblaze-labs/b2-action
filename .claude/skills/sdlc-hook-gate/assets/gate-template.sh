@@ -34,10 +34,14 @@ case "$tool" in
     [[ "$ticket" =~ ^CHG-[0-9]+$ && "$version" =~ ^[0-9a-f]{7,40}$ ]] ||
       decide deny "Production needs an approved change ticket. $route"
     # Replace with your change system's CLI; it must emit JSON with .state, .version and .approver.
-    if approver=$(change-ticket show --ticket "$ticket" --format json 2>/dev/null |
-        jq -er --arg v "$version" 'select(.state == "approved" and .version == $v) | .approver'); then
+    # Run the lookup on its own so its exit status counts: a failed lookup denies even if it
+    # printed something that looks approved, and an empty approver never allows.
+    record=$(change-ticket show --ticket "$ticket" --format json 2>/dev/null) ||
+      decide deny "Could not look up $ticket in the change system, so the release stays blocked. Retry once it is reachable. $route"
+    approver=$(jq -er --arg v "$version" \
+      'select(.state == "approved" and .version == $v and (.approver | type == "string" and length > 0)) | .approver' \
+      <<<"$record" 2>/dev/null) && [ -n "$approver" ] &&
       decide allow "$ticket approved by $approver"
-    fi
     decide deny "$ticket is not approved for version $version. $route" ;;
   *)
     decide deny "No gate rule for '$tool'. Add one to this script first." ;;
