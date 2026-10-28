@@ -5,6 +5,8 @@ description: Turn a human approval requirement (release sign-off, change ticket,
 
 # Hooks as approval gates
 
+> **In `b2-action`:** shared hooks live in `.claude/hooks/` and are registered in `.claude/settings.json`, and `.claude/` is an always-human path at review. Git history is the human's to move ([conventions](../../../docs/design-docs/conventions.md)): where this skill says commit or push, prepare the change and its verification evidence, then stop. Commit or push only when the user asks for that in the current turn; accepting a plan or asking for a review fix is not that request.
+
 Governance is enforced as the AI acts. A hook is a script that runs before (or after) Claude acts and can **allow**, **ask** (pause until the person running the session confirms) or **block**. When the approver is someone else, such as a release manager, the hook looks for their recorded approval and blocks until it exists. Hooks are not deploy-specific: they apply wherever Claude acts (protected migrations, infra, test files, secrets).
 
 ## Steps
@@ -33,7 +35,7 @@ Governance is enforced as the AI acts. A hook is a script that runs before (or a
 
    The empty `args` list makes Claude Code run the script directly, not through a shell. Matchers are regexes over the tool name (`Edit|Write`, `mcp__server__tool`).
 5. Test before trusting it: pipe sample tool calls into the script and read the decision (see below). Test the deny and the fall-through case.
-6. Commit, and log decisions (OpenTelemetry export records each hook verdict with a timestamp).
+6. Commit when the user asks (see the note above), and log decisions (OpenTelemetry export records each hook verdict with a timestamp).
 
 ## Design rules
 

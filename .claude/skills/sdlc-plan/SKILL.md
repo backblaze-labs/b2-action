@@ -5,6 +5,8 @@ description: Produce and commit a plan.md before any code is written, working in
 
 # Plan mode as the default starting point
 
+> **In `b2-action`:** the plan lives at `docs/exec-plans/active/NNNN-slug.md` (see `docs/exec-plans/README.md`) and links the issue and the spec. Git history is the human's to move ([conventions](../../../docs/design-docs/conventions.md)): where this skill says commit or push, prepare the change and its verification evidence, then stop. Commit or push only when the user asks for that in the current turn; accepting a plan or asking for a review fix is not that request.
+
 Work starts with a written, reviewable plan. Plan mode lets Claude read the codebase without changing anything, so course corrections are edits to a document.
 
 ## Steps
@@ -14,7 +16,7 @@ Work starts with a written, reviewable plan. Plan mode lets Claude read the code
 3. Draft the plan using the template below.
 4. Let the engineer interrogate it. Be ready to answer: what could this break, which step is riskiest, which alternatives were rejected and why.
 5. Iterate until someone who never saw the conversation could implement the change from the plan alone.
-6. Commit the approved plan as `intent/<slug>/plan.md`. Then implement; with a solid plan this is often one pass.
+6. Save the approved plan at `docs/exec-plans/active/NNNN-slug.md` (commit it only when the user asks; see the note above). Then implement; with a solid plan this is often one pass.
 7. If implementation departs from the plan, update `plan.md` in the same commit. Consider a hook that flags source changes with no matching plan update (`sdlc-hook-gate`).
 
 ## Template

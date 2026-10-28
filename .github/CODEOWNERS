@@ -17,6 +17,20 @@
 /.changie.yaml                  @goanpeca @jeronimodeleon @sophiecarreras @ffumero2003
 /scripts/changelog-release.mjs  @goanpeca @jeronimodeleon @sophiecarreras @ffumero2003
 
+# Review, authorization, and security policy, and the gates that enforce it: they steer the
+# reviewer or define what it checks, so a docs-only PR must not change them without a person.
+/AGENTS.md                                @goanpeca @jeronimodeleon @sophiecarreras @ffumero2003
+/CLAUDE.md                                @goanpeca @jeronimodeleon @sophiecarreras @ffumero2003
+/GEMINI.md                                @goanpeca @jeronimodeleon @sophiecarreras @ffumero2003
+/REVIEW.md                                @goanpeca @jeronimodeleon @sophiecarreras @ffumero2003
+/.github/pull_request_template.md         @goanpeca @jeronimodeleon @sophiecarreras @ffumero2003
+/docs/design-docs/conventions.md          @goanpeca @jeronimodeleon @sophiecarreras @ffumero2003
+/docs/design-docs/review-process.md       @goanpeca @jeronimodeleon @sophiecarreras @ffumero2003
+/docs/design-docs/review-lessons.md       @goanpeca @jeronimodeleon @sophiecarreras @ffumero2003
+/scripts/changelog-check*.mjs             @goanpeca @jeronimodeleon @sophiecarreras @ffumero2003
+/scripts/claude-review-gate*.mjs          @goanpeca @jeronimodeleon @sophiecarreras @ffumero2003
+/scripts/check-release-provenance-policy.mjs @goanpeca @jeronimodeleon @sophiecarreras @ffumero2003
+
 # Build / release infrastructure: extra scrutiny because a broken release
 # workflow can publish a broken Action to millions of consumers.
 /.github/workflows/release.yml  @goanpeca @jeronimodeleon @sophiecarreras @ffumero2003

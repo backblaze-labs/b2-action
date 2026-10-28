@@ -5,6 +5,8 @@ description: Turn an approved intent.md into a requirements-and-design spec.md w
 
 # Requirements and design: intent.md to spec.md
 
+> **In `b2-action`:** the spec lives at `docs/design-docs/<slug>.md` with a row in `docs/design-docs/index.md`, and links the issue that holds the intent. Git history is the human's to move ([conventions](../../../docs/design-docs/conventions.md)): where this skill says commit or push, prepare the change and its verification evidence, then stop. Commit or push only when the user asks for that in the current turn; accepting a plan or asking for a review fix is not that request.
+
 Requirements and design happen in one session instead of two hand-offs. The product owner reviews the spec; they do not write it. The goal is a spec engineering can plan against, with every concern surfaced early.
 
 ## Before you start
@@ -51,7 +53,7 @@ Skills applied: <skill names>.
 
 ## Hand-off
 
-Tell the product owner to resolve flagged concerns with their policy owners first (these are the points an analyst would have escalated), then review the spec against the original idea. A human decides whether the spec and intent progress to build; ask a technical lead to weigh in for higher-risk changes. Commit `spec.md` next to `intent.md` once accepted. Next step: `sdlc-plan`.
+Tell the product owner to resolve flagged concerns with their policy owners first (these are the points an analyst would have escalated), then review the spec against the original idea. A human decides whether the spec and intent progress to build; ask a technical lead to weigh in for higher-risk changes. Once accepted, save the spec next to its index row; commit it only when the user asks (see the note above). Next step: `sdlc-plan`.
 
 ## Measure
 

@@ -7,7 +7,7 @@ Thanks for your interest. The Action is intentionally small and built on the off
 ```bash
 pnpm install
 pnpm all        # lint + release policy + typecheck + test + build + spellcheck
-pnpm ci:local   # the full PR gate: pnpm all + dist freshness + coverage + docs + audit
+pnpm ci:local   # local validation suite (see AGENTS.md for what stays CI-only)
 ```
 
 Requirements: Node 24+. pnpm is pinned via the `packageManager` field in `package.json` (currently `pnpm@11.5.3`); with corepack enabled, `pnpm` in this repo uses that version automatically. The action runs on Node 24 in the GitHub Actions runtime; we test against Node 24 on Linux, macOS, and Windows.

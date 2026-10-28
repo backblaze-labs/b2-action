@@ -30,11 +30,18 @@ The change sets the tier, not the author. A path rule (and the Risk section of t
 
 | Tier | Touches | Human approvals |
 | --- | --- | --- |
-| Low | Docs, comments, tests only, example workflows' prose, changelog fragments | None once AI review, security review, and CI are green and every thread is resolved; trusted authors only |
+| Low | Docs other than the policy files below, comments, tests only, changelog fragments | None once AI review, security review, and CI are green and every thread is resolved; trusted authors only |
 | Medium | `src/` behavior, inputs or outputs, dependencies, `dist/` | One code owner |
 | High | Always-human paths (below), breaking `action.yml` changes, SDK major bumps | Two people, one a code owner who did not author or prompt the change, with a plan in `docs/exec-plans/active/` first |
 
-**Always-human paths**, whatever else the diff contains: every file under `.github/workflows/` and `.github/actions/`, `.github/CODEOWNERS`, `.claude/` (hooks are executable configuration that runs on contributors' machines), `RELEASE.md`, `.changie.yaml`, `scripts/changelog-release.mjs`, credential and masking code in `src/inputs.ts`, `src/client.ts`, and `src/errors.ts`.
+**Always-human paths**, whatever else the diff contains:
+
+- Workflows and automation: every file under `.github/workflows/` and `.github/actions/`, and `.claude/` (hooks are executable configuration that runs on contributors' machines).
+- Review, authorization, and security policy, because they steer the reviewer or define what it checks: `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `REVIEW.md`, `SECURITY.md`, `.github/CODEOWNERS`, `.github/pull_request_template.md`, `docs/design-docs/conventions.md`, `docs/design-docs/review-process.md`, and `docs/design-docs/review-lessons.md`.
+- The gates themselves: `scripts/changelog-check*.mjs`, `scripts/claude-review-gate*.mjs`, and `scripts/check-release-provenance-policy.mjs`.
+- Release and credentials: `RELEASE.md`, `.changie.yaml`, `scripts/changelog-release.mjs`, and the credential and masking code in `src/inputs.ts`, `src/client.ts`, and `src/errors.ts`.
+
+A change to the policy is judged against the trusted base-branch policy, not against the version it proposes: `claude-review.yml` reviews with the base branch's `REVIEW.md`, `AGENTS.md`, and `review-lessons.md` and flags any weakening as Important.
 
 Rules that hold at every tier:
 
@@ -50,8 +57,16 @@ Match AI review depth to risk: Quick for Low, Standard for Medium, Deep for High
 ## Improving the reviewer
 
 - **Incidents and reverts become evals.** Collect the PRs that caused a revert or a real bug, with their fixes, as a regression set for the reviewer: for example the cross-bucket `copyLargeFile` bucket bug, the `keep-days` window never forwarded, governance deletes, the prerelease version rollback, and the fail-open approval gate. Re-score the reviewer on that set whenever its prompt, tools, or model change, and keep only changes that raise the score. This needs the evals-in-CI decision in #257.
-- **Measure noise by the author's response.** Sort every review comment by what the author did: fixed it, said it was wrong, said it was intentional, or decided it did not matter. [review-lessons.md](review-lessons.md) did this once for all merged PRs (163 fixed, 4 rebutted, 25 unanswered of 192); repeat it each quarter.
+- **Measure noise by the author's response.** Sort every review comment by what the author did: fixed it, said it was wrong, said it was intentional, or decided it did not matter. [review-lessons.md](review-lessons.md) did this once for all merged PRs (192 findings: 186 fixed, 4 rebutted, 2 without a reply, snapshot 2026-10-28) and records the method and definitions; repeat it each quarter with the same method.
 - **Scan existing code on a schedule.** A periodic review agent over the whole repository finds bugs that predate any diff (most repeat findings turn out to be old code). Deferred until the API key and budget are decided.
+
+## Activation prerequisites
+
+Code and evidence that must land before an admin turns on the matching setting. Turning a setting on first breaks merges or enforces something unproven.
+
+1. **Merge queue.** No workflow has a `merge_group` trigger today, so required checks would never report for a queued merge and every queued PR would stall. First add `merge_group` to the deterministic required workflows (`ci.yml`, `security.yml`, `docs-lint.yml`); audit their job conditions and steps for assumptions about the `pull_request` payload (`github.event.pull_request.*`, `github.base_ref`); and decide how PR-only checks are represented, since the changelog fragment check and both Claude review jobs are about the PR rather than the merged result (either not required for the merge group, or made to report for it). Do not add `merge_group` to secret-bearing example workflows or to the review jobs. Validate with one queued PR before requiring the queue.
+2. **Tier-based approvals.** Add tests that classify representative paths into Low, Medium, High, and always-human (including the policy files above) before approvals start depending on the tier.
+3. **Claude review as a required check.** Run both passes for real on several PRs once `ANTHROPIC_API_KEY` exists, including a PR with an already resolved finding and a later push, and confirm the token can post inline comments. Until then the jobs pass by skipping, which proves nothing.
 
 ## Settings and their current state
 
@@ -65,7 +80,7 @@ What a repository admin would change to enforce this. State read from the active
 | Dismiss stale approvals; require approval of the last push | Off | On |
 | Required status checks | Off | CI, security, and changelog now; add both Claude review jobs only after they have run for real on several PRs (until the key exists they pass by skipping, so a green check proves nothing) |
 | Require conversation resolution | Off | On |
-| Merge queue | Off | On |
+| Merge queue | Off | On, after activation prerequisite 1 |
 | `ANTHROPIC_API_KEY` repository secret | Absent, so `claude-review.yml` skips | Add, to enable AI and security review |
 | `skip-changelog` label | Absent | Create |
 

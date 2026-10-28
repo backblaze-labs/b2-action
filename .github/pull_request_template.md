@@ -16,7 +16,7 @@ Thanks for sending a pull request! A few quick checks before submitting:
 
 ## Checklist
 
-- [ ] `pnpm ci:local` passes locally (the full PR gate; see [AGENTS.md](../AGENTS.md)).
+- [ ] `pnpm ci:local` passes locally (the local validation suite; CI-only checks are listed in [AGENTS.md](../AGENTS.md)).
 - [ ] Reviewed with fresh context against [REVIEW.md](../REVIEW.md) (for example `/code-review` and `/security-review`), and every Important finding is resolved.
 - [ ] For a bug fix: the new test fails with the fix reverted.
 - [ ] Walked [review-lessons.md](../docs/design-docs/review-lessons.md) for the areas this PR touches.

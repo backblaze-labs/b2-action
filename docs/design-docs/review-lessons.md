@@ -4,7 +4,9 @@ What reviewers keep finding on `b2-action` pull requests, distilled into checks 
 
 ## Where this comes from
 
-A pass over every review on all 48 merged PRs as of 2026-10-27: 192 inline findings across 31 PRs, almost all from Copilot code review, plus the author's reply on each thread. 163 findings were accepted and fixed, 4 were rebutted with evidence, and 25 got no reply (all but one were fixed in later PRs; see [Still open](#still-open)). By area: `src/` 57, `scripts/` 41, workflows and composite actions 38, tests 26, docs and `action.yml` 16, config and dependencies 14.
+A pass over every review on all 48 merged PRs. Snapshot 2026-10-28T04:14Z: 192 inline review threads across 31 PRs, every one opened by Copilot code review and every reply by the author. By the author's reply: 186 fixed, 4 rebutted as wrong (see [Review process lessons](#review-process-lessons)), and 2 with no reply (#34, a repeat of a finding already marked fixed; #65, see [Still open](#still-open)); 191 of 192 threads are resolved. By area: `src/` 57, `scripts/` 41, workflows and composite actions 38, tests 26, docs and `action.yml` 16, config and dependencies 14.
+
+Method, so the numbers can be reproduced: list merged PRs with `gh pr list --state merged`, then for each PR page through `pullRequest.reviewThreads` in GraphQL (`first: 100`, following `endCursor`) and fail the run on any request error. A thread's first comment is the finding; the rest are replies. A reply is classed as fixed when it starts with "Fixed" or "Addressed", rebutted when it starts with "Invalid", and anything else would be "replied, no explicit disposition" (there were none). An earlier version of this page said 25 findings had no reply: that count came from a parallel REST crawl whose errors were discarded, which silently dropped pages of replies. The lesson is in section 4.
 
 When a finding shows up on a second PR, add it here in that PR. When a whole class of finding can be caught by a tool, promote it into a test or lint and note that here.
 
@@ -42,7 +44,7 @@ About 11 findings, and the cause of the only Windows CI failure in #258. CI runs
 - [ ] No shell quoting inside `package.json` scripts; `cmd.exe` passes single quotes literally. Put argument lists in a Node wrapper (#73).
 - [ ] Path regexes accept both `/` and `\`; text parsers accept CRLF (#66, #73).
 - [ ] A module that tests import has no `#!` shebang: split helpers into a shebang-free `*-lib.mjs` and keep the shebang on the CLI only (#258).
-- [ ] `rename` over an existing file fails on Windows; unlink first, without following a leaf symlink (#77).
+- [ ] Replace a file by renaming over it first; on Windows, Node's `rename` already replaces an existing file in the ordinary case. Fall back to unlink-then-rename only on Windows and only for the specific errors seen (`EEXIST`, `EPERM`), unlinking the leaf without following a symlink, as `replaceDownloadedFile` in `src/commands/download.ts` does. Never unlink first unconditionally: that leaves no file at the destination and loses the old one if the rename then fails (#77, #258).
 - [ ] Do not infer filesystem case-sensitivity from the platform; probe the real filesystem (#77).
 - [ ] Tests that need bash or POSIX permissions skip on Windows explicitly (#70).
 
@@ -57,6 +59,7 @@ About 10 findings across `scripts/`. The failure mode is a green check that ran 
 - [ ] Clear timers on every exit path, including a spawn `error` (#72).
 - [ ] Cleanup that can meet a directory uses `recursive: true`, and replacing a cached binary keeps the old one until the new one is in place (#72, #73).
 - [ ] Clear generated report directories before writing so artifacts match the run (#90).
+- [ ] A crawl or report never discards request errors. Run requests sequentially or with bounded concurrency, fail on any non-success response (rate limits included), and paginate to the end. Dropping errors with `2>/dev/null` across parallel requests silently lost pages and produced a wrong statistic on this very page (#258).
 - [ ] A gate validates content, not just file names: the changelog check once accepted an empty `.changes/v*.md` as an entry, and a check that only lists paths must not be the only test. Run the real script against a scratch repo in tests, not only its helpers (#258).
 - [ ] When a PR says it closes an issue, check the issue's acceptance criteria against the code: the changelog gate claimed to close #177 while skipping the workflow paths #177 requires (#258).
 

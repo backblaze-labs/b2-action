@@ -31,8 +31,8 @@ Look in `intent/<slug>/` and the repo, then route:
 3. `spec.md` approved, no `plan.md`: `sdlc-plan`.
 4. `plan.md` approved: build. Use `sdlc-feedback-loop` so the session verifies its own work, and `sdlc-subagents` to parallelise.
 5. Diff ready: `sdlc-pr-review`.
-6. Touching releases, migrations, protected paths: `sdlc-hook-gate`. Wiring any of it into pipelines: `sdlc-cicd`.
-7. Something in production breached a band or an incident arrived: `sdlc-close-the-loop`, which writes a new `intent.md` and restarts at step 1.
+6. Touching releases, migrations, protected paths: `sdlc-hook-gate`. Wiring any of it into pipelines: `sdlc-cicd` (deferred in `b2-action`; follow RELEASE.md).
+7. Something in production breached a band or an incident arrived: `sdlc-close-the-loop`, which writes a new intent and restarts at step 1 (deferred in `b2-action`; open a Task issue and log it in the tech-debt tracker).
 
 If the repo already follows harness-engineering conventions (`AGENTS.md`, `docs/exec-plans/`, `ARCHITECTURE.md`) or the team wants them, use `sdlc-harness-translate` to map between the two layouts.
 
@@ -45,11 +45,11 @@ Six plays have no prerequisites, so any of them is a valid first move: `sdlc-int
 - `sdlc-subagents` needs `CLAUDE.md`; the feedback loop helps.
 - `sdlc-evals` needs `CLAUDE.md` and the feedback loop.
 - `sdlc-spec` needs `intent.md` and policy skills.
-- `sdlc-pr-review` needs evals and subagents; skills help.
+- `sdlc-pr-review` works from `REVIEW.md` and the review lessons; subagents and skills help. Evals strengthen it over time, but in `b2-action` they are deferred (#257) and are not a prerequisite.
 - `sdlc-cicd` needs PR review and hooks.
 - `sdlc-close-the-loop` needs CI/CD and `intent.md`.
 
-If a prerequisite is missing, say so and offer to run that skill first instead of working around it.
+If a prerequisite is missing, say so and offer to run that skill first instead of working around it. Skills that are deferred in `b2-action` (`sdlc-evals`, `sdlc-cicd`, `sdlc-close-the-loop`) are never prerequisites here; use the current fallback instead: `REVIEW.md` and the review lessons for review, `RELEASE.md` for releases, and the tech-debt tracker or a Task issue for incidents.
 
 ## Ground rules for every stage
 

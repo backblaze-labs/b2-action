@@ -5,6 +5,8 @@ description: Translate a repo or artifact between the AI-native SDLC playbook co
 
 # Translate between the playbook and harness engineering
 
+> **In `b2-action`:** there is no `docs/product-specs/`; the intent maps to the GitHub issue instead (see the workflow section of AGENTS.md).
+
 The playbook organizes a process (artifacts, approvals, governance). Harness engineering organizes a repo (knowledge layout, enforced architecture, garbage collection). The mapping tables live in `reference/playbook-harness-translation.md` in the playbook folder; if that file is not available, use the summary below.
 
 ## Quick map

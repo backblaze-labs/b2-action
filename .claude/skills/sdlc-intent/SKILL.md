@@ -5,6 +5,8 @@ description: Turn an idea, ticket, pain point or incident into a committed inten
 
 # Capture as intent.md
 
+> **In `b2-action`:** the intent is a GitHub issue opened with the Task, Feature request, or Bug report form, not an `intent/<slug>/intent.md` file. Git history is the human's to move ([conventions](../../../docs/design-docs/conventions.md)): where this skill says commit or push, prepare the change and its verification evidence, then stop. Commit or push only when the user asks for that in the current turn; accepting a plan or asking for a review fix is not that request.
+
 `intent.md` is a short proto-spec in the originator's own terms: what is wanted, why, and under which constraints. It is human readable and machine actionable, and it kicks off the rest of the chain.
 
 ## Steps
@@ -14,7 +16,7 @@ description: Turn an idea, ticket, pain point or incident into a committed inten
 3. Check for an agreed template (`intent/TEMPLATE.md` or an organization skill) and use it. Otherwise use the template below.
 4. Write the draft to `intent/<change-slug>/intent.md` (kebab-case slug, create the folder).
 5. Read it back and have the originator correct anything misunderstood. Do not invent answers: unresolved items go under Open questions.
-6. Commit when the originator is satisfied (follow the repo's commit conventions). The product owner picks it up from there and decides accept or close.
+6. When the originator is satisfied, open or update the issue; commit an artifact only when the user asks (see the note above). The product owner picks it up from there and decides accept or close.
 
 ## Template
 

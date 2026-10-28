@@ -27,7 +27,9 @@ cspell
 darwin
 dependabot
 dispatchable
+eexist
 endgroup
+eperm
 esbuild
 evals
 fileid

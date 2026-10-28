@@ -5,6 +5,8 @@ description: Give Claude a way to verify its own work (tests, build, lint, scree
 
 # Give Claude a feedback loop
 
+> **In `b2-action`:** the verification command is `pnpm ci:local` (see AGENTS.md). Git history is the human's to move ([conventions](../../../docs/design-docs/conventions.md)): where this skill says commit or push, prepare the change and its verification evidence, then stop. Commit or push only when the user asks for that in the current turn; accepting a plan or asking for a review fix is not that request.
+
 Always give the session a way to check its own work before a person sees it. A late signal (CI minutes later, a tester days later) turns the engineer into the bottleneck.
 
 ## Set up
@@ -16,16 +18,16 @@ Always give the session a way to check its own work before a person sees it. A l
 
 ## Bug fixes: failing test first
 
-1. Reproduce the bug as a test. Run it and confirm it fails for the reason expected.
-2. Commit that test.
-3. Only then fix the code, without editing the test. A test that existed before the fix, and that the agent could not rewrite, is proof the bug is gone.
+1. Reproduce the bug as a test. Run it and confirm it fails for the reason expected, and keep that failing output as evidence.
+2. Fix the code without changing the new test's assertions. A test that failed before the fix and passes after it, unchanged, is the proof the bug is gone.
+3. Commit the test and the fix together (when committing is authorized). Do not commit the failing test on its own: a pre-commit hook that runs the suite rejects it by design, and the failing output from step 1 already records that the test caught the bug.
 
 ## Protect the loop
 
-An agent fixing code must not be able to weaken the check on that code. Either:
+An agent fixing code must not be able to weaken the check on that code. New tests are expected; a bug fix should add one. What must not happen to existing tests: deleted or loosened assertions, `.skip` or `.only`, lowered coverage thresholds, or expectations rewritten to match the new behavior without the issue or spec calling for it. Either:
 
-- block edits to test files during a fix task with a `PreToolUse` hook (`sdlc-hook-gate` and `sdlc-policy-skill` show the pattern), or
-- check the diff in review and reject any change that touches a test (`sdlc-pr-review`).
+- block edits to existing test files during a fix task with a `PreToolUse` hook, while still allowing new test files (`sdlc-hook-gate` and `sdlc-policy-skill` show the pattern), or
+- check the diff in review for exactly those weakening changes and reject them (`sdlc-pr-review`), rather than rejecting every change that touches a test.
 
 ## Report format
 
