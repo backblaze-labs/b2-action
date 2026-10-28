@@ -11,10 +11,11 @@ const script = join(repo, 'scripts/changelog-release.mjs')
 let root: string
 
 async function setVersion(version: string): Promise<void> {
-  // Two-space JSON so the .changie.yaml package.json replacement really applies.
+  // Mirror the real package.json shape: two-space indent with a key after `version`, so the
+  // .changie.yaml replacement (which matches `"version": "...",`) really applies.
   await writeFile(
     join(root, 'package.json'),
-    `${JSON.stringify({ name: 'b2', version }, null, 2)}\n`,
+    `${JSON.stringify({ name: 'b2', version, private: true }, null, 2)}\n`,
   )
 }
 

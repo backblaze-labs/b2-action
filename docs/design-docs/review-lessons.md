@@ -32,6 +32,7 @@ About 20 findings. The repeated shape: a test that would still pass if the fix w
 - [ ] Clean up exactly what the test changed: delete env vars that were unset (assigning `undefined` sets the string `"undefined"`), remove only the signal listeners you added, and create files inside the `try` whose `finally` removes them (#60, #63, #78, #164).
 - [ ] Invoke scripts the way CI does (relative `node scripts/...`), or entrypoint bugs slip through (#72).
 - [ ] Reuse `__tests__/_helpers.ts` fixtures instead of a local copy (#78).
+- [ ] Fixtures mirror the real file shape. A regression fixture that put `version` last in `package.json` (no trailing comma) kept a regex-driven step from ever running, so the test passed against the bug it was written to catch. Prove a regression test against the exact bug shape, not just "remove the fix" (#258).
 
 ## 3. Windows and cross-platform
 
@@ -107,6 +108,7 @@ About 15 findings.
 - [ ] Anything that becomes an output or a report is sorted, so results do not depend on `readdir` order (#55, #60).
 - [ ] Local validation matches B2's real limits and semantics, checked against the B2 docs or a live test, not assumed (#71, #135). Production `listFileNames` omits hidden names, which the simulator does not mirror (#71).
 - [ ] Path containment checks match `..` exactly; `..foo` is a legal name inside the root (#77).
+- [ ] Path guards normalize before matching (`./dist`, `src/../dist`, `/./dist`, symlinked ancestors); a raw string prefix match lets equivalent spellings through (#258).
 - [ ] Do not re-stat or re-fetch what you already have (#135).
 
 ## 9. Dependencies and config
