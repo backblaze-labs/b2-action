@@ -77,7 +77,7 @@ About 45 findings, the largest group by volume. The security workflow (actionlin
 - [ ] Jobs that need write scopes skip fork PRs, whose token is read-only (#56); every `pull_request` job carries the Dependabot guard (see [conventions.md](conventions.md)).
 - [ ] Least privilege, computed as GitHub does: a job with its own `permissions` key gets exactly the scopes it lists and every other scope is `none` (it does not inherit from the workflow), while a job without a `permissions` key uses the workflow-level block. So a job-level mapping must list every scope its steps need, `contents: read` included. `write-all` is a string, not a mapping (#66, #258). (#66 assumed jobs inherit unspecified scopes; the release-provenance policy built on that is stricter than needed, which is safe.) Grant read scopes the steps actually need, such as `attestations: read` for `gh attestation verify` (#66).
 - [ ] `on.push.tags` filters are globs, not regexes; validate strictly in a step (#66).
-- [ ] Outputs and step ids used with dot access are identifier-safe; `outputs.release-sha` parses as subtraction (#66).
+- [ ] Property names used with dot access start with a letter or `_` and contain only letters, digits, `-`, or `_`; hyphens are fine (`steps.release-ref.outputs.release-sha` is valid). Any other name needs index syntax (`outputs['my.output']`). (#66 accepted a finding that hyphenated names parse as subtraction and renamed its outputs; the rename was harmless but unnecessary, #258.)
 - [ ] A checkout by SHA does not fetch tags; fetch the tag before `git rev-parse` on it (#66).
 - [ ] Reuse a value you already validated instead of re-resolving it later (time-of-check to time-of-use) (#66).
 - [ ] Treat any SemVer `-suffix` as a prerelease, consistently with the trigger (#66, #70).
@@ -124,6 +124,7 @@ About 10 findings.
 
 - **Verify a fix landed before replying "Fixed".** One finding came back on the same PR because the reply said "Fixed" but the pushed diff still had the old text (#34). Reply with the commit that contains the fix.
 - **Expect re-reports of fixed findings.** A second automated pass can review an older commit and repeat findings already fixed (#258). Check which commit the review targeted before changing code.
+- **Accepted is not the same as correct.** Two findings accepted on #66 rested on false premises about GitHub Actions: that job-level `permissions` inherit unlisted scopes from the workflow, and that hyphenated property names break dot access. Both were caught later on #258. Before acting on a claim about platform behavior, check it against the platform's documentation.
 - **Rebut with evidence when the reviewer is wrong.** The 4 rejected findings were all disproved by a primary source: the pinned `actions/setup-node` `action.yml` supports `package-manager-cache` (#66, #70), production B2 omits hidden names (#71), and the Windows `pnpm.cmd` default already existed (#90). Cite the source in the reply.
 
 ## Still open
