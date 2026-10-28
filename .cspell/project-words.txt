@@ -28,6 +28,7 @@ dependabot
 dispatchable
 endgroup
 esbuild
+evals
 fileid
 fileids
 filename
@@ -78,6 +79,7 @@ ratelimit
 ratelimited
 resumability
 retryable
+sdlc
 sha1
 sha256
 sigstore

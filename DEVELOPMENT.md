@@ -242,7 +242,8 @@ This repo mirrors the [`b2-sdk-typescript`](https://github.com/backblaze-labs/b2
 ## CI gates
 
 Pull requests run the core gates below. Scheduled and manual-only checks are
-listed in the same table and called out explicitly.
+listed in the same table and called out explicitly. Run the PR gates together
+locally with `pnpm ci:local` before pushing.
 
 | Job | What it checks |
 | --- | --- |

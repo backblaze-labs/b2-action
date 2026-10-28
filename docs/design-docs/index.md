@@ -9,11 +9,13 @@ Status legend:
 - **Current** — matches the code and the team's intent as of the review date.
 - **Stale** — likely out of date; verify against the code before relying on it.
 - **Superseded** — replaced by another doc; kept only for history.
+- **Proposal**: not yet accepted; read it as a suggestion, not policy.
 
 | Doc | Status | Last reviewed | What it covers |
 | --- | --- | --- | --- |
 | [core-beliefs.md](core-beliefs.md) | Current | 2026-08-27 | Agent-first operating principles for this repo |
 | [conventions.md](conventions.md) | Current | 2026-08-27 | Commit, code-style, CI-actor, and git-history policies |
+| [review-process.md](review-process.md) | Proposal | 2026-10-27 | Risk-tiered review depth; awaiting a code-owner decision |
 
 Top-level structure lives outside this catalog by design, so it stays easy to find:
 [AGENTS.md](../../AGENTS.md) is the map, and [ARCHITECTURE.md](../../ARCHITECTURE.md) holds the

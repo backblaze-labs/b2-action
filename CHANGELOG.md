@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Documentation
+
+- Contributor workflow adopts the AI-native SDLC playbook on top of the existing `AGENTS.md` and `docs/` layout: `REVIEW.md` defines the review passes, `.claude/` ships shared skills, subagents, and edit-time hooks, `pnpm ci:local` runs the full PR gate locally, the PR template gains Risk and How to revert sections, and a `CODE_OF_CONDUCT.md` is added. ([#257](https://github.com/backblaze-labs/b2-action/issues/257))
+
 ### Security
 
 - Raised pinned dependency overrides (`js-yaml`, `markdown-it`, `fast-uri`, `smol-toml`) for dev/build tooling and (`undici`, `brace-expansion`) for production dependencies to clear GitHub Dependabot security alerts. The shipped `dist/` bundle was rebuilt to pick up the `undici` and `brace-expansion` fixes.

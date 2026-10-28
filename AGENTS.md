@@ -21,7 +21,9 @@ the result onto step outputs and the run summary. The SDK owns every B2 wire-pro
 | [RELEASE.md](RELEASE.md) | Release runbook and provenance verification | Cutting a release |
 | [SECURITY.md](SECURITY.md) | Vulnerability reporting and redaction guidance | Handling a security concern |
 | [CHANGELOG.md](CHANGELOG.md) | Keep a Changelog history; add user-visible changes under `[Unreleased]` | Any user-visible behavior change |
+| [REVIEW.md](REVIEW.md) | Review passes, severity, and evidence rules for every PR | Reviewing a PR, or preparing one for review |
 | [docs/](docs/README.md) | **System of record**: design docs, plans, quality grades, references | Understanding *why*, or recording a decision |
+| `.claude/` | Shared Claude Code skills (`skills/`), subagents (`agents/`), and edit-time hooks (`hooks/`, wired in `settings.json`) | Running the workflow below; the hooks fire on their own |
 | `api-docs/` | Generated TypeDoc API site (git-ignored; built in CI, deployed to Pages) | Reading TS-level shapes; never hand-edit |
 
 ## Golden rules (invariants)
@@ -50,16 +52,37 @@ These are enforced mechanically wherever possible. A change that violates one is
 
 ## The build and verify loop
 
-One command mirrors CI; run it before every PR:
+One command mirrors the full PR gate; run it before every PR:
 
 ```bash
-pnpm all         # lint + release policy + typecheck + test + build + spellcheck
-pnpm verify-dist # build, then `git diff --exit-code dist/` must be clean
+pnpm ci:local    # pnpm all + dist freshness + coverage + action.yml sync + docs lint and links + prod audit
 ```
+
+For a faster inner loop while iterating, `pnpm all` runs lint, release policy, typecheck, tests,
+build, and spellcheck, and `pnpm verify-dist` checks that the rebuilt `dist/` is committed.
 
 `pnpm install` wires up husky hooks: `pre-commit` runs every local gate, `pre-push` runs the
 coverage gate. The full gate list and what each check enforces is in
 [DEVELOPMENT.md](DEVELOPMENT.md#ci-gates).
+
+## Workflow for larger changes
+
+Small changes need only a good PR. Larger or riskier work follows the AI-native SDLC chain,
+mapped onto this repository's existing layout instead of a separate `intent/` tree:
+
+| Stage | Lives in | Skill |
+| --- | --- | --- |
+| Intent: problem, outcome, constraints | The GitHub issue | `sdlc-intent` |
+| Spec: numbered requirements and design | `docs/design-docs/<slug>.md`, listed in the [index](docs/design-docs/index.md) | `sdlc-spec` |
+| Plan: files, ordered steps, proof | `docs/exec-plans/active/NNNN-slug.md` | `sdlc-plan` |
+| Review: passes and severity | [REVIEW.md](REVIEW.md) | `sdlc-pr-review` |
+| Deferrals and open concerns | [tech-debt-tracker.md](docs/exec-plans/tech-debt-tracker.md) | `sdlc-spec` |
+
+The skills under `.claude/skills/` describe each stage generically and say `intent/<slug>/`; in
+this repository use the paths above (`sdlc-harness-translate` holds the full mapping).
+`b2-action-invariants` restates the golden rules as checks to apply while editing, and the hooks
+in `.claude/hooks/` refuse hand-edits to `dist/` and hand Biome failures back as you edit. A human
+accepts each stage; never mark one approved on their behalf.
 
 ## Where knowledge lives
 

@@ -7,6 +7,7 @@ Thanks for your interest. The Action is intentionally small and built on the off
 ```bash
 pnpm install
 pnpm all        # lint + release policy + typecheck + test + build + spellcheck
+pnpm ci:local   # the full PR gate: pnpm all + dist freshness + coverage + docs + audit
 ```
 
 Requirements: Node 24+. pnpm is pinned via the `packageManager` field in `package.json` (currently `pnpm@11.5.3`); with corepack enabled, `pnpm` in this repo uses that version automatically. The action runs on Node 24 in the GitHub Actions runtime; we test against Node 24 on Linux, macOS, and Windows.
@@ -45,7 +46,9 @@ action.yml         # marketplace manifest: inputs, outputs, branding
 dist/index.js      # ncc-bundled entrypoint (committed; CI fails if stale)
 AGENTS.md          # repository map (multi-harness entry point)
 ARCHITECTURE.md    # layers + boundary invariants
+REVIEW.md          # how every PR is reviewed
 docs/              # system of record (design docs, plans, quality grades)
+.claude/           # shared Claude Code skills, subagents, and edit-time hooks
 ```
 
 ## Adding a new verb
@@ -65,6 +68,12 @@ The pattern is the same every time:
 7. **Update the README** verb table and add a short usage snippet.
 8. **Run `pnpm build`** and commit the resulting `dist/index.js` change.
 9. **Add a CHANGELOG entry** under `[Unreleased]`.
+
+## Larger changes and review
+
+Small changes need only a good PR. For larger or riskier work, follow the workflow in [AGENTS.md](./AGENTS.md#workflow-for-larger-changes): the issue carries the intent, a design doc under `docs/design-docs/` carries the spec, and a plan under `docs/exec-plans/active/` carries the steps and the proof. The Claude Code skills under `.claude/skills/` walk through each stage, and `b2-action-invariants` lists the rules a change must not break.
+
+Every PR is reviewed against [REVIEW.md](./REVIEW.md). Run `pnpm ci:local` before asking for review and fill in the Risk and How to revert sections of the PR template. A code owner approves; the author, human or agent, never approves their own change. Participation is governed by the [Code of Conduct](./CODE_OF_CONDUCT.md).
 
 ## Tests
 
