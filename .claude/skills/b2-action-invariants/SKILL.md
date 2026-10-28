@@ -19,4 +19,6 @@ When you change this repository:
 8. Use conditional spread for optional properties, `import type` for type-only imports, and `.ts` extensions on internal imports. (Golden rule 6; `pnpm typecheck`, `pnpm lint`, the `biome-check` hook)
 9. In workflows, pin third-party actions to a full commit SHA with a `# vX.Y.Z` comment, keep `persist-credentials: false` and least-privilege `permissions`, and guard every `pull_request` job with the Dependabot condition in [conventions.md](../../../docs/design-docs/conventions.md). (Golden rule 7; `security.yml`, `__tests__/workflow-policy.test.ts`)
 
+10. Walk the sections of [review-lessons.md](../../../docs/design-docs/review-lessons.md) for the areas you touched (docs and comments, tests, Windows, scripts, secrets, workflows, concurrency, contract, dependencies) and fix what applies before opening the PR.
+
 Before reporting the task done, run `pnpm ci:local` and paste the end of its output. If a check fails, fix the code, not the check.

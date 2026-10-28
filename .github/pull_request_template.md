@@ -19,6 +19,7 @@ Thanks for sending a pull request! A few quick checks before submitting:
 - [ ] `pnpm ci:local` passes locally (the full PR gate; see [AGENTS.md](../AGENTS.md)).
 - [ ] Reviewed with fresh context against [REVIEW.md](../REVIEW.md) (for example `/code-review` and `/security-review`), and every Important finding is resolved.
 - [ ] For a bug fix: the new test fails with the fix reverted.
+- [ ] Walked [review-lessons.md](../docs/design-docs/review-lessons.md) for the areas this PR touches.
 - [ ] If a reviewer had to point out the same mistake on an earlier PR: [AGENTS.md](../AGENTS.md) or [REVIEW.md](../REVIEW.md) is updated in this PR.
 - [ ] If `src/` changed, `dist/index.js` was rebuilt and is included in this PR. CI will fail otherwise.
 - [ ] Test coverage for new logic added under `__tests__/` (and passes the 95%/85%/100%/95% coverage gate).

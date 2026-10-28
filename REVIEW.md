@@ -12,6 +12,8 @@ The Action is a thin dispatcher over `@backblaze-labs/b2-sdk`, so the expensive 
 - `dist/` not rebuilt, or `action.yml` and the README reference tables out of step.
 - A test that still passes with the fix reverted.
 
+The full catalogue, mined from every review on the merged PRs, is [docs/design-docs/review-lessons.md](docs/design-docs/review-lessons.md). Walk the sections for the areas the diff touches; the most frequent misses are stale comments and docs, tests that do not prove the fix, Windows behavior, and scripts that exit 0 without running.
+
 ## Passes
 
 Run each pass over the full diff and tag every finding with its pass.
