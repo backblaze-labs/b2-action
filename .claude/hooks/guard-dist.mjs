@@ -1,11 +1,11 @@
 // PreToolUse: block hand-edits to the generated bundle. `pnpm build` writes dist/ and CI
 // `build-and-check-dist` fails on drift, so a direct edit there is always wrong. The path is
-// normalized first (`./dist`, `src/../dist`, `/./dist`, symlinked ancestors) so no spelling slips
+// normalized first (`./dist`, `src/../dist`, `/./dist`, symlinks, `link/..` through dist/) so no spelling slips
 // past, and an unreadable tool call fails closed with exit 2.
 
 import { execFileSync } from 'node:child_process'
 import { realpathSync } from 'node:fs'
-import { basename, dirname, relative, resolve, sep } from 'node:path'
+import { dirname, isAbsolute, join, parse, relative, sep } from 'node:path'
 
 function projectRoot() {
   if (process.env.CLAUDE_PROJECT_DIR) return process.env.CLAUDE_PROJECT_DIR
@@ -16,21 +16,21 @@ function projectRoot() {
   }
 }
 
-// Resolve symlinks on the nearest existing ancestor, so `/tmp` and `/private/tmp` spellings agree
-// even when the target file does not exist yet.
+// Walk the path one segment at a time, resolving symlinks before applying `..`, the way the OS
+// does: `link/../x` where `link` points into dist/ lands in dist/, though it reads as `x`.
 function canonical(path) {
-  const missing = []
-  let dir = path
-  for (;;) {
+  const { root } = parse(path)
+  let current = root
+  for (const part of path.slice(root.length).split(/[\\/]+/)) {
+    if (part === '' || part === '.') continue
+    current = part === '..' ? dirname(current) : join(current, part)
     try {
-      return resolve(realpathSync(dir), ...missing)
+      current = realpathSync(current)
     } catch {
-      const parent = dirname(dir)
-      if (parent === dir) return path
-      missing.unshift(basename(dir))
-      dir = parent
+      // Not there yet (a new file); keep the spelled path.
     }
   }
+  return current
 }
 
 function refuse(message) {
@@ -54,7 +54,7 @@ process.stdin.on('end', () => {
   if (file === '') return
 
   const root = projectRoot()
-  const rel = relative(canonical(resolve(root)), canonical(resolve(root, file)))
+  const rel = relative(canonical(root), canonical(isAbsolute(file) ? file : `${root}${sep}${file}`))
   if (rel === 'dist' || rel.startsWith(`dist${sep}`)) {
     const reason =
       'dist/ is generated. Change src/ instead, then run `pnpm build` and commit dist/ (AGENTS.md golden rule 2).'

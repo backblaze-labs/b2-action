@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { delimiter, dirname, join, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -10,16 +10,16 @@ const guardDist = join(repo, '.claude/hooks/guard-dist.mjs')
 const gateTemplate = join(repo, '.claude/skills/sdlc-hook-gate/assets/gate-template.sh')
 const hasBashAndJq = process.platform !== 'win32' && spawnSync('jq', ['--version']).status === 0
 
-function runGuard(input: string) {
+function runGuard(input: string, projectDir = repo) {
   return spawnSync(process.execPath, [guardDist], {
     input,
     encoding: 'utf8',
-    env: { ...process.env, CLAUDE_PROJECT_DIR: repo },
+    env: { ...process.env, CLAUDE_PROJECT_DIR: projectDir },
   })
 }
 
-const edit = (filePath: string) =>
-  runGuard(JSON.stringify({ tool_name: 'Edit', tool_input: { file_path: filePath } }))
+const edit = (filePath: string, projectDir = repo) =>
+  runGuard(JSON.stringify({ tool_name: 'Edit', tool_input: { file_path: filePath } }), projectDir)
 
 describe('guard-dist hook', () => {
   it.each([
@@ -47,6 +47,22 @@ describe('guard-dist hook', () => {
     const result = edit(filePath)
     expect(result.status).toBe(0)
     expect(result.stdout).toBe('')
+  })
+
+  it.each([
+    ['through a symlink into dist/', 'link/x.js'],
+    ['up from a symlink inside dist/', 'link/../index.js'],
+  ])('denies an edit %s', (_label, filePath) => {
+    const project = mkdtempSync(join(tmpdir(), 'b2-guard-dist-'))
+    try {
+      mkdirSync(join(project, 'dist', 'sub'), { recursive: true })
+      symlinkSync(join(project, 'dist', 'sub'), join(project, 'link'), 'junction')
+      const result = edit(filePath, project)
+      expect(result.status).toBe(0)
+      expect(result.stdout).toContain('"permissionDecision":"deny"')
+    } finally {
+      rmSync(project, { recursive: true, force: true })
+    }
   })
 
   it('fails closed on an unreadable tool call', () => {
