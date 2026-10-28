@@ -25,7 +25,7 @@ The release workflow gates code and provenance, but a few coherence checks are n
 - [ ] **`dist/` is fresh.** `pnpm verify-dist` is clean (rebuild produces no diff).
 - [ ] **No stale version references** in prose or examples.
 
-The `changelog` CI check (`pnpm changelog:check`) already requires a fragment on every PR that changes `src/`, `dist/`, `action.yml`, or dependencies, so this checklist item is about completeness and wording, not presence.
+The `changelog` CI check (`pnpm changelog:check`) already requires a valid entry (a fragment with a kind and body, or on a release PR the batched notes for the package version) on every PR that changes `src/`, `dist/`, `action.yml`, dependencies, or `.github/workflows/` and `.github/actions/`, so this checklist item is about completeness and wording, not presence.
 
 From a clean, up-to-date `main`:
 

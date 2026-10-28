@@ -63,7 +63,7 @@ What a repository admin would change to enforce this. State read from the active
 | Copilot review on every push, including drafts | On | Keep, or limit to ready PRs to cut repeat passes on old commits |
 | Required approvals and code-owner review | Off | On, with the tiers above |
 | Dismiss stale approvals; require approval of the last push | Off | On |
-| Required status checks | Off | CI, security, changelog, and both Claude review jobs |
+| Required status checks | Off | CI, security, and changelog now; add both Claude review jobs only after they have run for real on several PRs (until the key exists they pass by skipping, so a green check proves nothing) |
 | Require conversation resolution | Off | On |
 | Merge queue | Off | On |
 | `ANTHROPIC_API_KEY` repository secret | Absent, so `claude-review.yml` skips | Add, to enable AI and security review |

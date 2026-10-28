@@ -1,16 +1,26 @@
 #!/usr/bin/env node
-// PR gate: a change to what ships (src/, action.yml, dist/, dependencies) must add a changie
-// fragment. Compares HEAD against BASE_REF (default origin/main). Label a PR `skip-changelog`
-// to skip the CI job when a shipped-path change has nothing user-visible to say.
+// PR gate: a change to what ships (src/, dist/, action.yml, dependencies, workflows) must add a
+// valid changelog entry: a changie fragment with a kind and a body, or, on a release PR, the
+// batched notes for the package.json version with at least one entry. Compares HEAD against
+// BASE_REF (default origin/main). Label a PR `skip-changelog` when nothing user-visible changed.
+// CHANGELOG_CHECK_ROOT points at another checkout (used by the tests).
 
 import { execFileSync } from 'node:child_process'
-import { existsSync, readdirSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
-import { dirname, join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { missingEntry } from './changelog-check-lib.mjs'
+import { parse } from 'yaml'
+import {
+  isUnreleasedFragment,
+  isValidFragment,
+  isValidReleaseNotes,
+  missingEntry,
+} from './changelog-check-lib.mjs'
 
-const repo = join(dirname(fileURLToPath(import.meta.url)), '..')
+const repo = resolve(
+  process.env.CHANGELOG_CHECK_ROOT ?? join(dirname(fileURLToPath(import.meta.url)), '..'),
+)
 
 function git(...args) {
   return execFileSync('git', args, { cwd: repo, encoding: 'utf8' }).split('\n').filter(Boolean)
@@ -30,7 +40,32 @@ try {
 
 const changed = git('diff', '--name-only', `${base}...HEAD`)
 const added = git('diff', '--name-only', '--diff-filter=A', `${base}...HEAD`)
-if (missingEntry(changed, added)) {
+const { version } = JSON.parse(readFileSync(join(repo, 'package.json'), 'utf8'))
+
+let validEntries = 0
+for (const file of added.filter(isUnreleasedFragment)) {
+  let parsed
+  try {
+    parsed = parse(readFileSync(join(repo, file), 'utf8'))
+  } catch {
+    parsed = null
+  }
+  if (!isValidFragment(parsed)) fail(`${file} needs a non-empty kind and body.`)
+  validEntries++
+}
+// Only the notes for the version being released count. Other version files (history added by a
+// migration, or a version that is not being released) neither satisfy nor fail the check.
+for (const file of added.filter((f) => f === `.changes/v${version}.md`)) {
+  if (!isValidReleaseNotes(file, readFileSync(join(repo, file), 'utf8'), version)) {
+    fail(
+      `${file} is not valid release notes: it needs at least one entry. Ordinary PRs add a ` +
+        'fragment with pnpm changelog:new instead.',
+    )
+  }
+  validEntries++
+}
+
+if (missingEntry(changed, validEntries)) {
   fail(
     "this PR changes what ships but adds no changelog entry. Run 'pnpm changelog:new', " +
       'or label the PR skip-changelog if nothing user-visible changed.',

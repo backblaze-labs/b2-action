@@ -57,6 +57,8 @@ About 10 findings across `scripts/`. The failure mode is a green check that ran 
 - [ ] Clear timers on every exit path, including a spawn `error` (#72).
 - [ ] Cleanup that can meet a directory uses `recursive: true`, and replacing a cached binary keeps the old one until the new one is in place (#72, #73).
 - [ ] Clear generated report directories before writing so artifacts match the run (#90).
+- [ ] A gate validates content, not just file names: the changelog check once accepted an empty `.changes/v*.md` as an entry, and a check that only lists paths must not be the only test. Run the real script against a scratch repo in tests, not only its helpers (#258).
+- [ ] When a PR says it closes an issue, check the issue's acceptance criteria against the code: the changelog gate claimed to close #177 while skipping the workflow paths #177 requires (#258).
 
 ## 5. Secrets and log safety
 
@@ -124,6 +126,8 @@ About 10 findings.
 ## Review process lessons
 
 - **Verify a fix landed before replying "Fixed".** One finding came back on the same PR because the reply said "Fixed" but the pushed diff still had the old text (#34). Reply with the commit that contains the fix.
+- **Give automated reviewers the review history.** `gh pr view --comments` shows conversation comments, not inline threads, so a reviewer told "do not repeat findings" cannot comply without the threads, their replies, and their resolution state; `claude-review.yml` fetches them first (#258).
+- **A skipped check is not a passing check.** The Claude review jobs pass by skipping until the API key exists; do not make them required until they have run for real (#258).
 - **Expect re-reports of fixed findings.** A second automated pass can review an older commit and repeat findings already fixed (#258). Check which commit the review targeted before changing code.
 - **Accepted is not the same as correct.** Two findings accepted on #66 rested on false premises about GitHub Actions: that job-level `permissions` inherit unlisted scopes from the workflow, and that hyphenated property names break dot access. Both were caught later on #258. Before acting on a claim about platform behavior, check it against the platform's documentation.
 - **Rebut with evidence when the reviewer is wrong.** The 4 rejected findings were all disproved by a primary source: the pinned `actions/setup-node` `action.yml` supports `package-manager-cache` (#66, #70), production B2 omits hidden names (#71), and the Windows `pnpm.cmd` default already existed (#90). Cite the source in the reply.

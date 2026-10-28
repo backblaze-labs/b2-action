@@ -43,6 +43,22 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0 # the review reads the diff against the base branch
+      # `gh pr view` shows conversation comments, not inline review threads, so save every
+      # thread (replies, resolution, the commit it was raised on) and every review for the prompt.
+      - name: Fetch prior review context
+        if: steps.key.outputs.present == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          mkdir -p .review-context
+          gh api graphql --paginate -F owner="${REPO%/*}" -F name="${REPO#*/}" -F n="$PR" -f query='query($owner:String!,$name:String!,$n:Int!,$endCursor:String){repository(owner:$owner,name:$name){pullRequest(number:$n){reviewThreads(first:100,after:$endCursor){pageInfo{hasNextPage endCursor} nodes{isResolved isOutdated path line originalLine comments(first:100){nodes{author{login} body createdAt originalCommit{oid}}}}}}}}' \
+            | jq -s '{threads: [.[].data.repository.pullRequest.reviewThreads.nodes[]]}' > .review-context/review-threads.json
+          gh api --paginate "repos/$REPO/pulls/$PR/reviews" \
+            | jq -s '[add[] | {author: .user.login, state, commit: .commit_id, submitted_at, body}]' > .review-context/reviews.json
+          echo "review context: $(jq '.threads | length' .review-context/review-threads.json) threads, $(jq length .review-context/reviews.json) reviews"
       - uses: anthropics/claude-code-action@a26b07d8c778b0c43f64618e5fd29fd0f8af72e8 # v1.0.250
         if: steps.key.outputs.present == 'true'
         with:
@@ -54,8 +70,13 @@ jobs:
             do-not-report list, and convergence rules. Read AGENTS.md and the review lessons in
             docs/design-docs/review-lessons.md for the areas this diff touches. If the PR links a
             plan under docs/exec-plans/active/, check the change against it.
-            Post each finding as an inline comment on the line it concerns. Do not repeat findings
-            already posted on this PR. Finish with one summary comment that starts with the counts
+            Before reviewing, read .review-context/review-threads.json (every earlier inline
+            thread with its replies, resolution state, and the commit it was raised on) and
+            .review-context/reviews.json (every review and the commit it covered). Do not re-raise
+            a finding that is resolved or answered unless this diff reintroduces it; if a reply
+            says a finding was wrong or intentional, accept that unless you have new evidence.
+            Post each finding as an inline comment on the line it concerns. Finish with one
+            summary comment that starts with the counts
             (Important, Nit, Pre-existing) and says plainly when there is nothing to fix.
             Do not approve, request changes, push commits, or edit files.
           claude_args: >-
@@ -86,6 +107,22 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0 # the review reads the diff against the base branch
+      # `gh pr view` shows conversation comments, not inline review threads, so save every
+      # thread (replies, resolution, the commit it was raised on) and every review for the prompt.
+      - name: Fetch prior review context
+        if: steps.key.outputs.present == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          mkdir -p .review-context
+          gh api graphql --paginate -F owner="${REPO%/*}" -F name="${REPO#*/}" -F n="$PR" -f query='query($owner:String!,$name:String!,$n:Int!,$endCursor:String){repository(owner:$owner,name:$name){pullRequest(number:$n){reviewThreads(first:100,after:$endCursor){pageInfo{hasNextPage endCursor} nodes{isResolved isOutdated path line originalLine comments(first:100){nodes{author{login} body createdAt originalCommit{oid}}}}}}}}' \
+            | jq -s '{threads: [.[].data.repository.pullRequest.reviewThreads.nodes[]]}' > .review-context/review-threads.json
+          gh api --paginate "repos/$REPO/pulls/$PR/reviews" \
+            | jq -s '[add[] | {author: .user.login, state, commit: .commit_id, submitted_at, body}]' > .review-context/reviews.json
+          echo "review context: $(jq '.threads | length' .review-context/review-threads.json) threads, $(jq length .review-context/reviews.json) reviews"
       - uses: anthropics/claude-code-action@a26b07d8c778b0c43f64618e5fd29fd0f8af72e8 # v1.0.250
         if: steps.key.outputs.present == 'true'
         with:
@@ -98,7 +135,9 @@ jobs:
             docs/design-docs/review-lessons.md. Look for: secrets or credentials reaching outputs,
             logs, annotations, or summary-json; user input echoed into workflow commands; raw HTTP
             or subprocesses replacing the SDK; workflow permission, trigger, cache, and pinning
-            mistakes; and unverified downloads. Report only issues you can tie to a `path:line`
+            mistakes; and unverified downloads. First read .review-context/review-threads.json and
+            .review-context/reviews.json, and do not re-raise a resolved or answered finding unless
+            this diff reintroduces it. Report only issues you can tie to a `path:line`
             in this diff, tagged Important or Pre-existing, as inline comments, then one summary
             comment that starts with the count and says plainly when there is nothing to fix.
             Do not approve, request changes, push commits, or edit files.
