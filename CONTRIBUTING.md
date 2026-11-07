@@ -1,6 +1,6 @@
 # Contributing to `backblaze-labs/b2-action`
 
-Thanks for your interest. The Action is intentionally small and built on the official [`@backblaze-labs/b2-sdk`](https://github.com/backblaze-labs/b2-sdk-typescript): most behavior changes happen there, not here. This file covers what to do when you genuinely need to change *this* repo.
+Thanks for your interest. The Action is intentionally small and built on the official [`@backblaze-labs/b2-sdk`](https://github.com/backblaze-labs/b2-sdk-typescript): most behavior changes happen there, not here. This file covers what to do when you genuinely need to change *this* repo. For the repository map and the layering rules, start at [AGENTS.md](./AGENTS.md) and [ARCHITECTURE.md](./ARCHITECTURE.md).
 
 ## Local setup
 
@@ -43,6 +43,9 @@ __tests__/
   release.yml                  # see RELEASE.md
 action.yml         # marketplace manifest: inputs, outputs, branding
 dist/index.js      # ncc-bundled entrypoint (committed; CI fails if stale)
+AGENTS.md          # repository map (multi-harness entry point)
+ARCHITECTURE.md    # layers + boundary invariants
+docs/              # system of record (design docs, plans, quality grades)
 ```
 
 ## Adding a new verb

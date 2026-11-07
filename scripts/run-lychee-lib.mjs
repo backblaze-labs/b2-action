@@ -77,7 +77,9 @@ export const DEFAULT_LYCHEE_ARGS = Object.freeze([
   '--exclude-path',
   '(^|[\\\\/])node_modules[\\\\/]',
   '--exclude-path',
-  '(^|[\\\\/])docs[\\\\/]',
+  '(^|[\\\\/])api-docs[\\\\/]',
+  '--exclude-path',
+  '(^|[\\\\/])\\.stryker-tmp[\\\\/]',
   '**/*.md',
 ])
 

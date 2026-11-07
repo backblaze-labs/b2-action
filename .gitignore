@@ -10,4 +10,5 @@ reports/
 .vscode/
 .idea/
 # TypeDoc-generated API site; built fresh in CI for GitHub Pages.
-docs/
+# The hand-written system of record lives in docs/ and IS tracked.
+api-docs/

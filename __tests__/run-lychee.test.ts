@@ -64,7 +64,9 @@ describe('run-lychee helper', () => {
       '--exclude-path',
       '(^|[\\\\/])node_modules[\\\\/]',
       '--exclude-path',
-      '(^|[\\\\/])docs[\\\\/]',
+      '(^|[\\\\/])api-docs[\\\\/]',
+      '--exclude-path',
+      '(^|[\\\\/])\\.stryker-tmp[\\\\/]',
       '**/*.md',
     ])
     expect(
@@ -74,16 +76,16 @@ describe('run-lychee helper', () => {
       runLychee.DEFAULT_LYCHEE_ARGS[runLychee.DEFAULT_LYCHEE_ARGS.indexOf('--exclude-path') + 1]
     if (excludePathPattern === undefined) throw new Error('missing --exclude-path pattern')
     const excludePath = new RegExp(excludePathPattern)
-    expect(excludePath.test('docs/node_modules/package/README.md')).toBe(true)
-    expect(excludePath.test('docs\\node_modules\\package\\README.md')).toBe(true)
+    expect(excludePath.test('api-docs/node_modules/package/README.md')).toBe(true)
+    expect(excludePath.test('api-docs\\node_modules\\package\\README.md')).toBe(true)
     const excludePaths = runLychee.DEFAULT_LYCHEE_ARGS.flatMap((arg, index, args) =>
       arg === '--exclude-path' ? [args[index + 1]] : [],
     )
-    const generatedDocsExclude = excludePaths.find((pattern) => pattern?.includes('docs'))
+    const generatedDocsExclude = excludePaths.find((pattern) => pattern?.includes('api-docs'))
     if (generatedDocsExclude === undefined) throw new Error('missing generated docs exclude')
     const generatedDocsPath = new RegExp(generatedDocsExclude)
-    expect(generatedDocsPath.test('docs/media/README.md')).toBe(true)
-    expect(generatedDocsPath.test('docs\\media\\README.md')).toBe(true)
+    expect(generatedDocsPath.test('api-docs/media/README.md')).toBe(true)
+    expect(generatedDocsPath.test('api-docs\\media\\README.md')).toBe(true)
   })
 
   it('preserves default lychee args when extra args are supplied', () => {

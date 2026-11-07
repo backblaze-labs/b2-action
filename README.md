@@ -15,7 +15,7 @@ A Backblaze-maintained B2 GitHub Action. TypeScript-native, built on [@backblaze
 - **Step-summary tables** rendered on every run via `$GITHUB_STEP_SUMMARY`, capped at 100 per-file rows with an omitted-row notice.
 - **Secret-safe.** App keys, auth tokens, and presigned URLs are auto-masked with `::add-mask::`.
 
-> **Live test suite = the examples.** Every workflow under [.github/workflows/example-*.yml](./.github/workflows/README.md) is both a copy-paste-runnable example and a live integration test. All but one run on every PR; [the ML cache round-trip](./.github/workflows/example-ml-cache-sync.yml) is push-only because it runs `uses: ./` with B2 secrets.
+> **Live test suite = the examples.** Every workflow under [.github/workflows/example-*.yml](./.github/workflows/README.md) is both a copy-paste-runnable example and a live integration test. All but one run on every PR; [the ML cache round-trip](./.github/workflows/example-ml-cache-sync.yml) is push-only because it runs `uses: ./` with B2 secrets. For a full walkthrough of that pattern, see the [AI/ML pipelines guide](https://www.backblaze.com/docs/en/cloud-storage-automate-b2-storage-in-ai-ml-pipelines-with-b2-github-action).
 
 ## Table of contents
 
@@ -42,11 +42,11 @@ A Backblaze-maintained B2 GitHub Action. TypeScript-native, built on [@backblaze
   - [Inputs (full reference)](#inputs-full-reference)
   - [Outputs (full reference)](#outputs-full-reference)
   - [Other Backblaze B2 Actions on the Marketplace](#other-backblaze-b2-actions-on-the-marketplace)
+  - [Guides](#guides)
+  - [Backblaze Labs ecosystem](#backblaze-labs-ecosystem)
   - [Development \& contributing](#development--contributing)
   - [Running locally from the CLI](#running-locally-from-the-cli)
   - [License](#license)
-
----
 
 ## Quick start
 
@@ -62,8 +62,6 @@ A Backblaze-maintained B2 GitHub Action. TypeScript-native, built on [@backblaze
 ```
 
 For one self-contained example per verb (each is also a live integration test), see [.github/workflows/](./.github/workflows/README.md). Below is the full reference.
-
----
 
 ## Pinning and versioning
 
@@ -82,8 +80,6 @@ This Action follows [semantic versioning](https://semver.org) and maintains a fl
 This is the same supply-chain practice this Action applies to its own workflows: every third-party action it depends on is SHA-pinned. The worked examples below use `@v1` for brevity; swap in a commit SHA (or a pinned `@vX.Y.Z`) for production workflows.
 
 Exact-version releases publish an attested `dist/index.js` asset for provenance checks; see [RELEASE.md](./RELEASE.md#verifying-release-provenance).
-
----
 
 ## Verbs
 
@@ -104,8 +100,6 @@ Exact-version releases publish an attested `dist/index.js` asset for provenance 
 | `purge` | Permanently delete every file version under a prefix, including hide markers and history. Whole-bucket purge requires `allow-bucket-purge: true`. Supports `dry-run` and `bypass-governance` for governance-retained versions. | `source` or `allow-bucket-purge`, `bucket` |
 
 Exact-name `copy`, single-file `delete`, and `retention` operate only when the latest exact-name version is an upload. If that latest version is a hide marker, these commands do not search older upload history under the same name; they fail with the same `File not found` diagnostic used for absent names so default workflow logs do not reveal hidden-object existence. Run `unhide` first to restore the prior upload, or use `purge` when you need to remove hide markers and historical versions.
-
----
 
 ## Worked examples
 
@@ -377,8 +371,6 @@ Set `bypass-governance: true` to shorten governance-mode retention or to remove 
     echo "Bytes:            $FILE_BYTES"
 ```
 
----
-
 ## Inputs (full reference)
 
 | Input | Required | Default | Description |
@@ -481,8 +473,6 @@ For `presign`, `summary-json` and `summary-json-preview` contain only non-secret
 
 Treat `retry-after` as server-influenced input even though this Action clamps it; do not pass it to unbounded sleeps or shell code without your own policy.
 
----
-
 ## Other Backblaze B2 Actions on the Marketplace
 
 If this Action doesn't fit your workflow, here are other community-maintained options on the GitHub Marketplace:
@@ -493,11 +483,21 @@ If this Action doesn't fit your workflow, here are other community-maintained op
 4. [`sylwit/install-b2-cli-action`](https://github.com/sylwit/install-b2-cli-action): installs the Backblaze `b2` CLI binary on the runner.
 5. [`andromidasj/install-b2-cli-action`](https://github.com/andromidasj/install-b2-cli-action): installs and authorizes the Backblaze `b2` CLI.
 
----
+## Guides
+
+- [Automate B2 Storage in AI/ML Pipelines with the Backblaze B2 GitHub Action](https://www.backblaze.com/docs/en/cloud-storage-automate-b2-storage-in-ai-ml-pipelines-with-b2-github-action) — upload, download, sync, and manage ML artifacts (model checkpoints, datasets) from CI/CD.
+
+## Backblaze Labs ecosystem
+
+Part of [Backblaze Labs](https://github.com/backblaze-labs):
+
+1. [`backblaze-labs/b2-mcp`](https://github.com/backblaze-labs/b2-mcp): MCP server for Backblaze B2 Cloud Storage — a focused, safe 40-tool surface for any MCP-compatible AI client.
+2. [`backblaze-labs/genblaze`](https://github.com/backblaze-labs/genblaze): Python SDK for orchestrating generative-AI media pipelines across video, audio, and image providers, with built-in provenance for every output.
+3. [`backblaze-labs/b2-sdk-typescript`](https://github.com/backblaze-labs/b2-sdk-typescript): Backblaze-maintained TypeScript / JavaScript SDK for B2 Cloud Storage.
 
 ## Development & contributing
 
-The internal architecture (dispatcher flow, source layout, conventions, CI gates) and local commands live in [DEVELOPMENT.md](./DEVELOPMENT.md). The PR process is in [CONTRIBUTING.md](./CONTRIBUTING.md); the release runbook is in [RELEASE.md](./RELEASE.md).
+Contributors and AI assistants start at [AGENTS.md](./AGENTS.md) (the repository map) and [ARCHITECTURE.md](./ARCHITECTURE.md) (layers and boundary invariants); the system of record lives under [docs/](./docs/README.md). The internal architecture (dispatcher flow, source layout, conventions, CI gates) and local commands live in [DEVELOPMENT.md](./DEVELOPMENT.md). The PR process is in [CONTRIBUTING.md](./CONTRIBUTING.md); the release runbook is in [RELEASE.md](./RELEASE.md).
 
 Security reports: see [SECURITY.md](./SECURITY.md).
 

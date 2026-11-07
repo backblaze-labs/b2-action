@@ -7,11 +7,13 @@ andromidasj
 b2api
 b2sim
 backblaze
+backlink
 backoff
 base64
 biome
 biomejs
 boto
+browserslist
 checkout
 checksum
 checksums
@@ -31,6 +33,7 @@ fileids
 filename
 filenames
 fsevents
+genblaze
 ghsa
 globber
 gpgsign
@@ -79,6 +82,7 @@ sha1
 sha256
 sigstore
 sksat
+smol
 softprops
 somedir
 spyon

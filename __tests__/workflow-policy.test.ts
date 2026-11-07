@@ -30,7 +30,7 @@ type WorkflowConfig = {
 }
 
 describe('pull_request workflow policy', () => {
-  it('does not skip protected read-only gates for Dependabot PRs', async () => {
+  it('skips every pull_request job for Dependabot PRs', async () => {
     for (const workflowPath of protectedPullRequestWorkflows) {
       const workflow = await readWorkflow(workflowPath)
 
@@ -40,8 +40,9 @@ describe('pull_request workflow policy', () => {
         const condition = jobCondition(job)
         const label = `${workflowPath} job ${jobName}`
 
-        expect(condition, label).not.toMatch(/github\.actor\s*!=\s*['"]dependabot\[bot\]['"]/u)
-        expect(condition.toLowerCase(), label).not.toContain('dependabot[bot]')
+        // Policy: Dependabot PRs run no CI. Every job in a pull_request-triggered
+        // workflow must be gated so it is skipped for the dependabot[bot] actor.
+        expect(condition, label).toMatch(/github\.actor\s*!=\s*['"]dependabot\[bot\]['"]/u)
       }
     }
   })

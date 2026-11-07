@@ -17,7 +17,7 @@ describe('retention command', () => {
   const inputs = boundInputs('retention', () => fx)
 
   beforeEach(async () => {
-    fx = await makeFixture('gh-action-retention')
+    fx = await makeFixture('gh-action-retention', {}, { fileLockEnabled: true })
   })
   afterEach(async () => {
     await rm(fx.workDir, { recursive: true, force: true })
