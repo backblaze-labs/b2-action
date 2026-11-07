@@ -233,7 +233,7 @@ function applyCommandResult(commands: ReturnType<typeof commandMocks>, action: A
       })
       return
     case 'list':
-      commands.listCommand.mockResolvedValue({ files: [file], truncated: false })
+      commands.listCommand.mockResolvedValue({ files: [file], prefixes: [], truncated: false })
       return
     case 'hide':
       commands.hideCommand.mockResolvedValue(file)

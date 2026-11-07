@@ -1,6 +1,7 @@
 import { rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { FileAction } from '@backblaze-labs/b2-sdk'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { hideCommand } from '../../src/commands/hide.ts'
 import { listCommand } from '../../src/commands/list.ts'
 import { unhideCommand } from '../../src/commands/unhide.ts'
@@ -32,7 +33,56 @@ describe('list command', () => {
     expect(result.files.map((f) => f.fileName).sort()).toEqual(['logs/a.txt', 'logs/b.txt'])
     expect(result.files[0]?.size).toBeGreaterThan(0)
     expect(result.files[0]?.contentSha1).not.toBeNull()
+    expect(result.prefixes).toEqual([])
     expect(result.truncated).toBe(false)
+  })
+
+  it('forwards delimiter grouping and returns virtual prefixes separately', async () => {
+    await seedFile(fx, 'logs/root.txt', 'root')
+    const originalPage = await fx.bucket.listFileNames({ prefix: 'logs/' })
+    const uploaded = originalPage.files[0]
+    if (uploaded === undefined) throw new Error('expected uploaded fixture')
+
+    const listFileNames = vi.spyOn(fx.bucket, 'listFileNames').mockResolvedValue({
+      ...originalPage,
+      files: [{ ...uploaded, action: FileAction.Folder, fileName: 'logs/archive/' }, uploaded],
+    })
+
+    const result = await listCommand(
+      fx.bucket,
+      inputs('list', { source: 'logs/', delimiter: '/', maxResults: 2 }),
+    )
+
+    expect(listFileNames).toHaveBeenCalledWith({ prefix: 'logs/', pageSize: 2, delimiter: '/' })
+    expect(result.files.map((file) => file.fileName)).toEqual(['logs/root.txt'])
+    expect(result.prefixes).toEqual([{ prefix: 'logs/archive/' }])
+    expect(result.truncated).toBe(false)
+  })
+
+  it('keeps delimiter grouping while probing for truncated entries', async () => {
+    await seedFile(fx, 'logs/root.txt', 'root')
+    const originalPage = await fx.bucket.listFileNames({ prefix: 'logs/' })
+    const uploaded = originalPage.files[0]
+    if (uploaded === undefined) throw new Error('expected uploaded fixture')
+    const folder = { ...uploaded, action: FileAction.Folder, fileName: 'logs/archive/' }
+
+    const listFileNames = vi
+      .spyOn(fx.bucket, 'listFileNames')
+      .mockResolvedValueOnce({ ...originalPage, files: [uploaded], nextFileName: folder.fileName })
+      .mockResolvedValueOnce({ ...originalPage, files: [folder], nextFileName: null })
+
+    const result = await listCommand(
+      fx.bucket,
+      inputs('list', { source: 'logs/', delimiter: '/', maxResults: 1 }),
+    )
+
+    expect(listFileNames).toHaveBeenNthCalledWith(2, {
+      prefix: 'logs/',
+      pageSize: 1000,
+      startFileName: 'logs/archive/',
+      delimiter: '/',
+    })
+    expect(result.truncated).toBe(true)
   })
 
   it('reports truncation when results hit max-results', async () => {

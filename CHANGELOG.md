@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- Add optional delimiter grouping to `list`, with distinguishable file and virtual-prefix outputs.
+
 ### Security
 
 - Raised pinned dependency overrides (`js-yaml`, `markdown-it`, `fast-uri`, `smol-toml`) for dev/build tooling and (`undici`, `brace-expansion`) for production dependencies to clear GitHub Dependabot security alerts. The shipped `dist/` bundle was rebuilt to pick up the `undici` and `brace-expansion` fixes.
