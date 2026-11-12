@@ -220,15 +220,6 @@ the Actions tab.
 
 Pre-commit runs every repo-local code/doc check so a small change cannot skip an important local gate. On a clean repo this takes ~5 s. Skip either hook with `--no-verify` if you need to; the same checks run in CI.
 
-GitHub Actions workflow security is centralized in [`.github/workflows/security.yml`](./.github/workflows/security.yml), which calls the shared `backblaze-labs/github-actions` composite action pinned to a commit SHA. The shared action owns actionlint, third-party action pin checks, and zizmor audits so this repo does not carry local copies of those scripts. With a sibling checkout of `../github-actions`, maintainers can still use the same shared tooling locally:
-
-```bash
-node ../github-actions/scripts/format-workflows.mjs --root . --write
-node ../github-actions/scripts/check-action-pins.mjs --root . --fix
-node ../github-actions/scripts/check-action-pins.mjs --root .
-env ACTIONLINT_CACHE_DIR=/private/tmp/backblaze-actionlint bash ../github-actions/scripts/actionlint.sh
-```
-
 ## Conventions
 
 This repo mirrors the [`b2-sdk-typescript`](https://github.com/backblaze-labs/b2-sdk-typescript) style:
@@ -252,7 +243,6 @@ listed in the same table and called out explicitly.
 | `mutation-testing` ([mutation-testing.yml](./.github/workflows/mutation-testing.yml)) | Batched per-file Stryker mutation testing against the configured `stryker.conf.json` mutation scope. Runs weekly and manually; it uploads the JSON report artifact, opens or updates a tracking issue on default-branch failure, and fails if the aggregate mutation score drops below the configured break threshold (65%). |
 | `build-and-check-dist` | ncc build, then `git diff --exit-code dist/`. **Drift fails CI**: rebuild with `pnpm build` and commit `dist/`. Bundle size is gated hard at 4 MiB. |
 | `release-provenance-policy` ([security.yml](./.github/workflows/security.yml)) | parses release workflow YAML and enforces OIDC/attestation isolation, validated-SHA checkouts, tag re-verification, staged release asset upload, and post-upload verification. |
-| `github-actions` ([security.yml](./.github/workflows/security.yml)) | runs the shared GitHub Actions security composite action against every workflow, including actionlint, third-party action pin checks, and zizmor audits (see [Pinning third-party actions](#pinning-third-party-actions)) |
 | `self-smoke` | runs `node dist/index.js` with no inputs, expects the missing-input error |
 | `analyze` ([codeql.yml](./.github/workflows/codeql.yml)) | CodeQL (SAST) over the TypeScript source (`build-mode: none`, no compile needed). Runs on PRs to `main`, push to `main`, and weekly; findings surface in the repo Security tab. |
 | `audit` | `pnpm audit --prod --audit-level high`: fails on a high/critical advisory in a **production** dependency. Scoped to prod (not devDeps) so a dev-tool advisory can't block an unrelated PR; devDep updates are handled by Dependabot. CI calls the builtin `pnpm audit` directly (resolves against the lockfile, no install); `pnpm run audit` is the local-convenience equivalent. |
@@ -268,7 +258,7 @@ Plus, the [example workflows](./.github/workflows/README.md) are the integration
 
 ### Pinning third-party actions
 
-Every third-party action under `.github/workflows/` is pinned to a full commit SHA with a trailing exact-version comment (for example `uses: actions/checkout@<sha> # v6.0.2`), so a moved or compromised upstream tag cannot run in our CI or the `contents: write` release job. The comment names the precise release the SHA represents, so a reviewer can confirm it at a glance. Dependabot's `github-actions` updates bump the SHA and the comment together. When you add a workflow step, pin it the same way: resolve the tag with `gh api repos/<owner>/<repo>/commits/<tag> -q .sha` and add the `# vX.Y.Z` comment. The repo's own action is referenced as `uses: ./` and is not pinned. This is enforced automatically by [`.github/workflows/security.yml`](./.github/workflows/security.yml), which uses the shared `backblaze-labs/github-actions` composite action; an accidental regression to `@v1` (or a major-only comment) cannot merge.
+Every third-party action under `.github/workflows/` is pinned to a full commit SHA with a trailing exact-version comment (for example `uses: actions/checkout@<sha> # v6.0.2`), so a moved or compromised upstream tag cannot run in our CI or the `contents: write` release job. The comment names the precise release the SHA represents, so a reviewer can confirm it at a glance. Dependabot's `github-actions` updates bump the SHA and the comment together. When you add a workflow step, pin it the same way: resolve the tag with `gh api repos/<owner>/<repo>/commits/<tag> -q .sha` and add the `# vX.Y.Z` comment. The repo's own action is referenced as `uses: ./` and is not pinned. Run `actionlint` locally to check workflow changes before pushing.
 
 ## Test bucket setup
 

@@ -18,7 +18,7 @@ Requirements: Node 24+. pnpm is pinned via the `packageManager` field in `packag
 
 Skip a hook with `--no-verify` if you absolutely need to. CI runs the same checks regardless. In the release workflow husky is disabled via `HUSKY=0` so the in-CI `git push` of the floating major tag doesn't re-trigger the local hooks.
 
-GitHub Actions workflow security is centralized in [`.github/workflows/security.yml`](./.github/workflows/security.yml), which calls the shared `backblaze-labs/github-actions` composite action pinned to a commit SHA. That shared action owns actionlint, third-party action pin checks, and zizmor audits so this repo does not carry local copies of those scripts.
+Every action in `.github/workflows/` is pinned to a full commit SHA with the exact release in a comment; see [Pinning third-party actions](./DEVELOPMENT.md#pinning-third-party-actions).
 
 ## Project shape
 
