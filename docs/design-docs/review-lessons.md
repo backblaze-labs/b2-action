@@ -77,9 +77,9 @@ About 11 findings, concentrated in error handling (#69).
 
 ## 6. GitHub Actions workflows
 
-About 45 findings, the largest group by volume. The security workflow (actionlint, pin checks, zizmor) catches some; these are the ones it did not.
+About 45 findings, the largest group by volume. CI no longer lints workflows (actionlint, zizmor, and the pin check left with #264), so these are checked locally and in review.
 
-- [ ] Before pushing a workflow change, run the security job's linters locally at its pinned versions: `actionlint` (its shellcheck pass flags things like GraphQL `$variables` inside single quotes, SC2016; pass such text through `env:` instead) and `uvx zizmor@<pinned version> --persona pedantic --offline .`. A newer zizmor reports audits CI does not run, and a failing actionlint makes CI skip zizmor entirely, hiding its findings for another round (#258).
+- [ ] Before pushing a workflow change, run `actionlint` (its shellcheck pass flags things like GraphQL `$variables` inside single quotes, SC2016; pass such text through `env:` instead) and `uvx zizmor --persona pedantic --offline .` locally, and pin every new action to a full SHA with a `# vX.Y.Z` comment. No CI job runs these checks since #264, so a miss reaches `main` (#258).
 - [ ] Every workflow has a `concurrency` group, scoped to the ref so PR runs do not queue behind `main` (#56, #65, #258).
 - [ ] Jobs that need write scopes skip fork PRs, whose token is read-only (#56); every `pull_request` job carries the Dependabot guard (see [conventions.md](conventions.md)).
 - [ ] Least privilege, computed as GitHub does: a job with its own `permissions` key gets exactly the scopes it lists and every other scope is `none` (it does not inherit from the workflow), while a job without a `permissions` key uses the workflow-level block. So a job-level mapping must list every scope its steps need, `contents: read` included. `write-all` is a string, not a mapping (#66, #258). (#66 assumed jobs inherit unspecified scopes; the release-provenance policy built on that is stricter than needed, which is safe.) Grant read scopes the steps actually need, such as `attestations: read` for `gh attestation verify` (#66).

@@ -55,7 +55,7 @@ When there is nothing to fix, say so plainly in one line ("0 Important, 0 Nit, 0
 
 ## Do not report
 
-- Anything a CI gate already enforces: Biome style, typecheck, coverage thresholds, `dist/` freshness, actionlint and pin checks, spelling, Markdown lint, and link checks. Trust the gate; mention it only if a gate is missing.
+- Anything a CI gate already enforces: Biome style, typecheck, coverage thresholds, `dist/` freshness, spelling, Markdown lint, and link checks. Trust the gate; mention it only if a gate is missing.
 - Generated or vendored output: `dist/`, `api-docs/`, `coverage/`, and lockfile churn.
 - Preferences that contradict [AGENTS.md](AGENTS.md) or [ARCHITECTURE.md](ARCHITECTURE.md).
 

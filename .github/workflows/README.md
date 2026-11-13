@@ -5,7 +5,7 @@ This folder contains:
 - **`ci.yml`**: runs on every PR: typecheck, lint, vitest (Ubuntu / macOS / Windows), coverage gate, build, `dist/` freshness, bundle-size budget, offline self-smoke.
 - **`docs.yml`**: runs TypeDoc on every PR (output in `api-docs/`) and deploys the generated API docs to GitHub Pages on pushes to `main`.
 - **`docs-lint.yml`**: documentation gates on every PR: `action.yml` ↔ README sync check, markdownlint, offline link check (lychee), and cspell.
-- **`security.yml`**: runs the shared GitHub Actions security composite action against every workflow: actionlint, third-party action pin checks, and zizmor audits.
+- **`security.yml`**: the release provenance policy (`pnpm check:release-provenance`) on every push to `main` and every PR.
 - **`changelog.yml`**: on every PR (and on label changes): `pnpm changelog:check` requires a valid changie entry when the PR changes `src/`, `dist/`, `action.yml`, dependencies, `.github/workflows/`, or `.github/actions/`. Skipped for Dependabot and for PRs labeled `skip-changelog`.
 - **`claude-review.yml`**: on every ready, non-fork PR: two Claude passes (the `REVIEW.md` passes and a security pass) that post inline findings and never approve. `scripts/claude-review-gate.mjs`, run from the base commit with only a key-present flag, skips each job with a notice when `ANTHROPIC_API_KEY` is absent or a bot or app triggered the run, and fails the job when it cannot identify the actor. Reviews against the base branch's policy files.
 - **`codeql.yml`**: CodeQL (SAST) static analysis of the TypeScript source. Runs on PRs to `main`, on push to `main`, and weekly; findings surface in the repo Security tab.

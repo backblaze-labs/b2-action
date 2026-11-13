@@ -28,12 +28,12 @@ jobs:
       contents: read # read the code under review
       pull-requests: write # post review comments; the action never approves
     steps:
-      - uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           persist-credentials: false
           fetch-depth: 0 # the review reads the diff and the base-branch policy
       # The gate runs from the base commit, not the PR, and sees only whether the key exists.
-      - uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           persist-credentials: false
           ref: ${{ github.event.pull_request.base.sha }}
@@ -117,12 +117,12 @@ jobs:
       contents: read # read the code under review
       pull-requests: write # post review comments; the action never approves
     steps:
-      - uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           persist-credentials: false
           fetch-depth: 0 # the review reads the diff and the base-branch policy
       # The gate runs from the base commit, not the PR, and sees only whether the key exists.
-      - uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           persist-credentials: false
           ref: ${{ github.event.pull_request.base.sha }}

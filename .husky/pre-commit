@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 # Pre-commit: local code checks, every commit, no path-gating.
 #
-# Workflow security checks live in .github/workflows/security.yml through the
-# shared backblaze-labs/github-actions composite action, so this hook stays
-# focused on repo-local code and docs.
+# Workflow checks run in CI, so this hook stays focused on repo-local code
+# and docs.
 #
 # Skip with `git commit --no-verify` only if you have a damn good reason.
 

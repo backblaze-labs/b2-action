@@ -17,7 +17,7 @@ When you change this repository:
 6. Add a changie fragment with `pnpm changelog:new` for every user-visible change, under the right Keep a Changelog kind. Never edit `CHANGELOG.md`; it is generated. (CONTRIBUTING.md; CI `changelog`, `pnpm changelog:check`)
 7. Start a bug fix with a test that fails before the fix and passes after it. Assert the outputs and the arguments passed to the SDK, not only that nothing threw. Keep coverage at 95 / 85 / 100 / 95. (CI `coverage`; [REVIEW.md](../../../REVIEW.md))
 8. Use conditional spread for optional properties, `import type` for type-only imports, and `.ts` extensions on internal imports. (Golden rule 6; `pnpm typecheck`, `pnpm lint`, the `biome-check` hook)
-9. In workflows, pin third-party actions to a full commit SHA with a `# vX.Y.Z` comment, keep `persist-credentials: false` and least-privilege `permissions`, and guard every `pull_request` job with the Dependabot condition in [conventions.md](../../../docs/design-docs/conventions.md). (Golden rule 7; `security.yml`, `__tests__/workflow-policy.test.ts`)
+9. In workflows, pin third-party actions to a full commit SHA with a `# vX.Y.Z` comment, keep `persist-credentials: false` and least-privilege `permissions`, and guard every `pull_request` job with the Dependabot condition in [conventions.md](../../../docs/design-docs/conventions.md). (Golden rule 7; `__tests__/workflow-policy.test.ts` checks the guard; no CI job checks pins, so run `actionlint` and check them in review)
 
 10. Walk the sections of [review-lessons.md](../../../docs/design-docs/review-lessons.md) for the areas you touched (docs and comments, tests, Windows, scripts, secrets, workflows, concurrency, contract, dependencies) and fix what applies before opening the PR.
 

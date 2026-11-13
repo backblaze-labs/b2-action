@@ -59,7 +59,7 @@ One command runs the local validation suite; run it before every PR:
 pnpm ci:local    # pnpm all + dist freshness + coverage + action.yml sync + changelog check + TypeDoc build + docs lint and links + prod audit
 ```
 
-It covers what can run anywhere without credentials, not every PR check. CI-only: the macOS and Windows test matrix, the bundle-size ceiling and offline smoke test in `ci.yml`, the workflow security job (actionlint, pin checks, zizmor), CodeQL, the real-B2 example workflows, and the Claude review passes. Before pushing a workflow change, also run `actionlint` and `uvx zizmor@<version pinned in security.yml> --persona pedantic --offline .` (see [review-lessons.md](docs/design-docs/review-lessons.md)).
+It covers what can run anywhere without credentials, not every PR check. CI-only: the macOS and Windows test matrix, the bundle-size ceiling and offline smoke test in `ci.yml`, the release provenance policy in `security.yml`, CodeQL, the real-B2 example workflows, and the Claude review passes. No CI job runs actionlint, zizmor, or an action pin check, so before pushing a workflow change run `actionlint` and `uvx zizmor --persona pedantic --offline .` yourself and pin every new action by SHA (see [review-lessons.md](docs/design-docs/review-lessons.md)).
 
 For a faster inner loop while iterating, `pnpm all` runs lint, release policy, typecheck, tests,
 build, and spellcheck, and `pnpm verify-dist` checks that the rebuilt `dist/` is committed.
