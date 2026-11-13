@@ -80,6 +80,9 @@ export const DEFAULT_LYCHEE_ARGS = Object.freeze([
   '(^|[\\\\/])api-docs[\\\\/]',
   '--exclude-path',
   '(^|[\\\\/])\\.stryker-tmp[\\\\/]',
+  // changie sources hold links relative to the generated root CHANGELOG.md, which is checked.
+  '--exclude-path',
+  '(^|[\\\\/])\\.changes[\\\\/]',
   '**/*.md',
 ])
 

@@ -1,0 +1,3 @@
+kind: Security
+body: Raised the production `undici` override to 6.29.1 to clear high-severity advisories (TLS certificate validation bypass, denial of service on excessive content-encodings, and on TLS 1.2 renegotiation) plus two moderate ones. `undici` reaches the shipped `dist/` bundle through `@actions/core`, so the bundle was rebuilt.
+time: 2026-10-27T21:46:57.621389-05:00

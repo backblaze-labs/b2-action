@@ -52,6 +52,9 @@ importers:
       '@vitest/coverage-v8':
         specifier: ^4.1.11
         version: 4.1.11(vitest@4.1.11)
+      changie:
+        specifier: 1.26.0
+        version: 1.26.0
       cspell:
         specifier: ^10.2.2
         version: 10.2.2
@@ -1269,6 +1272,10 @@ packages:
   chalk@6.0.0:
     resolution: {integrity: sha512-2uNTXIuTTxk7ciZgAU1BQcgnchcG0xXnrs6jzkQfj9SsRa9M2s5zE8WT96hS6KmG4MzWHSrvH43DF1m4XRkrFg==}
     engines: {node: '>=22'}
+
+  changie@1.26.0:
+    resolution: {integrity: sha512-uxNt7qEj5K0m+OzESAABldgUVn3I+KkiMH2gYjDCPJmsr0Qpoc5F6R2udiQkc8SJNsc7vfJBUaoHW8a0emflmg==}
+    hasBin: true
 
   character-entities-legacy@3.0.0:
     resolution: {integrity: sha512-RpPp0asT/6ufRm//AJVwpViZbGM/MkjQFxJccQRHmISF/22NBtsHqAWmL+/pmkPWoIUJdWyeVleTl1wydHATVQ==}
@@ -3329,6 +3336,8 @@ snapshots:
   chalk@5.6.2: {}
 
   chalk@6.0.0: {}
+
+  changie@1.26.0: {}
 
   character-entities-legacy@3.0.0: {}
 

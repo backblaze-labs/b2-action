@@ -1,20 +1,43 @@
 # Code owners for backblaze-labs/b2-action
 #
 # These owners will be automatically requested for review on any PR.
-# Order matters: the LAST matching pattern takes most precedence.
+# Order matters: the LAST matching pattern takes most precedence, so broad rules come first.
 #
 # See https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-security/managing-repository-settings/about-code-owners
 
 # Default owner for everything in the repo.
-*                               @goanpeca @jeronimodeleon @sophiecarreras
+*                               @goanpeca @jeronimodeleon @sophiecarreras @ffumero2003
+
+# Always-human paths (docs/design-docs/review-process.md): every workflow and composite action,
+# this file, and the Claude Code hooks and settings that run on contributors' machines.
+/.github/workflows/             @goanpeca @jeronimodeleon @sophiecarreras @ffumero2003
+/.github/actions/               @goanpeca @jeronimodeleon @sophiecarreras @ffumero2003
+/.github/CODEOWNERS             @goanpeca @jeronimodeleon @sophiecarreras @ffumero2003
+/.claude/                       @goanpeca @jeronimodeleon @sophiecarreras @ffumero2003
+/.changie.yaml                  @goanpeca @jeronimodeleon @sophiecarreras @ffumero2003
+/scripts/changelog-release.mjs  @goanpeca @jeronimodeleon @sophiecarreras @ffumero2003
+
+# Review, authorization, and security policy, and the gates that enforce it: they steer the
+# reviewer or define what it checks, so a docs-only PR must not change them without a person.
+/AGENTS.md                                @goanpeca @jeronimodeleon @sophiecarreras @ffumero2003
+/CLAUDE.md                                @goanpeca @jeronimodeleon @sophiecarreras @ffumero2003
+/GEMINI.md                                @goanpeca @jeronimodeleon @sophiecarreras @ffumero2003
+/REVIEW.md                                @goanpeca @jeronimodeleon @sophiecarreras @ffumero2003
+/.github/pull_request_template.md         @goanpeca @jeronimodeleon @sophiecarreras @ffumero2003
+/docs/design-docs/conventions.md          @goanpeca @jeronimodeleon @sophiecarreras @ffumero2003
+/docs/design-docs/review-process.md       @goanpeca @jeronimodeleon @sophiecarreras @ffumero2003
+/docs/design-docs/review-lessons.md       @goanpeca @jeronimodeleon @sophiecarreras @ffumero2003
+/scripts/changelog-check*.mjs             @goanpeca @jeronimodeleon @sophiecarreras @ffumero2003
+/scripts/claude-review-gate*.mjs          @goanpeca @jeronimodeleon @sophiecarreras @ffumero2003
+/scripts/check-release-provenance-policy.mjs @goanpeca @jeronimodeleon @sophiecarreras @ffumero2003
 
 # Build / release infrastructure: extra scrutiny because a broken release
 # workflow can publish a broken Action to millions of consumers.
-/.github/workflows/release.yml  @goanpeca @jeronimodeleon @sophiecarreras
-/.github/workflows/ci.yml       @goanpeca @jeronimodeleon @sophiecarreras
-/dist/                          @goanpeca @jeronimodeleon @sophiecarreras
-/action.yml                     @goanpeca @jeronimodeleon @sophiecarreras
-/package.json                   @goanpeca @jeronimodeleon @sophiecarreras
+/.github/workflows/release.yml  @goanpeca @jeronimodeleon @sophiecarreras @ffumero2003
+/.github/workflows/ci.yml       @goanpeca @jeronimodeleon @sophiecarreras @ffumero2003
+/dist/                          @goanpeca @jeronimodeleon @sophiecarreras @ffumero2003
+/action.yml                     @goanpeca @jeronimodeleon @sophiecarreras @ffumero2003
+/package.json                   @goanpeca @jeronimodeleon @sophiecarreras @ffumero2003
 
 # Security policy edits require a security-aware reviewer.
-/SECURITY.md                    @goanpeca @jeronimodeleon @sophiecarreras
+/SECURITY.md                    @goanpeca @jeronimodeleon @sophiecarreras @ffumero2003

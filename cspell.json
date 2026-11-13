@@ -27,7 +27,8 @@
     "*.min.*",
     "*.map",
     "LICENSE",
-    "CHANGELOG.md"
+    "CHANGELOG.md",
+    ".changes/**"
   ],
   "dictionaryDefinitions": [
     {

@@ -12,3 +12,6 @@ reports/
 # TypeDoc-generated API site; built fresh in CI for GitHub Pages.
 # The hand-written system of record lives in docs/ and IS tracked.
 api-docs/
+
+# Prior review threads fetched by the Claude review workflow (CI only)
+.review-context/

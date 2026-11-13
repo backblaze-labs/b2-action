@@ -1,0 +1,65 @@
+name: Task
+description: Maintenance, tooling, CI, docs, release, or dependency work that is neither a bug nor a new feature.
+title: '[task] '
+type: Task
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this for work on the repository itself. A defect in the Action belongs in a bug report; a new verb, input, or output belongs in a feature request. Larger or riskier tasks get a plan under `docs/exec-plans/active/` before code (see [AGENTS.md](https://github.com/backblaze-labs/b2-action/blob/main/AGENTS.md#workflow-for-larger-changes)).
+
+  - type: textarea
+    id: goal
+    attributes:
+      label: What needs doing, and why?
+      description: The outcome and the reason it matters now.
+    validations:
+      required: true
+
+  - type: textarea
+    id: done
+    attributes:
+      label: Done when
+      description: Checkable conditions, one per line. Name the check that proves each one where you can (a test, `pnpm ci:local`, a CI job).
+      value: |
+        - [ ]
+    validations:
+      required: true
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope and context
+      description: Files, workflows, or settings involved; related issues and PRs; what is out of scope.
+    validations:
+      required: false
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Action source (src/, action.yml, dist/)
+        - CI and workflows
+        - Release and changelog
+        - Tests
+        - Docs
+        - Dependencies
+        - Claude Code harness (.claude/, AGENTS.md, REVIEW.md)
+        - Repository settings
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: risk
+    attributes:
+      label: Risk
+      description: The tier the change will need at review, set by what it touches (see docs/design-docs/review-process.md). Workflows, .claude/, release, and credential code are always High.
+      options:
+        - Low (docs, comments, tests only)
+        - Medium (src/ behavior, inputs or outputs, dependencies)
+        - High (workflows, .claude/, release, credentials, breaking changes)
+        - Not sure
+    validations:
+      required: true
