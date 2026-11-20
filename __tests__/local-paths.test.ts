@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, rm, stat, writeFile } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { downloadCommand } from '../src/commands/download.ts'
 import { syncCommand, warnOnImplicitDownload } from '../src/commands/sync.ts'
 import {
@@ -13,17 +13,24 @@ import { verifyCommand } from '../src/commands/verify.ts'
 import { expandTilde } from '../src/fs.ts'
 import { captureStdout, makeFixture, makeInputs, seedFile, type TestFixture } from './_helpers.ts'
 
+vi.mock('node:os', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:os')>()
+  return {
+    ...actual,
+    homedir: () =>
+      (process.platform === 'win32' ? process.env.USERPROFILE : process.env.HOME) ??
+      actual.homedir(),
+  }
+})
+
 /**
  * Point `os.homedir()` at a scratch directory so the tilde tests never touch
  * the real home directory of a contributor or a CI runner. `homedir()` reads
  * `HOME` on POSIX and `USERPROFILE` on Windows.
  *
- * This only works while `process.env` is the original object. `resetInputEnv()`
- * replaces it wholesale (`process.env = { ...ORIGINAL_ENV }`), after which
- * `homedir()` stops reflecting `HOME` for the rest of the worker and these
- * tests would silently operate on the real home directory. That is why this
- * file never calls `resetInputEnv()`, and why {@link expectFakeHome} asserts
- * the stubbing actually took effect.
+ * Vitest's module mock above keeps `homedir()` tied to the current test env in
+ * Stryker's shared worker too. {@link expectFakeHome} guards that isolation so
+ * these tests never silently operate on the real home directory.
  */
 function useFakeHome(dir: string): void {
   process.env.HOME = dir
@@ -95,7 +102,6 @@ describe('expandTilde', () => {
 
 describe('tilde-prefixed local paths reach the real home directory', () => {
   let fx: TestFixture
-  let cwd: string
   let fakeHome: string
   const originalHome = process.env.HOME
   const originalUserProfile = process.env.USERPROFILE
@@ -105,11 +111,8 @@ describe('tilde-prefixed local paths reach the real home directory', () => {
     fakeHome = await mkdtemp(join(tmpdir(), 'b2-home-'))
     useFakeHome(fakeHome)
     expectFakeHome(fakeHome)
-    cwd = process.cwd()
-    process.chdir(fx.workDir)
   })
   afterEach(async () => {
-    process.chdir(cwd)
     restoreEnv('HOME', originalHome)
     restoreEnv('USERPROFILE', originalUserProfile)
     await rm(fx.workDir, { recursive: true, force: true })
@@ -243,17 +246,16 @@ describe('tilde-prefixed local paths reach the real home directory', () => {
 
 describe('glob uploads whose matches live outside the working directory', () => {
   let fx: TestFixture
-  let cwd: string
+  let cwdSpy: ReturnType<typeof vi.spyOn>
   let outside: string
 
   beforeEach(async () => {
     fx = await makeFixture(`outside-${process.hrtime.bigint()}`)
     outside = await mkdtemp(join(tmpdir(), 'b2-outside-'))
-    cwd = process.cwd()
-    process.chdir(fx.workDir)
+    cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(fx.workDir)
   })
   afterEach(async () => {
-    process.chdir(cwd)
+    cwdSpy.mockRestore()
     await rm(fx.workDir, { recursive: true, force: true })
     await rm(outside, { recursive: true, force: true })
   })
@@ -273,17 +275,23 @@ describe('glob uploads whose matches live outside the working directory', () => 
     // action's own prefix download refused to map them back onto disk.
     const down = await downloadCommand(
       fx.bucket,
-      makeInputs('download', fx, { source: 'artifacts/', destination: './restored' }),
+      makeInputs('download', fx, {
+        source: 'artifacts/',
+        destination: join(fx.workDir, 'restored'),
+      }),
     )
     expect(down.files.map((f) => f.fileName)).toEqual(['artifacts/a.bin'])
   })
 
   it('keeps historical keys for globs inside the working directory', async () => {
-    await mkdir('build/js', { recursive: true })
-    await writeFile('build/js/app.js', 'x')
+    await mkdir(join(fx.workDir, 'build/js'), { recursive: true })
+    await writeFile(join(fx.workDir, 'build/js/app.js'), 'x')
     const r = await uploadCommand(
       fx.bucket,
-      makeInputs('upload', fx, { source: 'build/**/*.js', destination: 'site/' }),
+      makeInputs('upload', fx, {
+        source: `${fx.workDir.replaceAll('\\', '/')}/build/**/*.js`,
+        destination: 'site/',
+      }),
     )
     expect(r.files.map((f) => f.fileName)).toEqual(['site/build/js/app.js'])
   })
