@@ -74,6 +74,20 @@ describe('batched mutation runner', () => {
     })
   })
 
+  it.each([
+    { statuses: [], threshold: 65 },
+    { statuses: [], threshold: null },
+    { statuses: ['Ignored'], threshold: 65 },
+    { statuses: ['Ignored'], threshold: null },
+  ])('fails reports with no scored mutants (%j)', async ({ statuses, threshold }) => {
+    const result = await runFixture({ statuses, threshold })
+
+    expect(result.exitCode).toBe(1)
+    expect(result.stderr).toContain('no scored mutants')
+    await expect(readAggregate(result.cwd)).resolves.toMatchObject({ score: 0 })
+    expect(result.stdout).not.toContain('100.00%')
+  })
+
   it('fails mixed errored reports even when some mutants are killed', async () => {
     const result = await runFixture({ statuses: ['Killed', 'RuntimeError'] })
 

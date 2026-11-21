@@ -8,7 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Security
 
+- Updated the development dependency pins for `markdown-it`, `vite`, `source-map-js`, and `zod` so the full-lockfile audit permits mutation testing to run.
 - Raised pinned dependency overrides (`js-yaml`, `markdown-it`, `fast-uri`, `smol-toml`) for dev/build tooling and (`undici`, `brace-expansion`) for production dependencies to clear GitHub Dependabot security alerts. The shipped `dist/` bundle was rebuilt to pick up the `undici` and `brace-expansion` fixes.
+
+### Fixed
+
+- Mutation testing uses matched Stryker 10.1.1 packages and the Vitest child-process pool, allowing the existing home-directory and working-directory tests to run during mutation analysis. Empty or entirely ignored campaigns now fail instead of reporting a passing 100% score.
 
 ## [1.2.0] - 2026-08-04
 
