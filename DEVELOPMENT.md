@@ -173,10 +173,11 @@ missing cross-file assertions in the shared command fixtures and dispatcher
 tests while the mutation baseline is still being triaged.
 
 The Stryker Vitest runner uses `vitest.pool: "forks"` (supported since Stryker
-10.1). The local-path tests change the working directory and verify that the
-native home-directory lookup sees a temporary home. Worker threads do not
-support those process-level assumptions. Keep these tests enabled and use the
-supported child-process pool, matching the regular Vitest suite. See
+10.1), matching the regular Vitest suite. Worker threads do not support
+changing the working directory of the process; the local-path tests already
+avoid that by mocking `os.homedir()` and spying on `process.cwd()`, and the
+child-process pool keeps any future test that needs it from failing only
+under mutation analysis. See
 [Stryker's pool guidance](https://stryker-mutator.io/docs/stryker-js/troubleshooting/#vitest-behaves-differently-or-fails-when-using-the-threads-pool-default).
 
 Batched-runner baseline for the current mutation scope:

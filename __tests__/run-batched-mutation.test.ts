@@ -123,6 +123,19 @@ describe('batched mutation runner', () => {
     })
   })
 
+  it('fails a nonzero exit on a file with no scored mutants even when the aggregate passes', async () => {
+    const result = await runFixture({
+      childStatuses: { 'src/empty.ts': 1 },
+      files: ['src/empty.ts', 'src/covered.ts'],
+      statusesByFile: { 'src/covered.ts': ['Killed', 'Killed'], 'src/empty.ts': [] },
+      threshold: 65,
+    })
+
+    expect(result.exitCode).toBe(1)
+    expect(result.stderr).toContain('subprocesses failed')
+    expect(result.stderr).toContain('src/empty.ts')
+  })
+
   it('passes when a per-file threshold exit still meets the aggregate gate', async () => {
     const result = await runFixture({
       childStatuses: { 'src/example.ts': 1 },
