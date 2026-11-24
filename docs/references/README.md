@@ -27,3 +27,5 @@ can inspect; keep this list short and current.
 - [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
   [Semantic Versioning](https://semver.org/spec/v2.0.0.html) — the formats
   [CHANGELOG.md](../../CHANGELOG.md) follows.
+- [changie](https://changie.dev) generates `CHANGELOG.md` from the fragments and per-version files
+  under `.changes/` (config in `.changie.yaml`).
