@@ -19,9 +19,10 @@
     "lint:fix": "biome check --write .",
     "typecheck": "tsc --noEmit",
     "all": "pnpm lint && pnpm check:release-provenance && pnpm typecheck && pnpm test && pnpm build && pnpm spellcheck",
+    "ci:local": "pnpm all && pnpm verify-dist && pnpm test:coverage && pnpm docs:check-action-yml && pnpm changelog:check && pnpm run docs && pnpm docs:lint && pnpm docs:links && pnpm run audit",
     "verify-dist": "pnpm build && git diff --exit-code dist",
     "preversion": "pnpm lint && pnpm typecheck && pnpm test",
-    "version": "node scripts/cut-changelog.mjs && pnpm build && git add CHANGELOG.md dist",
+    "version": "node scripts/changelog-release.mjs && pnpm build && git add CHANGELOG.md .changes package.json dist",
     "audit": "pnpm audit --prod --audit-level high",
     "docs": "typedoc",
     "docs:watch": "typedoc --watch",
@@ -30,27 +31,30 @@
     "docs:lint": "markdownlint-cli2",
     "docs:links": "node scripts/run-lychee.mjs",
     "spellcheck": "cspell --no-progress --no-must-find-files",
-    "prepare": "husky"
+    "prepare": "husky",
+    "changelog:new": "changie new",
+    "changelog:check": "node scripts/changelog-check.mjs"
   },
   "dependencies": {
     "@actions/core": "^3.0.1",
     "@actions/glob": "^0.7.0",
-    "@backblaze-labs/b2-sdk": "^0.3.0"
+    "@backblaze-labs/b2-sdk": "^0.5.0"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.5.12",
+    "@biomejs/biome": "^2.6.8",
     "@stryker-mutator/core": "10.1.1",
     "@stryker-mutator/vitest-runner": "10.1.1",
-    "@types/node": "^26.5.0",
+    "@types/node": "^26.6.6",
     "@vercel/ncc": "^0.45.0",
-    "@vitest/coverage-v8": "^4.1.11",
-    "cspell": "^10.2.2",
+    "@vitest/coverage-v8": "^5.1.1",
+    "changie": "1.26.0",
+    "cspell": "^10.5.2",
     "fast-check": "^4.9.0",
     "husky": "^9.1.7",
-    "markdownlint-cli2": "^0.23.2",
+    "markdownlint-cli2": "^0.24.2",
     "typedoc": "^0.28.20",
     "typescript": "^6.0.3",
-    "vitest": "^4.1.11",
+    "vitest": "^5.1.1",
     "yaml": "^2.9.0"
   },
   "keywords": [

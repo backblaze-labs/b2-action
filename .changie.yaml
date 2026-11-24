@@ -1,0 +1,37 @@
+changesDir: .changes
+unreleasedDir: unreleased
+headerPath: header.tpl.md
+changelogPath: CHANGELOG.md
+versionExt: md
+versionFormat: '## [{{.VersionNoPrefix}}] - {{.Time.Format "2006-01-02"}}'
+kindFormat: '### {{.Kind}}'
+changeFormat: '- {{.Body}}'
+footerFormat: |-
+  [{{.VersionNoPrefix}}]: https://github.com/backblaze-labs/b2-action/compare/{{.PreviousVersion}}...{{.Version}}
+# The Action is past 1.0, so a removal is breaking and forces a major (a new floating vN tag).
+# Check `pnpm exec changie next auto` before cutting a release; see RELEASE.md.
+kinds:
+  - label: Added
+    auto: minor
+  - label: Changed
+    auto: minor
+  - label: Deprecated
+    auto: minor
+  - label: Removed
+    auto: major
+  - label: Fixed
+    auto: patch
+  - label: Security
+    auto: patch
+newlines:
+  afterChangelogHeader: 0
+  beforeChangelogVersion: 1
+  endOfVersion: 1
+  afterKind: 1
+  beforeKind: 1
+  beforeFooterTemplate: 1
+envPrefix: CHANGIE_
+replacements:
+  - path: package.json
+    find: '(?m)^  "version": "[^"]*",$'
+    replace: '  "version": "{{.VersionNoPrefix}}",'
