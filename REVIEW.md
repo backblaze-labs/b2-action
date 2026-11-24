@@ -39,7 +39,7 @@ Run each pass over the full diff and tag every finding with its pass.
 
 ## Evidence
 
-Every finding cites `path:line` from the diff and states the concrete failure: which inputs produce which wrong output. A finding with no line or no reproduction is a question, so ask it as one; do not guess from a name.
+Every finding cites `path:line` from the diff and states the concrete failure: which inputs produce which wrong output. A finding with no line or no reproduction is a question, so ask it as one; do not guess from a name. Before posting, re-check each candidate finding against the code with fresh context (a second pass or a verifier subagent) and drop it if it does not hold up.
 
 Flag the bug class, not just the line: when the same mistake can occur elsewhere in the diff or the repository, say so and list every instance you found, so the author fixes all of them in one round.
 

@@ -6,6 +6,10 @@ Thanks for sending a pull request! A few quick checks before submitting:
 
 <!-- What does this PR change and why? Link the issue, and the plan in docs/exec-plans/active/ for larger work. -->
 
+## Testing
+
+<!-- What you ran and what it showed: paste the tail of `pnpm ci:local` and any manual check. -->
+
 ## Risk
 
 <!-- Low, Medium, or High (see docs/design-docs/review-process.md). What could this break, and who would notice? -->

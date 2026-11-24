@@ -5,6 +5,8 @@ description: Create, trim or audit a repo's CLAUDE.md so it holds exactly what a
 
 # The CLAUDE.md
 
+> **In `b2-action`:** `AGENTS.md` is the canonical guide and `CLAUDE.md` only points to it, so read or edit `AGENTS.md` wherever this skill says `CLAUDE.md`. It is multi-harness: `GEMINI.md` points there too. Git history is the human's to move ([conventions](../../../docs/design-docs/conventions.md)): where this skill says commit or push, prepare the change and its verification evidence, then stop. Commit or push only when the user asks for that in the current turn; accepting a plan or asking for a review fix is not that request.
+
 `CLAUDE.md` is the context a new joiner would need, read by the agent at the start of every session. It is version controlled and reviewed like code. Keep it under a page: Claude reads all of it every session, and stale lines waste context.
 
 ## Create
@@ -14,6 +16,7 @@ description: Create, trim or audit a repo's CLAUDE.md so it holds exactly what a
 3. Verify every command by running it (or asking the engineer). Never list a command you have not seen work, and note a healthy output for each.
 4. Ask the engineer who knows the codebase best for the "things Claude gets wrong" list; pull more from recent PR review comments and reverted changes.
 5. Place it at the repo root and commit, with code owners set so changes get reviewed.
+6. While you are setting the repo up, check it has issue templates for features, bugs and tasks and a PR template; if not, add them (`sdlc-issue-templates`).
 
 ## Template
 
@@ -43,6 +46,8 @@ description: Create, trim or audit a repo's CLAUDE.md so it holds exactly what a
 Run all three before reporting any task complete, and paste the output.
 If a test fails, fix the code, not the test.
 ```
+
+Add the project's goals and non-goals in a few lines so the reviewer can judge whether a change belongs. Keep the file short and point to other docs instead of copying them; the AI reviewer loads `CLAUDE.md` and flags convention violations and stale lines.
 
 If artifacts live in `intent/`, add a line saying `intent/` holds `intent.md`, `spec.md` and `plan.md` per change.
 

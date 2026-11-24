@@ -9,6 +9,8 @@ Spend the least human review time that does not raise reverts or incidents. Ask 
 - **Measure human time:** approvals per PR (median and 95th percentile), human review comments, and how long a PR waits on a person.
 - **Guardrails:** the revert rate and the incident rate. If either rises, human time was moved, not saved, and the tiers below tighten again.
 
+**Baseline** (2026-11-24, the last 50 merged PRs, from `.claude/skills/sdlc-risk-tiers/assets/review_metrics.py`, with Copilot and other GitHub Apps not counted as people): 90% merged with no human approval; human approvals per PR median 0, p95 1; first human review after a median of 3.6 hours (p95 28.4); open a median of 1.0 hours before merge (p95 26.6); human review comments per PR median 0, p95 1; no reverts. Re-run it monthly and before changing a tier.
+
 ## Problem
 
 Agent-written pull requests arrive faster than a person can read each one, and today every PR gets the same review whatever it touches: a README typo and a change to the release workflow receive the same attention. Meanwhile the `main` ruleset requires no approval at all (see [Settings](#settings-and-their-current-state)), so the human gate depends on habit, not enforcement.
@@ -26,7 +28,7 @@ Each layer catches what the one before it misses. Only the last needs a person b
 
 ## Risk tiers
 
-The change sets the tier, not the author. A path rule (and the Risk section of the PR template) assigns it; any one path in a higher tier lifts the whole PR.
+The change sets the tier, not the author. A path rule (and the Risk section of the PR template) assigns it; any one path in a higher tier lifts the whole PR. The rules as data are [`.github/risk-tiers.json`](../../.github/risk-tiers.json), read by the `sdlc-risk-tiers` classifier (`.claude/skills/sdlc-risk-tiers/assets/classify.py`), and [`__tests__/risk-tiers.test.ts`](../../__tests__/risk-tiers.test.ts) pins representative paths to their tier and checks that CODEOWNERS names every always-human path.
 
 | Tier | Touches | Human approvals |
 | --- | --- | --- |
@@ -45,7 +47,7 @@ A change to the policy is judged against the trusted base-branch policy, not aga
 
 Rules that hold at every tier:
 
-- **Trusted authors only.** The lighter paths apply to authors on a written trusted list (the owning team). Everyone else needs a code owner's approval.
+- **Trusted authors only.** The lighter paths apply to authors on a written trusted list (the owning team; `trusted_authors` in the config starts as the code owners). Everyone else needs a code owner's approval.
 - **Bot approvals never count.** Copilot, Claude, and any other automation post findings; they cannot fill a slot that requires a human.
 - **The person directing an agent is a reviewer.** On an agent-written PR, the person who prompted it counts as one of the required people and must read the evidence.
 - **Approval is per commit.** A new commit the process cannot vouch for (an agent's push, a hand-resolved merge) dismisses earlier approvals.
@@ -58,14 +60,14 @@ Match AI review depth to risk: Quick for Low, Standard for Medium, Deep for High
 
 - **Incidents and reverts become evals.** Collect the PRs that caused a revert or a real bug, with their fixes, as a regression set for the reviewer: for example the cross-bucket `copyLargeFile` bucket bug, the `keep-days` window never forwarded, governance deletes, the prerelease version rollback, and the fail-open approval gate. Re-score the reviewer on that set whenever its prompt, tools, or model change, and keep only changes that raise the score. This needs the evals-in-CI decision in #257.
 - **Measure noise by the author's response.** Sort every review comment by what the author did: fixed it, said it was wrong, said it was intentional, or decided it did not matter. [review-lessons.md](review-lessons.md) did this once for all merged PRs (192 findings: 186 fixed, 4 rebutted, 2 without a reply, snapshot 2026-10-28) and records the method and definitions; repeat it each quarter with the same method.
-- **Scan existing code on a schedule.** A periodic review agent over the whole repository finds bugs that predate any diff (most repeat findings turn out to be old code). Deferred until the API key and budget are decided.
+- **Scan existing code on a schedule.** A periodic review agent over the whole repository finds bugs that predate any diff (most repeat findings turn out to be old code). A template adapted to this repository's workflow rules is `.claude/skills/sdlc-review-tuning/assets/nightly-review.yml`; installing it waits on the API key and budget decision.
 
 ## Activation prerequisites
 
 Code and evidence that must land before an admin turns on the matching setting. Turning a setting on first breaks merges or enforces something unproven.
 
 1. **Merge queue.** No workflow has a `merge_group` trigger today, so required checks would never report for a queued merge and every queued PR would stall. First add `merge_group` to the deterministic required workflows (`ci.yml`, `security.yml`, `docs-lint.yml`); audit their job conditions and steps for assumptions about the `pull_request` payload (`github.event.pull_request.*`, `github.base_ref`); and decide how PR-only checks are represented, since the changelog fragment check and both Claude review jobs are about the PR rather than the merged result (either not required for the merge group, or made to report for it). Do not add `merge_group` to secret-bearing example workflows or to the review jobs. Validate with one queued PR before requiring the queue.
-2. **Tier-based approvals.** Add tests that classify representative paths into Low, Medium, High, and always-human (including the policy files above) before approvals start depending on the tier.
+2. **Tier-based approvals.** The classification tests exist (`__tests__/risk-tiers.test.ts`). Still to do: publish the classifier's result as a check run with a required check that fails when a PR has fewer human approvals than `humans_required`, and count changed lines without `pnpm-lock.yaml` and `dist/`. Run over the last 14 merged PRs, the classifier put #233 (a dependency bump, Medium by its paths) in High only because the regenerated `dist/index.js` (1,418 changed lines) pushed it past the 800-line threshold; the other results matched the table above.
 3. **Claude review as a required check.** Run both passes for real on several PRs once `ANTHROPIC_API_KEY` exists, including a PR with an already resolved finding and a later push, and confirm the token can post inline comments. Until then the jobs pass by skipping, which proves nothing.
 
 ## Settings and their current state

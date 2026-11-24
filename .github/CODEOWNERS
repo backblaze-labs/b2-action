@@ -16,6 +16,7 @@
 /.claude/                       @goanpeca @jeronimodeleon @sophiecarreras @ffumero2003
 /.changie.yaml                  @goanpeca @jeronimodeleon @sophiecarreras @ffumero2003
 /scripts/changelog-release.mjs  @goanpeca @jeronimodeleon @sophiecarreras @ffumero2003
+/RELEASE.md                      @goanpeca @jeronimodeleon @sophiecarreras @ffumero2003
 
 # Review, authorization, and security policy, and the gates that enforce it: they steer the
 # reviewer or define what it checks, so a docs-only PR must not change them without a person.
@@ -30,6 +31,12 @@
 /scripts/changelog-check*.mjs             @goanpeca @jeronimodeleon @sophiecarreras @ffumero2003
 /scripts/claude-review-gate*.mjs          @goanpeca @jeronimodeleon @sophiecarreras @ffumero2003
 /scripts/check-release-provenance-policy.mjs @goanpeca @jeronimodeleon @sophiecarreras @ffumero2003
+/.github/risk-tiers.json                  @goanpeca @jeronimodeleon @sophiecarreras @ffumero2003
+
+# Credential and masking code (review-process.md always-human paths).
+/src/inputs.ts                            @goanpeca @jeronimodeleon @sophiecarreras @ffumero2003
+/src/client.ts                            @goanpeca @jeronimodeleon @sophiecarreras @ffumero2003
+/src/errors.ts                            @goanpeca @jeronimodeleon @sophiecarreras @ffumero2003
 
 # Build / release infrastructure: extra scrutiny because a broken release
 # workflow can publish a broken Action to millions of consumers.

@@ -9,6 +9,15 @@ The Action is a thin dispatcher over [`@backblaze-labs/b2-sdk`](https://github.c
 it parses `INPUT_*` env vars, builds a `B2Client`, dispatches to one command per verb, and maps
 the result onto step outputs and the run summary. The SDK owns every B2 wire-protocol concern.
 
+## Goals and non-goals
+
+- **Goals:** one documented verb per B2 workflow task (upload, download, sync, copy, and the
+  rest in the README); typed, validated inputs and outputs; secrets masked at the boundary; a
+  small committed bundle that runs on Linux, macOS, and Windows runners.
+- **Non-goals:** reimplementing B2 or S3 protocol behavior (that belongs in the SDK; add it there
+  first), raw HTTP or the `b2` CLI, and emitting credentials such as bulk presigned URLs through
+  structured outputs.
+
 ## Repository map
 
 | Path | What it is | Read it when |
@@ -83,6 +92,10 @@ mapped onto this repository's existing layout instead of a separate `intent/` tr
 
 The skills under `.claude/skills/` describe each stage generically and say `intent/<slug>/`; in
 this repository use the paths above (`sdlc-harness-translate` holds the full mapping).
+Around review: `sdlc-risk-tiers` (who must approve, with the tiers in `.github/risk-tiers.json`),
+`sdlc-review-tuning` (measuring and tuning the reviewer), `sdlc-review-audit` (what this repo still
+lacks), `sdlc-explain-module` (an explainer before changing code you do not know), and
+`sdlc-issue-templates` (the issue forms work enters through).
 `b2-action-invariants` restates the golden rules as checks to apply while editing, and the hooks
 in `.claude/hooks/` refuse hand-edits to `dist/` and hand Biome failures back as you edit. A human
 accepts each stage; never mark one approved on their behalf.
