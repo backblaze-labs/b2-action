@@ -6,16 +6,18 @@ settings:
 
 overrides:
   js-yaml: 5.4.1
-  markdown-it: 14.3.1
+  markdown-it: 14.3.3
   linkify-it: 5.0.2
   undici: 6.29.1
   brace-expansion: '>=5.0.12 <6.0.0'
-  vite: '>=7.3.5 <8.0.0'
+  vite: 7.3.7
   esbuild: '>=0.28.1 <0.29.0'
   postcss: 8.5.25
   nanoid: 3.3.18
+  source-map-js: '>=1.2.2 <2.0.0'
   browserslist: 4.28.7
   fast-uri: 3.1.7
+  zod: '>=4.6.6 <5.0.0'
   '@inquirer/prompts': 7.8.6
   qs: 6.15.2
   smol-toml: '>=1.7.1 <2.0.0'
@@ -75,7 +77,7 @@ importers:
         version: 6.0.3
       vitest:
         specifier: ^5.1.1
-        version: 5.1.1(@types/node@26.6.6)(@vitest/coverage-v8@5.1.1)(vite@7.3.5(@types/node@26.6.6)(yaml@2.9.0))
+        version: 5.1.1(@types/node@26.6.6)(@vitest/coverage-v8@5.1.1)(vite@7.3.7(@types/node@26.6.6)(yaml@2.9.0))
       yaml:
         specifier: ^2.9.0
         version: 2.9.0
@@ -1187,7 +1189,7 @@ packages:
     resolution: {integrity: sha512-b2OgTB4+3ImWIVafXKazJXwLKwQxUNnix6b3xUvUTMh7RyXlrtzoxfZr8aEz9zkHOMAS4K5lu3TvFWoiVeVTQg==}
     peerDependencies:
       msw: ^2.4.9 || ^3.0.0
-      vite: '>=7.3.5 <8.0.0'
+      vite: 7.3.7
     peerDependenciesMeta:
       msw:
         optional: true
@@ -1698,8 +1700,8 @@ packages:
   magicast@0.5.5:
     resolution: {integrity: sha512-UicdXN8zQ3JHlxVq+28afMXPr1z7WNY6+7EJnzTdQWkTAlMLF5fNCCKxJHBQwGaNGR11581EiQmQzx73+MvszA==}
 
-  markdown-it@14.3.1:
-    resolution: {integrity: sha512-4Ej49aYTDFIQ+uBkfX8GBvJGccoARxxPep+7aWTs55ozbjQJpW9M26Fe53vnGgvLeVzva/amzjQQaQu9w0vMhA==}
+  markdown-it@14.3.3:
+    resolution: {integrity: sha512-L//tDAkjTjJCU6pBUSBTgs3Kg4InVaZuUZog/b6V12UKhcDQ7S78877ibbCanRExwPuYP1CZD7Gd2dxSy1GXRg==}
     hasBin: true
 
   markdownlint-cli2-formatter-default@0.0.6:
@@ -1997,9 +1999,9 @@ packages:
     resolution: {integrity: sha512-kCZr2V3ch9i00x8zXRhjUNVcjG9ijES5dDudkXvUVCT5QlJNQWElSJdZqyPemffHoLNUYwOcou0Fy+ojN0uHSQ==}
     engines: {node: '>= 18'}
 
-  source-map-js@1.2.1:
-    resolution: {integrity: sha512-UXWMKhLOwVKb728IUtQPXxfYU+usdybtUrK/8uGE8CQMvrhOpwvzDBwj0QhSL7MQc7vIsISBG8VQ8+IDQxpfQA==}
-    engines: {node: '>=0.10.0'}
+  source-map-js@1.2.4:
+    resolution: {integrity: sha512-J7ZjMvHd9O1fcT/5V09QWaaSl2BbWx3F6O08spde82Namf9UB0GxRVIPiNbVsdKkoizHiSpTodo3vp2bAy91MA==}
+    engines: {node: '>=6.0.0'}
 
   source-map@0.7.6:
     resolution: {integrity: sha512-i5uvt8C3ikiWeNZSVZNWcfZPItFQOsYTUAOkcUPGd8DqDy1uOUikjt5dG+uRlwyvR108Fb9DOd4GvXfT0N2/uQ==}
@@ -2106,8 +2108,8 @@ packages:
     peerDependencies:
       browserslist: 4.28.7
 
-  vite@7.3.5:
-    resolution: {integrity: sha512-KuOaNhcnGFN2zIPGA7wRmzF+lJA1sea7rHq17aiJ++9lzY1WWG6Jpwqwe1KNbRVPIqHmr8GLYx7jbrQcN/7/ww==}
+  vite@7.3.7:
+    resolution: {integrity: sha512-AHEzTORMbi7/7aXp7w7KZ5+DCUdSeLsJz0grY8xHpc9DHdYb0vQu6DqJfm2tOw3gDExNgPgnJTXxM6syYFHaCA==}
     engines: {node: ^20.19.0 || >=22.12.0}
     hasBin: true
     peerDependencies:
@@ -2162,7 +2164,7 @@ packages:
       '@vitest/ui': 5.1.1
       happy-dom: '*'
       jsdom: '*'
-      vite: '>=7.3.5 <8.0.0'
+      vite: 7.3.7
     peerDependenciesMeta:
       '@edge-runtime/vm':
         optional: true
@@ -2232,8 +2234,8 @@ packages:
     resolution: {integrity: sha512-CzhO+pFNo8ajLM2d2IW/R93ipy99LWjtwblvC1RsoSUMZgyLbYFr221TnSNT7GjGdYui6P459mw9JH/g/zW2ug==}
     engines: {node: '>=18'}
 
-  zod@4.4.3:
-    resolution: {integrity: sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ==}
+  zod@4.6.7:
+    resolution: {integrity: sha512-g8W2D2kU6a8untc053fX1uVBKzM7yqAxW/3zwk83+6RyF2+SKOuV+c0wBDhUwzV1PaGapmZH+rmcUzPf+3CGwg==}
 
 snapshots:
 
@@ -3168,7 +3170,7 @@ snapshots:
       '@stryker-mutator/util': 10.1.1
       semver: 7.8.5
       tslib: 2.8.1
-      vitest: 5.1.1(@types/node@26.6.6)(@vitest/coverage-v8@5.1.1)(vite@7.3.5(@types/node@26.6.6)(yaml@2.9.0))
+      vitest: 5.1.1(@types/node@26.6.6)(@vitest/coverage-v8@5.1.1)(vite@7.3.7(@types/node@26.6.6)(yaml@2.9.0))
 
   '@types/chai@5.2.3':
     dependencies:
@@ -3217,7 +3219,7 @@ snapshots:
       obug: 3.0.0
       std-env: 4.3.0
       tinyrainbow: 3.2.0
-      vitest: 5.1.1(@types/node@26.6.6)(@vitest/coverage-v8@5.1.1)(vite@7.3.5(@types/node@26.6.6)(yaml@2.9.0))
+      vitest: 5.1.1(@types/node@26.6.6)(@vitest/coverage-v8@5.1.1)(vite@7.3.7(@types/node@26.6.6)(yaml@2.9.0))
 
   '@vitest/istanbul-lib-coverage@2.1.1': {}
 
@@ -3225,14 +3227,14 @@ snapshots:
     dependencies:
       '@vitest/istanbul-lib-coverage': 2.1.1
 
-  '@vitest/mocker@5.1.1(vite@7.3.5(@types/node@26.6.6)(yaml@2.9.0))':
+  '@vitest/mocker@5.1.1(vite@7.3.7(@types/node@26.6.6)(yaml@2.9.0))':
     dependencies:
       '@jridgewell/trace-mapping': 0.3.31
       '@vitest/spy': 5.1.1
       estree-walker: 3.0.3
       magic-string: 1.4.5
     optionalDependencies:
-      vite: 7.3.5(@types/node@26.6.6)(yaml@2.9.0)
+      vite: 7.3.7(@types/node@26.6.6)(yaml@2.9.0)
 
   '@vitest/spy@5.1.1': {}
 
@@ -3730,9 +3732,9 @@ snapshots:
     dependencies:
       '@babel/parser': 7.29.7
       '@babel/types': 7.29.7
-      source-map-js: 1.2.1
+      source-map-js: 1.2.4
 
-  markdown-it@14.3.1:
+  markdown-it@14.3.3:
     dependencies:
       argparse: 2.0.1
       entities: 4.5.0
@@ -3751,7 +3753,7 @@ snapshots:
       js-yaml: 5.4.1
       jsonc-parser: 3.3.1
       jsonpointer: 5.0.1
-      markdown-it: 14.3.1
+      markdown-it: 14.3.3
       markdownlint: 0.42.2
       markdownlint-cli2-formatter-default: 0.0.6(markdownlint-cli2@0.24.2)
       micromatch: 4.0.8
@@ -3999,7 +4001,7 @@ snapshots:
 
   mutation-server-protocol@0.4.1:
     dependencies:
-      zod: 4.4.3
+      zod: 4.6.7
 
   mutation-testing-elements@3.8.4: {}
 
@@ -4052,7 +4054,7 @@ snapshots:
     dependencies:
       nanoid: 3.3.18
       picocolors: 1.1.1
-      source-map-js: 1.2.1
+      source-map-js: 1.2.4
 
   pretty-ms@9.3.0:
     dependencies:
@@ -4163,7 +4165,7 @@ snapshots:
 
   smol-toml@1.8.0: {}
 
-  source-map-js@1.2.1: {}
+  source-map-js@1.2.4: {}
 
   source-map@0.7.6: {}
 
@@ -4225,7 +4227,7 @@ snapshots:
     dependencies:
       '@gerrit0/mini-shiki': 3.23.0
       lunr: 2.3.9
-      markdown-it: 14.3.1
+      markdown-it: 14.3.3
       minimatch: 10.2.5
       typescript: 6.0.3
       yaml: 2.9.0
@@ -4250,7 +4252,7 @@ snapshots:
       escalade: 3.2.0
       picocolors: 1.1.1
 
-  vite@7.3.5(@types/node@26.6.6)(yaml@2.9.0):
+  vite@7.3.7(@types/node@26.6.6)(yaml@2.9.0):
     dependencies:
       esbuild: 0.28.1
       fdir: 6.5.0(picomatch@4.0.7)
@@ -4263,10 +4265,10 @@ snapshots:
       fsevents: 2.3.3
       yaml: 2.9.0
 
-  vitest@5.1.1(@types/node@26.6.6)(@vitest/coverage-v8@5.1.1)(vite@7.3.5(@types/node@26.6.6)(yaml@2.9.0)):
+  vitest@5.1.1(@types/node@26.6.6)(@vitest/coverage-v8@5.1.1)(vite@7.3.7(@types/node@26.6.6)(yaml@2.9.0)):
     dependencies:
       '@types/chai': 5.2.3
-      '@vitest/mocker': 5.1.1(vite@7.3.5(@types/node@26.6.6)(yaml@2.9.0))
+      '@vitest/mocker': 5.1.1(vite@7.3.7(@types/node@26.6.6)(yaml@2.9.0))
       chai: 6.3.0
       es-module-lexer: 2.3.2
       expect-type: 1.4.0
@@ -4277,7 +4279,7 @@ snapshots:
       tinybench: 6.2.5
       tinyexec: 1.3.1
       tinyglobby: 0.2.17
-      vite: 7.3.5(@types/node@26.6.6)(yaml@2.9.0)
+      vite: 7.3.7(@types/node@26.6.6)(yaml@2.9.0)
       why-is-node-running: 3.2.1
     optionalDependencies:
       '@types/node': 26.6.6
@@ -4313,4 +4315,4 @@ snapshots:
 
   yoctocolors@2.1.2: {}
 
-  zod@4.4.3: {}
+  zod@4.6.7: {}
