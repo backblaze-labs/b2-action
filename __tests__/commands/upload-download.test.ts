@@ -382,14 +382,13 @@ describe('upload + download commands (B2Simulator)', () => {
       const downloadCalls: string[] = []
       const originalListFileNames = fx.bucket.listFileNames.bind(fx.bucket)
       const originalDownload = fx.bucket.download.bind(fx.bucket)
-      fx.bucket.listFileNames = async () =>
-        ({
-          files: [
-            { action: 'upload', fileName: validName },
-            { action: 'upload', fileName: unsafeName },
-          ],
-          nextFileName: null,
-        }) as unknown as Awaited<ReturnType<typeof fx.bucket.listFileNames>>
+      fx.bucket.listFileNames = (async () => ({
+        files: [
+          { action: 'upload', fileName: validName },
+          { action: 'upload', fileName: unsafeName },
+        ],
+        nextFileName: null,
+      })) as unknown as typeof fx.bucket.listFileNames
       fx.bucket.download = async (...args: Parameters<typeof fx.bucket.download>) => {
         downloadCalls.push(args[0])
         return await originalDownload(...args)
@@ -421,11 +420,10 @@ describe('upload + download commands (B2Simulator)', () => {
       const downloadCalls: string[] = []
       const originalListFileNames = fx.bucket.listFileNames.bind(fx.bucket)
       const originalDownload = fx.bucket.download.bind(fx.bucket)
-      fx.bucket.listFileNames = async () =>
-        ({
-          files: fileNames.map((fileName) => ({ action: 'upload', fileName })),
-          nextFileName: null,
-        }) as unknown as Awaited<ReturnType<typeof fx.bucket.listFileNames>>
+      fx.bucket.listFileNames = (async () => ({
+        files: fileNames.map((fileName) => ({ action: 'upload', fileName })),
+        nextFileName: null,
+      })) as unknown as typeof fx.bucket.listFileNames
       fx.bucket.download = async (...args: Parameters<typeof fx.bucket.download>) => {
         downloadCalls.push(args[0])
         return await originalDownload(...args)
