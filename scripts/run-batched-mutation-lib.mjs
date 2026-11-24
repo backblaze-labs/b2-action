@@ -124,6 +124,11 @@ export function runBatchedMutation({
     return 1
   }
 
+  if (scored(totals) === 0) {
+    stderr('\nStryker reported no scored mutants; treating as a hard failure.')
+    return 1
+  }
+
   if (threshold !== null && aggregateScore < threshold) {
     stderr(
       `\nAggregate mutation score ${aggregateScore.toFixed(2)}% is below break threshold ${threshold}.`,
@@ -183,7 +188,7 @@ export function countsForReport(report, unknownStatuses = new Map()) {
 export function score({ killed, timeout, survived, noCoverage, errors, unknown }) {
   const detected = killed + timeout
   const total = detected + survived + noCoverage + errors + unknown
-  return total === 0 ? 100 : (detected / total) * 100
+  return total === 0 ? 0 : (detected / total) * 100
 }
 
 export function numericThreshold(value) {
@@ -239,11 +244,16 @@ function childFailureDetails(error) {
   return { message: String(error), status: null }
 }
 
+function scored({ killed, timeout, survived, noCoverage }) {
+  return killed + timeout + survived + noCoverage
+}
+
 function isPerFileThresholdExit(failure, row, threshold) {
   return (
     failure.status === 1 &&
     threshold !== null &&
     row !== undefined &&
+    scored(row) > 0 &&
     row.score < threshold &&
     row.errors === 0 &&
     row.unknown === 0

@@ -74,6 +74,20 @@ describe('batched mutation runner', () => {
     })
   })
 
+  it.each([
+    { statuses: [], threshold: 65 },
+    { statuses: [], threshold: null },
+    { statuses: ['Ignored'], threshold: 65 },
+    { statuses: ['Ignored'], threshold: null },
+  ])('fails reports with no scored mutants (%j)', async ({ statuses, threshold }) => {
+    const result = await runFixture({ statuses, threshold })
+
+    expect(result.exitCode).toBe(1)
+    expect(result.stderr).toContain('no scored mutants')
+    await expect(readAggregate(result.cwd)).resolves.toMatchObject({ score: 0 })
+    expect(result.stdout).not.toContain('100.00%')
+  })
+
   it('fails mixed errored reports even when some mutants are killed', async () => {
     const result = await runFixture({ statuses: ['Killed', 'RuntimeError'] })
 
@@ -107,6 +121,19 @@ describe('batched mutation runner', () => {
       score: 100,
       totals: { killed: 1 },
     })
+  })
+
+  it('fails a nonzero exit on a file with no scored mutants even when the aggregate passes', async () => {
+    const result = await runFixture({
+      childStatuses: { 'src/empty.ts': 1 },
+      files: ['src/empty.ts', 'src/covered.ts'],
+      statusesByFile: { 'src/covered.ts': ['Killed', 'Killed'], 'src/empty.ts': [] },
+      threshold: 65,
+    })
+
+    expect(result.exitCode).toBe(1)
+    expect(result.stderr).toContain('subprocesses failed')
+    expect(result.stderr).toContain('src/empty.ts')
   })
 
   it('passes when a per-file threshold exit still meets the aggregate gate', async () => {

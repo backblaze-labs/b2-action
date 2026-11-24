@@ -138,6 +138,8 @@ wrapper runs Stryker once per file listed in the `mutate` array in
 applies the configured break threshold to the combined score. The per-file
 invocation disables Stryker's own break exit so a below-threshold file does not
 hide runner, config, or environment failures.
+An empty or entirely ignored campaign fails even when the break threshold is
+disabled; it provides no scored mutation evidence and never earns a 100% score.
 
 The current mutation scope is the explicit `mutate` list in
 `stryker.conf.json`: action-owned `src/*.ts` support modules plus the command
@@ -169,6 +171,14 @@ one Stryker process. `stryker.conf.json` also sets `vitest.related` to `false`
 so every mutant runs the full Vitest suite. That is slower, but it avoids
 missing cross-file assertions in the shared command fixtures and dispatcher
 tests while the mutation baseline is still being triaged.
+
+The Stryker Vitest runner uses `vitest.pool: "forks"` (supported since Stryker
+10.1), matching the regular Vitest suite. Worker threads do not support
+changing the working directory of the process; the local-path tests already
+avoid that by mocking `os.homedir()` and spying on `process.cwd()`, and the
+child-process pool keeps any future test that needs it from failing only
+under mutation analysis. See
+[Stryker's pool guidance](https://stryker-mutator.io/docs/stryker-js/troubleshooting/#vitest-behaves-differently-or-fails-when-using-the-threads-pool-default).
 
 Batched-runner baseline for the current mutation scope:
 

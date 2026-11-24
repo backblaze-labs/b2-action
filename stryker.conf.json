@@ -5,6 +5,7 @@
   "testRunner": "vitest",
   "vitest": {
     "configFile": "vitest.config.ts",
+    "pool": "forks",
     "related": false
   },
   "mutate": [
