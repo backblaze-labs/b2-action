@@ -275,10 +275,7 @@ describe('glob uploads whose matches live outside the working directory', () => 
     // action's own prefix download refused to map them back onto disk.
     const down = await downloadCommand(
       fx.bucket,
-      makeInputs('download', fx, {
-        source: 'artifacts/',
-        destination: join(fx.workDir, 'restored'),
-      }),
+      makeInputs('download', fx, { source: 'artifacts/', destination: './restored' }),
     )
     expect(down.files.map((f) => f.fileName)).toEqual(['artifacts/a.bin'])
   })
@@ -288,10 +285,7 @@ describe('glob uploads whose matches live outside the working directory', () => 
     await writeFile(join(fx.workDir, 'build/js/app.js'), 'x')
     const r = await uploadCommand(
       fx.bucket,
-      makeInputs('upload', fx, {
-        source: `${fx.workDir.replaceAll('\\', '/')}/build/**/*.js`,
-        destination: 'site/',
-      }),
+      makeInputs('upload', fx, { source: 'build/**/*.js', destination: 'site/' }),
     )
     expect(r.files.map((f) => f.fileName)).toEqual(['site/build/js/app.js'])
   })
