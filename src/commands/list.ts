@@ -1,5 +1,5 @@
 import * as core from '@actions/core'
-import type { Bucket } from '@backblaze-labs/b2-sdk'
+import type { Bucket, ListFileNamesResponse } from '@backblaze-labs/b2-sdk'
 import type { ParsedInputs } from '../inputs.ts'
 
 /** One entry in {@link ListResult.files}. Mirrors the SDK's per-version metadata. */
@@ -98,7 +98,7 @@ async function hasVisibleUploadAfter(
   let cursor: string | undefined = startFileName
 
   while (cursor !== undefined) {
-    const page = await bucket.listFileNames({
+    const page: ListFileNamesResponse = await bucket.listFileNames({
       prefix,
       pageSize: 1000,
       startFileName: cursor,

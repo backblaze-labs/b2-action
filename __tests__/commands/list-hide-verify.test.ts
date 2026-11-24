@@ -78,12 +78,12 @@ describe('hide + unhide commands', () => {
     expect(hideResult.fileName).toBe('masked.txt')
     expect(hideResult.fileId).toBeTruthy()
 
-    // After hide, the most recent version of `masked.txt` is a hide marker.
-    // Real B2 surfaces it through `listFileNames` with `action: 'hide'`; the
-    // action's `list.ts` filters these out with `if (f.action !== 'upload')`.
+    // After hide, the newest version of `masked.txt` is a hide marker, and
+    // `listFileNames` (what `list.ts` reads) no longer returns the file.
+    const versions = await fx.bucket.listFileVersions({ prefix: 'masked.txt' })
+    expect(versions.files.find((f) => f.fileName === 'masked.txt')?.action).toBe('hide')
     const afterHide = await fx.bucket.listFileNames({ prefix: 'masked.txt' })
-    const masked = afterHide.files.find((f) => f.fileName === 'masked.txt')
-    expect(masked?.action).toBe('hide')
+    expect(afterHide.files.some((f) => f.fileName === 'masked.txt')).toBe(false)
 
     const unhideResult = await unhideCommand(fx.bucket, inputs('unhide', { source: 'masked.txt' }))
     expect(unhideResult.removedMarkerFileId).toBeTruthy()

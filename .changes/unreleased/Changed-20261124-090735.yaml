@@ -1,0 +1,3 @@
+kind: Changed
+body: Update @backblaze-labs/b2-sdk to 0.5.0. Uploads now retry a dropped connection with a fresh upload URL by default; if the first single-file attempt had already reached B2, the retry can leave a duplicate file version, including in Object Lock buckets.
+time: 2026-11-24T09:07:35.10103-05:00
