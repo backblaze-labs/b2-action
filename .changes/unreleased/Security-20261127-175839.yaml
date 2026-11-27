@@ -1,0 +1,3 @@
+kind: Security
+body: CI and release workflows install pnpm with npm instead of the third-party pnpm/action-setup action, at the same version pinned in package.json.
+time: 2026-11-27T17:58:39.540395-05:00
