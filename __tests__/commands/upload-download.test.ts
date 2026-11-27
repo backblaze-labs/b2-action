@@ -62,7 +62,7 @@ function makeUploadFileVersion(options: UploadCall, fileInfo: Record<string, str
   }
 }
 
-describe('upload + download commands (B2Simulator)', () => {
+describe('upload + download commands (B2 simulator)', () => {
   let fx: TestFixture
 
   beforeEach(async () => {

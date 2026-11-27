@@ -51,7 +51,7 @@ Encoded once, applied everywhere. Most are enforced in CI (see
 - **Style** — Biome: 2-space indent, single quotes, no semicolons, 100-column width;
   `exactOptionalPropertyTypes` and `verbatimModuleSyntax` on; internal imports use `.ts`.
 - **Layout** — one verb per `src/commands/<verb>.ts`; tests colocated under `__tests__/` and run
-  against the SDK's in-memory `B2Simulator`, never a network.
+  against the standalone B2 simulator on loopback, never real B2.
 - **Identity** — the `b2-sdk-typescript/` and `b2-github-action/` User-Agent tokens are stable
   product identifiers; `src/version.ts` reads the version from `package.json`, so bump it in one
   place (`package.json`) and never hardcode a version literal.

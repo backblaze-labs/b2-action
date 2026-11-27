@@ -1,12 +1,12 @@
 import { rm } from 'node:fs/promises'
 import type { Bucket, HttpTransport } from '@backblaze-labs/b2-sdk'
-import { B2Simulator } from '@backblaze-labs/b2-sdk/simulator'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { buildClient, findFileByName, getBucket } from '../src/client.ts'
 import {
   captureFailure,
   captureStdout,
   makeFixture,
+  resetSimulator,
   seedFile,
   type TestFixture,
 } from './_helpers.ts'
@@ -23,7 +23,7 @@ describe('client helpers', () => {
   const BUCKET = 'client-helper-bucket'
 
   it('builds an authorized simulator-backed client and masks the auth token', async () => {
-    const sim = new B2Simulator()
+    const sim = await resetSimulator()
     let authorized: Awaited<ReturnType<typeof buildClient>> | undefined
 
     const stdout = await captureStdout(async () => {

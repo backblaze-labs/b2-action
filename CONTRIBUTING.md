@@ -36,7 +36,7 @@ src/
   commands/<verb>.ts  # one file per verb (13 verbs); delete-all.ts is a shared helper
 __tests__/
   _helpers.ts      # shared `makeInputs()` for tests
-  *.test.ts        # unit tests (run against the SDK's B2Simulator, no network)
+  *.test.ts        # unit tests (run against the standalone B2 simulator, never real B2)
 .github/workflows/
   ci.yml                       # lint, typecheck, test, coverage, build, dist-freshness, smoke
   security.yml                 # release provenance policy
@@ -63,7 +63,7 @@ The pattern is the same every time:
 2. **Register the verb** in `src/inputs.ts` (`ActionName` type + `VALID_ACTIONS` array).
 3. **Add the dispatch case** in `src/main.ts`. Map the typed result to `core.setOutput(...)` calls and call `writeStepSummary({...})` with a friendly per-row table.
 4. **Document the inputs/outputs** in `action.yml`. Add any new inputs to the inputs block and any new outputs to the outputs block.
-5. **Write tests** under `__tests__/commands/<verb>.test.ts`. Use `makeInputs(action, override)` from `_helpers.ts` and the SDK's `B2Simulator` to drive without a network. Cover happy path + at least one error path.
+5. **Write tests** under `__tests__/commands/<verb>.test.ts`. Use `makeInputs(action, override)` and `makeFixture` from `_helpers.ts` to drive the standalone B2 simulator, never real B2. Cover happy path + at least one error path.
 6. **Add an example workflow** at `.github/workflows/example-<verb>.yml` if the verb has a real CI use case. The example should be copy-paste-runnable for someone in their own repo (with credentials swapped in) AND act as a live integration test against the project's test bucket.
 7. **Update the README** verb table and add a short usage snippet.
 8. **Run `pnpm build`** and commit the resulting `dist/index.js` change.
@@ -88,7 +88,8 @@ That writes a small YAML file under `.changes/unreleased/`; commit it with your 
 
 ## Tests
 
-- Unit tests run via `pnpm test`. They use the SDK's in-memory `B2Simulator` so no network and no real B2 account is needed.
+- Unit tests run via `pnpm test`. They run against the standalone B2 simulator, `backblaze-labs/b2-simulator`, so no real B2 account is needed. That repository is not public: you need read access to it, a checkout at the revision CI pins, and `B2_SIMULATOR_DIR` pointing at it; see [Standalone B2 simulator](./DEVELOPMENT.md#standalone-b2-simulator).
+- Open pull requests from a branch in this repository. CI fetches the simulator with a deploy key that GitHub does not give to pull requests from forks, so the test jobs refuse fork pull requests with a message saying so. If you cannot push here, open the fork pull request anyway and a maintainer will move it to a branch in this repository.
 - Coverage is gated at 95% statements / 85% branches / 100% functions / 95% lines via `pnpm test:coverage`. CI runs this on every PR.
 - The example workflows (`.github/workflows/example-*.yml`) are the **integration test suite**. They run against a real Backblaze test bucket on every PR that's not from a fork (forks don't have access to repo secrets and skip silently).
 

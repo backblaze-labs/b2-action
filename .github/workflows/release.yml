@@ -112,10 +112,17 @@ jobs:
           # Keep release validation cache-free for zizmor's cache-poisoning check.
           package-manager-cache: false
 
+      - name: Set up the standalone B2 simulator
+        id: simulator
+        uses: ./.github/actions/b2-simulator
+        with:
+          deploy-key: ${{ secrets.SIMULATOR_DEPLOY_KEY }}
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
+        env:
+          B2_SIMULATOR_DIR: ${{ steps.simulator.outputs.dir }}
       - run: pnpm build
 
       - name: Verify dist/ at tag matches a fresh build
