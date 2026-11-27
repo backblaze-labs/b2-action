@@ -2,7 +2,7 @@ import { mkdtemp, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { B2Client, type Bucket } from '@backblaze-labs/b2-sdk'
-import { B2Simulator } from '@backblaze-labs/b2-sdk/simulator'
+import { afterAll } from 'vitest'
 import { uploadCommand } from '../src/commands/upload.ts'
 import type { ActionName, ParsedInputs } from '../src/inputs.ts'
 import {
@@ -11,6 +11,11 @@ import {
   TEST_APPLICATION_KEY,
   TEST_APPLICATION_KEY_ID,
 } from './_parsed-inputs.ts'
+import {
+  type SimulatorConfig,
+  type StandaloneSimulator,
+  startStandaloneSimulator,
+} from './_standalone-simulator.ts'
 
 /**
  * Part size used by the multipart fixture. Small enough that a few-hundred-KB
@@ -63,11 +68,43 @@ export interface TestFixture {
    * `fx.sim.injectFailure(...)` to exercise error branches in the action's
    * command code (e.g. `deleteAll` errors, transient 503s).
    */
-  sim: B2Simulator
+  sim: StandaloneSimulator
+}
+
+let sharedSimulator: Promise<StandaloneSimulator> | undefined
+
+/**
+ * The standalone B2 simulator for the current test file: started on first use,
+ * stopped after the file's last test. Vitest runs each test file in its own
+ * module graph, so every file gets one server of its own; tests empty it with
+ * `reset` instead of starting another.
+ */
+export function fileSimulator(): Promise<StandaloneSimulator> {
+  sharedSimulator ??= startStandaloneSimulator()
+  return sharedSimulator
 }
 
 /**
- * Build a fresh simulator-backed B2Client + bucket + temp workspace dir.
+ * Start from an empty simulator (`POST /reset`) with these engine settings and
+ * return it. Every simulator-backed test calls this, directly or through
+ * {@link makeFixture}, before it touches B2.
+ */
+export async function resetSimulator(config?: SimulatorConfig): Promise<StandaloneSimulator> {
+  const sim = await fileSimulator()
+  await sim.reset(config)
+  return sim
+}
+
+// Registered on the importing test file's root suite.
+afterAll(async () => {
+  const pending = sharedSimulator
+  sharedSimulator = undefined
+  if (pending) await (await pending).stop()
+})
+
+/**
+ * Build a simulator-backed B2Client + bucket + temp workspace dir on a freshly
+ * reset simulator, so one fixture is live at a time per test file.
  * Every command test uses this; centralizing it here means changing the
  * simulator setup is one file, not 9.
  *
@@ -90,7 +127,7 @@ export async function makeFixture(
   simOptions: { minimumPartSize?: number; recommendedPartSize?: number } = {},
   bucketOptions: { fileLockEnabled?: boolean } = {},
 ): Promise<TestFixture> {
-  const sim = new B2Simulator(simOptions)
+  const sim = await resetSimulator(simOptions)
   const client = new B2Client({
     applicationKeyId: TEST_APPLICATION_KEY_ID,
     applicationKey: TEST_APPLICATION_KEY,

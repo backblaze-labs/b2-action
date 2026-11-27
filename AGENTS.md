@@ -56,7 +56,7 @@ These are enforced mechanically wherever possible. A change that violates one is
    drift. See [DEVELOPMENT.md](DEVELOPMENT.md#ci-gates).
 6. **Style is enforced, not debated.** Biome (2-space, single quotes, no semicolons, 100 cols);
    `exactOptionalPropertyTypes` and `verbatimModuleSyntax` are on; internal imports use `.ts`;
-   tests live under `__tests__/` and run against the SDK's `B2Simulator` (no network).
+   tests live under `__tests__/` and run against the standalone B2 simulator (`B2_SIMULATOR_DIR`).
 7. **Dependabot PRs run no CI**, and **git history is the human's to move.** Both policies, in
    full, are in [docs/design-docs/conventions.md](docs/design-docs/conventions.md).
 

@@ -2,11 +2,16 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { HttpTransport } from '@backblaze-labs/b2-sdk'
-import { B2Simulator } from '@backblaze-labs/b2-sdk/simulator'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { buildClient, getBucket } from '../src/client.ts'
 import { listCommand } from '../src/commands/list.ts'
-import { captureStdout, makeInputs, seedFile, type TestFixture } from './_helpers.ts'
+import {
+  captureStdout,
+  makeInputs,
+  resetSimulator,
+  seedFile,
+  type TestFixture,
+} from './_helpers.ts'
 import { TEST_APPLICATION_KEY, TEST_APPLICATION_KEY_ID } from './_parsed-inputs.ts'
 
 const SHORT_AUTH_TOKEN_TTL_MS = 1000
@@ -17,8 +22,8 @@ const MAX_RETRY_TIMER_DRAIN_STEPS = 20
 
 describe('action-layer B2 failure modes', () => {
   it('surfaces simulator authorization failures with the B2 error message', async () => {
-    const sim = new B2Simulator()
-    sim.injectFailure({
+    const sim = await resetSimulator()
+    await sim.injectFailure({
       on: 'b2_authorize_account',
       status: 401,
       code: 'unauthorized',
@@ -37,7 +42,7 @@ describe('action-layer B2 failure modes', () => {
 
   it('reauthorizes and retries when a bucket lookup sees an expired token', async () => {
     const bucketName = 'failure-reauth-bucket'
-    const sim = new B2Simulator({
+    const sim = await resetSimulator({
       strictAuth: true,
       authTokenTtlMs: SHORT_AUTH_TOKEN_TTL_MS,
     })
@@ -50,7 +55,7 @@ describe('action-layer B2 failure modes', () => {
     await authorized.client.createBucket({ bucketName, bucketType: 'allPrivate' })
     const originalToken = currentSdkAuthToken(authorized)
 
-    sim.advanceTime(EXPIRED_TOKEN_ADVANCE_MS)
+    await sim.advanceTime(EXPIRED_TOKEN_ADVANCE_MS)
 
     let foundBucketName: string | undefined
     const reauthStdout = await captureStdout(async () => {
@@ -83,7 +88,7 @@ describe('action-layer B2 failure modes', () => {
       { status: 503, code: 'service_unavailable', message: 'service unavailable' },
     ])('retries transient $status responses', async (fault) => {
       await seedFile(fx, 'retry/ok.txt', 'ok')
-      fx.sim.injectFailure({
+      await fx.sim.injectFailure({
         on: 'b2_list_file_names',
         status: fault.status,
         code: fault.code,
@@ -108,7 +113,7 @@ describe('action-layer B2 failure modes', () => {
 
     it('surfaces sustained 429 rate limiting after the retry budget is exhausted', async () => {
       await seedFile(fx, 'limited/stuck.txt', 'stuck')
-      fx.sim.injectFailure({
+      await fx.sim.injectFailure({
         on: 'b2_list_file_names',
         status: 429,
         code: 'too_many_requests',
@@ -145,7 +150,7 @@ async function makeRetryFixture(bucketName: string): Promise<{
   fx: TestFixture
   getListAttempts: () => number
 }> {
-  const sim = new B2Simulator()
+  const sim = await resetSimulator()
   const baseTransport = sim.transport()
   let listAttempts = 0
   const transport: HttpTransport = {
@@ -192,7 +197,9 @@ function trackSettlement<T>(promise: Promise<T>): PromiseSettlement {
 }
 
 async function expectPendingBeforeRetryBackoff(settlement: PromiseSettlement): Promise<void> {
-  // Flush immediate promise work only; retry backoff timers must still be pending.
+  // Let the first answer arrive over the socket, then flush immediate promise
+  // work only; retry backoff timers must still be pending.
+  await waitForPendingTimerOrSettlement(settlement)
   await vi.advanceTimersByTimeAsync(0)
 
   expect(settlement.isSettled()).toBe(false)
@@ -200,9 +207,31 @@ async function expectPendingBeforeRetryBackoff(settlement: PromiseSettlement): P
 
 async function drainPendingRetryTimersUntilSettled(settlement: PromiseSettlement): Promise<void> {
   for (let step = 0; step < MAX_RETRY_TIMER_DRAIN_STEPS && !settlement.isSettled(); step += 1) {
+    await waitForPendingTimerOrSettlement(settlement)
     await vi.runOnlyPendingTimersAsync()
     await Promise.resolve()
   }
 
   expect(settlement.isSettled()).toBe(true)
+}
+
+// Captured before any test fakes timers: the simulator answers over a real
+// socket, so waiting for its answer needs the real event loop.
+const realSetImmediate = globalThis.setImmediate
+const SIMULATOR_ANSWER_WAIT_MS = 10_000
+
+/**
+ * Wait, in real time, until the command has either settled or scheduled its
+ * next (fake) retry-backoff timer. The standalone simulator answers over a
+ * socket, so a request in flight completes on the real event loop, not through
+ * fake timers; draining timers before the answer arrives would find none.
+ */
+async function waitForPendingTimerOrSettlement(settlement: PromiseSettlement): Promise<void> {
+  const deadline = process.hrtime.bigint() + BigInt(SIMULATOR_ANSWER_WAIT_MS) * 1_000_000n
+  while (!settlement.isSettled() && vi.getTimerCount() === 0) {
+    if (process.hrtime.bigint() > deadline) {
+      throw new Error(`no retry timer or settlement within ${SIMULATOR_ANSWER_WAIT_MS} ms`)
+    }
+    await new Promise<void>((resolve) => realSetImmediate(resolve))
+  }
 }

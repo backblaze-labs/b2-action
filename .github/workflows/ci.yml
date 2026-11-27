@@ -30,9 +30,16 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
+      - name: Set up the standalone B2 simulator
+        id: simulator
+        uses: ./.github/actions/b2-simulator
+        with:
+          deploy-key: ${{ secrets.SIMULATOR_DEPLOY_KEY }}
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
       - run: pnpm test
+        env:
+          B2_SIMULATOR_DIR: ${{ steps.simulator.outputs.dir }}
 
   coverage:
     name: coverage (>= 95% statements)
@@ -47,8 +54,15 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
+      - name: Set up the standalone B2 simulator
+        id: simulator
+        uses: ./.github/actions/b2-simulator
+        with:
+          deploy-key: ${{ secrets.SIMULATOR_DEPLOY_KEY }}
       - run: pnpm install --frozen-lockfile
       - run: pnpm test:coverage
+        env:
+          B2_SIMULATOR_DIR: ${{ steps.simulator.outputs.dir }}
       - name: Upload coverage report
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

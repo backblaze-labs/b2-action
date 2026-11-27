@@ -918,7 +918,11 @@ describe('sync: error events surface through the action result', () => {
     await mkdir(localSrc, { recursive: true })
     await writeFile(join(localSrc, 'kept.txt'), 'present')
 
-    fx.sim.injectFailure({ on: 'b2_delete_file_version', status: 500, code: 'internal_error' })
+    await fx.sim.injectFailure({
+      on: 'b2_delete_file_version',
+      status: 500,
+      code: 'internal_error',
+    })
 
     const result = await syncCommand(
       fx.bucket,
@@ -1195,7 +1199,11 @@ describe('delete: yields errors when b2_delete_file_version fails', () => {
     // directly and throws, which is a different code path.
     await seedFile(fx, 'd/f1.txt', 'one')
     await seedFile(fx, 'd/f2.txt', 'two')
-    fx.sim.injectFailure({ on: 'b2_delete_file_version', status: 500, code: 'internal_error' })
+    await fx.sim.injectFailure({
+      on: 'b2_delete_file_version',
+      status: 500,
+      code: 'internal_error',
+    })
 
     const result = await deleteCommand(fx.bucket, makeInputs('delete', fx, { source: 'd/' }))
     expect(result.errors).toBeGreaterThanOrEqual(1)
@@ -1214,7 +1222,11 @@ describe('purge: yields errors when b2_delete_file_version fails', () => {
   it('reports errors in the result and continues processing other versions', async () => {
     await seedFile(fx, 'p/a.txt', 'a')
     await seedFile(fx, 'p/b.txt', 'b')
-    fx.sim.injectFailure({ on: 'b2_delete_file_version', status: 500, code: 'internal_error' })
+    await fx.sim.injectFailure({
+      on: 'b2_delete_file_version',
+      status: 500,
+      code: 'internal_error',
+    })
 
     const result = await purgeCommand(fx.bucket, makeInputs('purge', fx, { source: 'p/' }))
     expect(result.errors).toBeGreaterThanOrEqual(1)

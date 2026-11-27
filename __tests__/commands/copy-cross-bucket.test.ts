@@ -2,11 +2,10 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { B2Client } from '@backblaze-labs/b2-sdk'
-import { B2Simulator } from '@backblaze-labs/b2-sdk/simulator'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { copyCommand } from '../../src/commands/copy.ts'
 import { uploadCommand } from '../../src/commands/upload.ts'
-import { MULTIPART_PART_SIZE, makeInputs } from '../_helpers.ts'
+import { MULTIPART_PART_SIZE, makeInputs, resetSimulator } from '../_helpers.ts'
 
 interface Fixture {
   workDir: string
@@ -18,7 +17,7 @@ interface Fixture {
 async function makeFixture(
   simOptions: { minimumPartSize?: number; recommendedPartSize?: number } = {},
 ): Promise<Fixture> {
-  const sim = new B2Simulator(simOptions)
+  const sim = await resetSimulator(simOptions)
   const client = new B2Client({
     applicationKeyId: 'test-key-id',
     applicationKey: 'test-key',

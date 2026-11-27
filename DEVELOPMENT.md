@@ -54,7 +54,7 @@ src/
   commands/<verb>.ts  # one file per verb (13 verbs); delete-all.ts is a shared bulk-delete helper, not a verb
 __tests__/
   _helpers.ts      # shared makeInputs() builder for command tests
-  *.test.ts        # unit tests against the SDK's in-memory B2Simulator
+  *.test.ts        # unit tests against the standalone B2 simulator
 .github/workflows/
   ci.yml                # lint, typecheck, test, coverage, build, dist freshness, smoke
   security.yml          # release provenance policy
@@ -83,7 +83,7 @@ pnpm install        # also wires up git hooks (husky): see below
 pnpm lint           # biome check --error-on-warnings
 pnpm lint:fix
 pnpm typecheck      # tsc --noEmit (strict + exactOptionalPropertyTypes)
-pnpm test           # vitest run: drives against the SDK's in-memory B2Simulator
+pnpm test           # vitest run: drives against the standalone B2 simulator (B2_SIMULATOR_DIR)
 pnpm test:coverage  # same + the 95/85/100/95 coverage gate
 pnpm test:mutation  # batched per-file Stryker mutation run + aggregate gate
 pnpm test:mutation:single  # raw Stryker run for focused local investigation
@@ -317,12 +317,27 @@ In `Settings → Secrets and variables → Actions`, set:
 
 Once those are in place, the example workflows trigger on every PR (other than forks, which can't see secrets), the `daily-smoke.yml` cron runs nightly, and `large-multipart-smoke.yml` runs weekly. There's no manual step beyond setting the secrets.
 
+### Standalone B2 simulator
+
+The Vitest suite runs against [`backblaze-labs/b2-simulator`](https://github.com/backblaze-labs/b2-simulator), an in-memory B2 server, not the SDK's in-process simulator. That repository is not public; you need read access to it. Check it out at the revision CI pins (the `revision` default in [`.github/actions/b2-simulator/action.yml`](./.github/actions/b2-simulator/action.yml), b2-simulator v0.6.0) and point `B2_SIMULATOR_DIR` at it:
+
+```bash
+git clone git@github.com:backblaze-labs/b2-simulator.git ../b2-simulator
+git -C ../b2-simulator checkout <revision from action.yml>
+export B2_SIMULATOR_DIR="$(cd ../b2-simulator && pwd)"
+pnpm test
+```
+
+Without it, every simulator-backed test fails with a message naming the variable; none is skipped. [`__tests__/_standalone-simulator.ts`](./__tests__/_standalone-simulator.ts) starts one server per test file (with `--control --profile ts-sdk`) and `makeFixture` resets it (`POST /reset`) before each fixture, so tests never share state. Fault injection (`fx.sim.injectFailure`) and the virtual clock (`sim.advanceTime`) go through the server's control port. The server gets no B2 credential from the environment, and the test transport sends every request to the loopback server.
+
+In CI the [`b2-simulator`](./.github/actions/b2-simulator/action.yml) composite action checks out that revision with the `SIMULATOR_DEPLOY_KEY` secret (a read-only deploy key of `backblaze-labs/b2-simulator`) and refuses pull requests from forks, which GitHub does not give secrets to.
+
 ### Simulator vs real bucket: what each layer catches
 
-- **Vitest + `B2Simulator`** (`pnpm test`): instant, deterministic, runs on every PR including forks. Validates the dispatcher, input parsing, error paths, and the SDK contract. Doesn't touch the network. Input tests set `INPUT_*` / `B2_*` env vars directly; clear them in `beforeEach` (see `resetInputEnv` in [`__tests__/inputs.test.ts`](./__tests__/inputs.test.ts)) to avoid cross-test bleed.
+- **Vitest + standalone B2 simulator** (`pnpm test`): fast, deterministic, runs on every PR from a branch in this repository (see [Standalone B2 simulator](#standalone-b2-simulator)). Validates the dispatcher, input parsing, error paths, and the SDK contract over a real HTTP connection to a loopback server. Never touches real B2. Input tests set `INPUT_*` / `B2_*` env vars directly; clear them in `beforeEach` (see `resetInputEnv` in [`__tests__/inputs.test.ts`](./__tests__/inputs.test.ts)) to avoid cross-test bleed.
 - **Example workflows** (`.github/workflows/example-*.yml`): real wire-protocol. Catches B2 API drift, auth quirks, and integration-layer regressions that the simulator can't see. Skips on forks (secrets-gated).
 
-The redundancy is deliberate: the simulator suite is what guarantees a contributor's fork PR gets validated end-to-end before secrets-gated workflows run.
+The redundancy is deliberate: the simulator suite validates every change end-to-end without B2 credentials, before the secrets-gated workflows run.
 
 ### Documentation structure gate
 
@@ -344,7 +359,7 @@ The pattern is the same every time:
 2. **Register** the verb in `src/inputs.ts`: add to the `ActionName` type and `VALID_ACTIONS` array.
 3. **Dispatch** in `src/main.ts`: switch case that maps the typed result to `core.setOutput(...)` and `writeStepSummary({...})`.
 4. **Document** in `action.yml`: any new inputs and outputs the verb introduces.
-5. **Test** under `__tests__/commands/<verb>.test.ts`: use `makeInputs(action, override)` from `_helpers.ts` and the SDK's `B2Simulator`. Cover happy path + at least one error.
+5. **Test** under `__tests__/commands/<verb>.test.ts`: use `makeInputs(action, override)` and `makeFixture` from `_helpers.ts` (standalone B2 simulator). Cover happy path + at least one error.
 6. **Example workflow** at `.github/workflows/example-<verb>.yml`: copy-paste-runnable AND acts as a live integration test against the project's test bucket.
 7. **README + changelog**: add a row to the verb table, a usage snippet, and a changelog fragment (`pnpm changelog:new`).
 8. **Rebuild** `dist/index.js` with `pnpm build` and commit it.

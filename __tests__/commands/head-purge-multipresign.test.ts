@@ -164,7 +164,11 @@ describe('purge command', () => {
 
   it('warns with the failed-purge message when a version cannot be deleted', async () => {
     await seedFile(fx, 'pf/a.txt', 'a')
-    fx.sim.injectFailure({ on: 'b2_delete_file_version', status: 500, code: 'internal_error' })
+    await fx.sim.injectFailure({
+      on: 'b2_delete_file_version',
+      status: 500,
+      code: 'internal_error',
+    })
     let result: Awaited<ReturnType<typeof purgeCommand>> | undefined
     const out = await captureStdout(async () => {
       result = await purgeCommand(fx.bucket, inputs('purge', { source: 'pf/' }))
